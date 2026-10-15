@@ -1,7 +1,7 @@
 guard: TestABuildIsHandedTheFilesItsOrderNamesAndNoOthers
 file: .github/workflows/fabricator.yml
 find: 'mapfile -t files < <(git ls-files -- "$read")'
-replace: 'mapfile -t files < <(find "$read" -type f -o -type l)'
+replace: 'mapfile -t files < <(find "$read" -type f)'
 mentions: "and it tracks shared/fetch.sh and shared/other.sh"
 why: >
   The images are public. A file that is merely on the runner's disk when the
