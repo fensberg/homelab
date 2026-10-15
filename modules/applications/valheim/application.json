@@ -42,7 +42,7 @@
     "Deployment/valheim": {
       "valheim": {
         "kind": "publisher",
-        "basis": "Memory is the publisher's guidance: 4 GiB for a new world at this player count, 6 to 8 once it has been explored and built on. The four processors are this estate's own choice. Neither has been seen under load: no player was logged in for the first window it was watched over."
+        "basis": "Memory is the publisher's guidance: 4 GiB for a new world at this player count, 6 to 8 once it has been explored and built on, and this world is explored; 6, the bottom of that, since 2026-10-15, to fit beside what the machines hold back for themselves. Idle, with nobody playing, it used about 1.9 GiB. The four processors are this estate's own choice. Neither has been seen under load."
       },
       "world-backup": {
         "kind": "estimate",

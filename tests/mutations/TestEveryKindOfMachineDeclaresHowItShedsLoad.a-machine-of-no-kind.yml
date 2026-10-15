@@ -1,0 +1,10 @@
+guard: TestEveryKindOfMachineDeclaresHowItShedsLoad
+file: modules/infrastructure/cluster/talos.tf
+find: "    { for k in keys(local.dmz) : k => \"untrusted\" },\n"
+replace: "    {},\n"
+mentions: "is not taken as the untrusted kind of machine"
+why: >
+  Figures for a kind reach no machine that is not said to be of it. The
+  untrusted worker would then be configured with nothing at all here, and
+  the plan would fail on a missing key - or, written another way, fall
+  back to a default nobody chose.
