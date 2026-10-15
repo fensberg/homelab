@@ -1085,6 +1085,42 @@ all three hold, beside the two above:
    job is left on a runner where that can happen. #725 closes with this.
 3. **Each pool's runner is sized from what its jobs were measured to use
    under load**, and the record says which nights the figure came from.
+4. **Every job is in exactly one of two places, and a guard refuses a
+   third** (the operator agreed, 2026-10-15, as the bare minimum):
+   - **on the estate's runners, with its network held to what it
+     declared**, and on the untrusted worker if it runs a pull request's
+     code. That includes the estate's own runners on the trusted workers,
+     which run only reviewed code from `main` and hold the site's vault
+     token, and whose network is not held yet (#411); or
+   - **on GitHub's runners, with nothing to steal and nothing it writes
+     trusted by anything after it**: no secret, a token that can only
+     read, no cache saved from a pull request, and no artifact a later
+     trusted job takes in.
+
+   A job that needs a credential that writes, and cannot run on the
+   estate, is a defect to fix and not a third kind. Today there is one,
+   the Fabricator, which builds images with a Docker daemon the
+   unprivileged pools do not have and holds the token that publishes
+   them; it moves with #503. When it has, nothing is left for
+   StepSecurity's runner hardening to hold, and it comes out with the two
+   lanes that exist to prove it works. The guard is written when it can
+   pass: written first, it would hold an exception, and this estate
+   does not keep a list of those.
+
+**What GitHub gives a public repository for nothing, taken up (2026-10-15).**
+No second CI vendor: CircleCI, Buildkite, GitLab and Jenkins were weighed,
+and each is a second permission model, a second store of secrets and a
+second source of checks for what GitHub's own Actions and the estate's pools
+already do. Two of GitHub's own features are taken instead:
+
+- **Secret scanning's push protection**, which refuses a push holding a
+  credential GitHub recognises before it lands. Set from git with the rest
+  of the repository's settings (#729).
+- **Artifact attestations** for every image the Fabricator publishes: a
+  signed record of the commit and the workflow that built it, so a digest
+  pinned here can be shown to have come from here. Signed first. Having the
+  cluster refuse an image that is not signed is a component of its own, and
+  is decided separately.
 
 ### Compared: an agent with its permissions bypassed and a hook
 
