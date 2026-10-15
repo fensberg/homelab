@@ -1,0 +1,10 @@
+guard: TestAConvergeInFlightIsNotEvicted
+file: clusters/core/infrastructure/controllers/priority-classes.yaml
+find: "value: 10000\npreemptionPolicy: PreemptLowerPriority\n"
+replace: "value: 10000\npreemptionPolicy: Never\n"
+mentions: "may not take room from lower work"
+why: >
+  Never is the gentler-sounding setting, and it was this file's own decision
+  until 2026-10-15. On a site run full it makes a converge wait for batch work
+  to finish, and turns the room batch was lent back into room nothing can
+  reclaim.

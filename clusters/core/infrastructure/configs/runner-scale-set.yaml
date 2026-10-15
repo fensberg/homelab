@@ -323,3 +323,20 @@ spec:
               requests:
                 cpu: 500m
                 memory: 2Gi
+---
+# A converge in flight is not taken off its machine to make room for a drain
+# (docs/epochs/04-observability.md, criterion 13). A machine being drained -
+# to be replaced, or to have its operating system moved - waits for the
+# converge on it to finish, which is minutes, rather than cutting a change to
+# the estate off half-way. A runner is made for one job and is gone after it,
+# and none waits idle, so this holds nothing back but a job that is running.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: a-converge-in-flight
+  namespace: arc-runners
+spec:
+  maxUnavailable: 0
+  selector:
+    matchLabels:
+      actions.github.com/scale-set-name: homelab-${SITE}

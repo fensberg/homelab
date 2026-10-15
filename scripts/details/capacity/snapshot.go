@@ -138,7 +138,7 @@ func Take(l Listings, open []string, taken string) (Snapshot, error) {
 	s := Snapshot{Taken: taken}
 	for _, c := range lists["priority classes"] {
 		s.Objects = append(s.Objects, kept("scheduling.k8s.io/v1", KindPriorityClass, Object{"name": at(c, "metadata", "name")}, nil,
-			"value", c["value"], "globalDefault", c["globalDefault"], "preemptionPolicy", c["preemptionPolicy"]))
+			"value", c["value"], "globalDefault", c["globalDefault"], PreemptionKey, c[PreemptionKey]))
 	}
 	for _, c := range lists["storage classes"] {
 		s.Objects = append(s.Objects, kept("storage.k8s.io/v1", "StorageClass", Object{"name": at(c, "metadata", "name")}, nil,

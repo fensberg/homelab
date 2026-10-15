@@ -20,14 +20,32 @@
 #   `preemptionPolicy` decides whether a pod may EVICT a running pod to make a
 #   slot that does not otherwise exist.
 #
-# An interactive job should get the next free slot ahead of a batch job. It
-# must NOT be able to kill a batch job twelve minutes into a thirteen-minute
-# run - destroying twelve minutes of work to save two minutes of waiting is a
-# bad trade in every direction. `preemptionPolicy: Never` says exactly that:
-# jump the queue, disturb nothing already running.
+# An interactive job takes the next free slot ahead of a batch job, and when
+# there is no free slot it takes one from batch work. That second half is new
+# (2026-10-15), and replaces a decision that said the opposite: interactive
+# work was set never to evict anything, because killing a batch job twelve
+# minutes into a thirteen-minute run to save two minutes of waiting looked a
+# bad trade.
 #
-# So eviction exists in one place only, which is the smallest surface that
-# still protects quorum.
+# What changed is what the site is for. It is run full on purpose
+# (docs/epochs/04-observability.md): every byte the work that cannot wait
+# does not need is handed to batch work, and the only buffer is batch itself,
+# which gives its room back when it is wanted. With interactive work unable
+# to take it back, a full site makes a converge, a pull request's checks and
+# a player wait for batch work to finish, which is the delay those exist to
+# avoid; and the room kept for a worker going down sits idle instead of
+# working. The operator: "I want to take EVERY spare piece of hardware and put
+# it to use systematically and then roll them off seamlessly ready to pick up
+# the next piece of work... I want the smallest buffer that we can possibly
+# have."
+#
+# Preemption only ever takes from a lower class, and the only class below
+# interactive is batch. So interactive work puts off batch work and nothing
+# else - never another interactive pod, never critical work. What it costs is
+# what the old decision weighed: a batch job put off part-way is lost, and an
+# Actions job that is lost is not run again (re-running it is parked in
+# docs/epochs/04-observability.md, criterion 6). tests/go/repo holds the
+# ladder to this.
 #
 # WHY NOT `system-cluster-critical` FOR THE TOP CLASS. Not because it ranks
 # higher than anything here needs - it does, at 2000000000 - but because it is
@@ -54,9 +72,9 @@ kind: PriorityClass
 metadata:
   name: critical
 value: 1000000
-# The default, stated rather than omitted: this is the one class that may evict
-# a running pod, and a policy that consequential should not be inferred from
-# its absence.
+# The default, stated rather than omitted: critical work may evict anything
+# below it, and a policy that consequential should not be inferred from its
+# absence.
 preemptionPolicy: PreemptLowerPriority
 globalDefault: false
 description: >-
@@ -68,12 +86,14 @@ kind: PriorityClass
 metadata:
   name: interactive
 value: 10000
-preemptionPolicy: Never
+preemptionPolicy: PreemptLowerPriority
 globalDefault: false
 description: >-
   Somebody is waiting for it, so queueing is the entire cost - a converge
-  after a merge, a player on a server. Takes the next free slot ahead of
-  batch work; never interrupts anything running.
+  after a merge, a player on a server, a pull request's checks. Takes room
+  from batch work when there is none free, and from nothing else: the only
+  class below it is batch, so it can never put off work of its own kind or
+  anything above.
 ---
 apiVersion: scheduling.k8s.io/v1
 kind: PriorityClass

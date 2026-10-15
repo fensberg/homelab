@@ -303,6 +303,23 @@ operator's decision: the untrusted worker fits two runners at once, and
 those lanes would queue behind each other for longer than they run. So the
 runner check stays loosened for them, and #725 stays open for them.
 
+**A lifeline to GitHub's runners when the site is full (concept,
+2026-10-15, not built).** The operator: "If we're at 110% and batch has NO
+pressure relief then things start failing. What if then, and only then we
+start routing traffic to GitHub compute to get these super stale jobs off the
+books? That said they have to be securely run." Securely run is the rule
+that a job may go to GitHub's runners only if it would be safe there anyway,
+with nothing to steal and nothing it writes trusted by anything after it. So
+work that holds a credential of the estate's - a converge, the integration
+runs - never goes; it waits, and says so. The first work that can go is a
+pull request's checks. A job's runner is chosen when it is queued and the
+pools do not spill over by themselves, so what routes is a small job in front
+that reads how far behind the pools are and hands the jobs after it their
+runner, in one more form the guards would learn beside the nightly one. The
+threshold decides it, and wants the queue's history that the nightly runs
+begin to keep. Not built because nothing can use it yet: today the only work
+that waits under pressure is work that may not leave.
+
 **The hot tool is not built.** The operator's meaning, said again
 2026-10-14 because the record had begun to blur it: "a pod READY to go with
 everything installed and which can INSTANTLY take work." A runner that has
