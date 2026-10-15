@@ -226,8 +226,9 @@ jobs:
           fi
 
       # A build sees its own directory. What else of the repository it reads
-      # is what its order names (scripts/work-orders.json), and those files
-      # are laid out here by their paths, alone, as a second context the
+      # is what its order names (scripts/work-orders.json) - files, or
+      # directories of tracked files - and those are laid out here by their
+      # paths, alone, as a second context the
       # Dockerfile knows as `reads`. Tracked files only, as they are at this
       # commit: the fingerprint above is taken from the same names, so what
       # is handed to the build and what the image is said to be made from are
@@ -240,13 +241,22 @@ jobs:
           dir="${RUNNER_TEMP}/reads"
           rm -rf "$dir"
           mkdir -p "$dir"
-          while IFS= read -r file; do
-            if [ -L "$file" ] || ! git ls-files --error-unmatch -- "$file" >/dev/null 2>&1 || [ ! -f "$file" ]; then
-              echo "::error::the order reads ${file}, which is not a file this repository tracks"
+          # A read is a file or a directory, and a directory is every file
+          # tracked in it: what git holds, not what is on the runner's disk.
+          while IFS= read -r read; do
+            mapfile -t files < <(git ls-files -- "$read")
+            if [ "${#files[@]}" -eq 0 ]; then
+              echo "::error::the order reads ${read}, which is not a file this repository tracks"
               exit 1
             fi
-            mkdir -p "${dir}/$(dirname "$file")"
-            cp "$file" "${dir}/${file}"
+            for file in "${files[@]}"; do
+              if [ -L "$file" ] || [ ! -f "$file" ]; then
+                echo "::error::the order reads ${file}, which is not a file this repository tracks"
+                exit 1
+              fi
+              mkdir -p "${dir}/$(dirname "$file")"
+              cp "$file" "${dir}/${file}"
+            done
           done < <(jq -r '.[]?' <<<"${READS:-null}")
           echo "dir=${dir}" >> "$GITHUB_OUTPUT"
 
