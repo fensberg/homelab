@@ -257,9 +257,10 @@ jobs:
       # step is what refuses.
       # The engineer has the site's own scheduler try the change, and these are
       # that scheduler: Kubernetes' store, API server and scheduler, and the
-      # tool that starts them, each from scripts/deliveries.lock by hash.
+      # tool that starts them, each from scripts/deliveries.lock by hash - and
+      # the renderer the drafter builds an application's directory with.
       - name: Take delivery of the scheduler a change is tried with
-        run: scripts/take-delivery.sh kwokctl etcd kube-apiserver kube-scheduler
+        run: scripts/take-delivery.sh kwokctl etcd kube-apiserver kube-scheduler kustomize
 
       - name: Hold the change to what the site can hold
         env:
