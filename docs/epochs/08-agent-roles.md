@@ -1067,6 +1067,25 @@ If either role cannot pass its test, it is decorative and comes out. A
 mechanism whose output nobody acts on is worse than no mechanism, because it
 looks like coverage.
 
+### And the gap the pools were built to close is sealed
+
+The operator, 2026-10-15: "How do we not forget to measure the heavy lanes
+and to get them merged and the gap SEALED?" The epoch does not close until
+all three hold, beside the two above:
+
+1. **Every job a pull request starts runs on the estate's pools.** The heavy
+   lanes - the Go and OpenTofu tests, the ledger, the invariants,
+   validation, vetting and the JavaScript tests - moved only after they
+   have been tried there: each is run on its pool every night (the nightly
+   form in `pr-validation.yml`), and what each took and used is read off
+   those nights, not guessed. Code scanning and the dependency review are
+   counted with them.
+2. **The runner check stops a job again.** A job on a runner that is not
+   held stops, as it did before #725 loosened it, because no pull request's
+   job is left on a runner where that can happen. #725 closes with this.
+3. **Each pool's runner is sized from what its jobs were measured to use
+   under load**, and the record says which nights the figure came from.
+
 ### Compared: an agent with its permissions bypassed and a hook
 
 [ionfury/homelab](https://github.com/ionfury/homelab), read at `150097e` on

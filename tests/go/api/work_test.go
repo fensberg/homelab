@@ -50,14 +50,21 @@ func TestAJobOnTheEstatesRunnersTakesAsLongAsItSays(t *testing.T) {
 		t.Run(w.Job, func(t *testing.T) {
 			says, _ := w.Ordinarily()
 			workflow, job, _ := strings.Cut(w.Job, "/")
-			named := jobNamed(t, root, workflow, job)
+			named, byNight := jobNamed(t, root, workflow, job)
+			// A job on a pool by night only is judged by its nights: its
+			// daytime runs are on GitHub's runners and say nothing of the
+			// estate's.
+			only := ""
+			if byNight {
+				only = "&event=schedule"
+			}
 
 			var runs struct {
 				Runs []struct {
 					ID int64 `json:"id"`
 				} `json:"workflow_runs"`
 			}
-			require.NoError(t, json.Unmarshal(ghAPI(t, fmt.Sprintf("repos/%s/actions/workflows/%s/runs?status=success&per_page=20", slug, workflow)), &runs))
+			require.NoError(t, json.Unmarshal(ghAPI(t, fmt.Sprintf("repos/%s/actions/workflows/%s/runs?status=success&per_page=20%s", slug, workflow, only)), &runs))
 
 			var took []time.Duration
 			for _, run := range runs.Runs {
@@ -109,14 +116,16 @@ func misaligned(says, took time.Duration) string {
 // jobNamed is a pattern for the name GitHub gives a job's runs: the job's
 // `name` in its workflow, with each expression in it standing for anything,
 // or the job's key where it has no name. A job run for several sites is one
-// job here, whichever site a run was for.
-func jobNamed(t *testing.T, root, workflow, job string) *regexp.Regexp {
+// job here, whichever site a run was for. And whether the job is on a pool
+// by night only.
+func jobNamed(t *testing.T, root, workflow, job string) (*regexp.Regexp, bool) {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join(root, ".github", "workflows", workflow))
 	require.NoError(t, err, "reading the workflow a declared job is in")
 	var doc struct {
 		Jobs map[string]struct {
-			Name string `yaml:"name"`
+			Name   string    `yaml:"name"`
+			RunsOn yaml.Node `yaml:"runs-on"`
 		} `yaml:"jobs"`
 	}
 	require.NoError(t, yaml.Unmarshal(raw, &doc))
@@ -135,7 +144,7 @@ func jobNamed(t *testing.T, root, workflow, job string) *regexp.Regexp {
 		pattern.WriteString(regexp.QuoteMeta(literal))
 	}
 	pattern.WriteString("$")
-	return regexp.MustCompile(pattern.String())
+	return regexp.MustCompile(pattern.String()), harness.OnAPoolByNight(&j.RunsOn)
 }
 
 // The judgement itself, without GitHub: what counts as agreeing.
