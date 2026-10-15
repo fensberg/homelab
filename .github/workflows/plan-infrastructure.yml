@@ -139,7 +139,8 @@ jobs:
       needs.sites.outputs.touched == 'true'
       && (github.event.merge_group.head_sha != ''
           || github.event.pull_request.head.repo.full_name == github.repository)
-    # A pull request's code never runs on the estate's runner.
+    # A pull request's code never runs on the estate's own runner, the one
+    # that converges. It runs in a pool on the untrusted worker.
     runs-on: pr-builds-${{ vars.pull_request_runners_site }}
     permissions:
       contents: read
@@ -206,7 +207,10 @@ jobs:
           REPO_ID: ${{ github.repository_id }}
           SITE: ${{ matrix.site }}
         run: |
-          run_id="$(gh api "repos/${REPO}/actions/artifacts?name=as-built-${SITE}&per_page=100" --jq "
+          # Asked with curl: GitHub's command-line client is on GitHub's
+          # runners and not in the pools' image, and this is one request.
+          run_id="$(curl -fsSL --proto '=https' -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/actions/artifacts?name=as-built-${SITE}&per_page=100" | jq -r "
             [.artifacts[]
               | select(.expired | not)
               | select(.workflow_run.head_branch == \"main\" and .workflow_run.head_repository_id == ${REPO_ID})]
