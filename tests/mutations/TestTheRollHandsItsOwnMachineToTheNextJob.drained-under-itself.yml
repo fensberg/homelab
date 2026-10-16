@@ -1,7 +1,7 @@
 guard: TestTheRollHandsItsOwnMachineToTheNextJob
 file: management/roll/talos-upgrade.yml
-find: "      when: own"
-replace: "      when: false"
+find: '        own: "{{ item.name == runner_node }}"'
+replace: "        own: false"
 mentions: "its own machine left to the next job"
 why: >
   A job that drains the machine it runs on is evicted part-way through its
