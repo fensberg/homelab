@@ -134,6 +134,8 @@ spec:
               - matchName: api.github.com
               - matchName: codeload.github.com
               - matchName: dl.k8s.io
+              - matchName: files.pythonhosted.org
+              - matchName: galaxy.ansible.com
               - matchName: get.opentofu.org
               - matchName: ghcr.io
               - matchName: github.com
@@ -141,6 +143,7 @@ spec:
               - matchName: objects.githubusercontent.com
               - matchName: pkg-containers.githubusercontent.com
               - matchName: proxy.golang.org
+              - matchName: pypi.org
               - matchName: raw.githubusercontent.com
               - matchName: registry.opentofu.org
               - matchName: release-assets.githubusercontent.com
@@ -152,6 +155,8 @@ spec:
         - matchName: api.github.com
         - matchName: codeload.github.com
         - matchName: dl.k8s.io
+        - matchName: files.pythonhosted.org
+        - matchName: galaxy.ansible.com
         - matchName: get.opentofu.org
         - matchName: ghcr.io
         - matchName: github.com
@@ -159,6 +164,7 @@ spec:
         - matchName: objects.githubusercontent.com
         - matchName: pkg-containers.githubusercontent.com
         - matchName: proxy.golang.org
+        - matchName: pypi.org
         - matchName: raw.githubusercontent.com
         - matchName: registry.opentofu.org
         - matchName: release-assets.githubusercontent.com

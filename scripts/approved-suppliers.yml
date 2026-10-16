@@ -506,6 +506,14 @@ endpoints:
       - pypi.org:443
       - files.pythonhosted.org:443
 
+  - group: ansible-collections
+    reason: >-
+      Ansible's collections, each fetched by take-delivery.sh from the file
+      the lock hashed and installed offline: kubernetes.core for the machine
+      roll, community.crypto and ansible.posix for the hypervisor's play.
+    hosts:
+      - galaxy.ansible.com:443
+
   - group: infrastructure-tooling
     reason: OpenTofu itself and its provider registry.
     hosts:
@@ -737,6 +745,30 @@ egress:
       list to transcribe. Egress for these pods has to be controlled at the
       cluster's network layer instead (#411); until then it is uncontrolled
       and unrecorded, and this entry says so rather than implying otherwise.
+  - job: deploy-infrastructure.yml/roll
+    policy: audit
+    reason: >-
+      The machine roll, on the site's own runners: reaches 1Password, the
+      Talos and Kubernetes APIs at addresses deliberately not in git, the
+      cluster's own Prometheus and Alertmanager, GitHub's API, and PyPI and
+      Galaxy for the roll's tools. Harden-runner does nothing on this runner,
+      as the converge's entry says, so its egress is the cluster's network
+      layer's to control (#411).
+
+  - job: deploy-infrastructure.yml/roll-handover
+    policy: audit
+    reason: >-
+      The machine roll's second job, which finishes the machine the first ran
+      on. The same reaches as the roll's, for the same reason.
+
+  - job: deploy-infrastructure.yml/roll-aftermath
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+      - objects.githubusercontent.com:443
+      - release-assets.githubusercontent.com:443
+
   - job: deploy-infrastructure.yml/aftermath
     policy: block
     hosts:
@@ -1067,11 +1099,15 @@ egress:
     policy: block
     hosts:
       - api.github.com:443
+      - dl.k8s.io:443
+      - files.pythonhosted.org:443
+      - galaxy.ansible.com:443
       - get.opentofu.org:443
       - github.com:443
       - go.dev:443
       - objects.githubusercontent.com:443
       - proxy.golang.org:443
+      - pypi.org:443
       - registry.opentofu.org:443
       - release-assets.githubusercontent.com:443
       - storage.googleapis.com:443
@@ -1082,11 +1118,15 @@ egress:
     policy: block
     hosts:
       - api.github.com:443
+      - dl.k8s.io:443
+      - files.pythonhosted.org:443
+      - galaxy.ansible.com:443
       - get.opentofu.org:443
       - github.com:443
       - go.dev:443
       - objects.githubusercontent.com:443
       - proxy.golang.org:443
+      - pypi.org:443
       - registry.opentofu.org:443
       - release-assets.githubusercontent.com:443
       - storage.googleapis.com:443
@@ -1636,6 +1676,16 @@ work:
   - job: deploy-infrastructure.yml/converge
     kind: cannot-wait
     takes: 5m
+
+  # Not to be stopped once a machine is drained, so the priority set. Most
+  # runs find the window shut or nothing behind, and are over in a minute.
+  - job: deploy-infrastructure.yml/roll
+    kind: cannot-wait
+    takes: 2m
+
+  - job: deploy-infrastructure.yml/roll-handover
+    kind: cannot-wait
+    takes: 30m
 
   - job: converge-estate.yml/converge
     kind: cannot-wait
