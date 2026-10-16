@@ -222,6 +222,15 @@ Each is a piece of its own, not a debt of this one.
   driver (epoch 04, criterion 31, not decided).
 - **The record keeps refusable fields for more kinds** (#771), and **one
   refused object stops a whole layer** (#769).
+- **The roll's tools in the converge runner image.** Today the roll's job
+  takes delivery of ansible-core, Ansible's collections and the Kubernetes
+  client at the start of every run, about 50 MB from PyPI, hourly. Taken in
+  the image instead, as the pool image takes its tools, a run starts at once,
+  needs no package index while it holds the vault token, and the image is
+  what the scale set says it is: a container that installs nothing. The job
+  would still take delivery, and find everything already there as the lock
+  orders it. The cost is a larger image, and a version move that needs the
+  image rebuilt and its pin moved (#751).
 - **The workstation's build half** is not run by its test, which stops
   before the cloud image is fetched.
 - **Dashboards and alerts** for the roll, deliberately: the events and the
