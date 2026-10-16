@@ -1,0 +1,8 @@
+guard: TestTheConfigurationRulesHold
+file: clusters/core/infrastructure/configs/runner-scale-set.yaml
+find: "            image: ghcr.io/fensberg/homelab-runner@sha256:"
+replace: "            image: ghcr.io/fensberg/homelab-runner:sha256-"
+mentions: "is not pinned by digest"
+why: >
+  The runner converges the estate. On a tag, it is whatever the tag was last
+  pushed to, a change no pull request recorded or reviewed.

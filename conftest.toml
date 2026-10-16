@@ -1,0 +1,8 @@
+# Conftest's settings, for whoever runs it: the configuration rules'
+# harness (tests/go/repo/configuration_rules_test.go), its lane, and a person
+# at a terminal. Every file is handed over at once, so a rule may hold one
+# file to another, and Conftest's default namespace, main, collects every
+# rule under rules in one query (policy/conftest/main.rego says why).
+policy = "policy/conftest"
+combine = true
+no-color = true

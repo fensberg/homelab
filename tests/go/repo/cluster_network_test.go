@@ -120,39 +120,6 @@ be changed without rebuilding the cluster.`, a.site, a.kind, a.n, b.site, b.kind
 	}
 }
 
-// Cilium takes its pod addresses from Kubernetes, and that is load-bearing.
-//
-// This is the half worth guarding rather than the one #240 assumed. That issue
-// warned that Cilium's default cluster pool is 10.0.0.0/8 and would collide
-// with every site subnet - true of `ipam: cluster-pool`, and this estate runs
-// `ipam: kubernetes`, which delegates to the podSubnets declared above and has
-// no pool of its own.
-//
-// So the hazard is not live; it is one word away. Switching the mode would move
-// address allocation from a range this repository declares to a default it does
-// not, and the manifest would still render, still install, and still come up.
-func TestCiliumTakesItsPodAddressesFromKubernetes(t *testing.T) {
-	_, manifest := fluxObject(t, cniKind, cniName)
-
-	m := regexp.MustCompile(`(?m)^\s*ipam:\s*"?([a-z-]+)"?\s*$`).FindStringSubmatch(manifest)
-	if m == nil {
-		t.Fatal("the rendered Cilium manifest declares no ipam mode, so this cannot " +
-			"tell which range pods are allocated from")
-	}
-	if m[1] != "kubernetes" {
-		t.Errorf(`Cilium's ipam mode is %q, not "kubernetes".
-
-In every other mode Cilium allocates pod addresses from a pool of its own, and
-its default pool is 10.0.0.0/8 - which contains every site subnet this estate
-can define, because site octets run 1-95. The podSubnets declared in talos.tf
-would then describe nothing.
-
-If the mode is being changed deliberately, the pool has to be declared with it
-and checked against the site scheme the same way, or this estate has gone back
-to an undeclared default.`, m[1])
-	}
-}
-
 func overlaps(a, b *net.IPNet) bool {
 	return a.Contains(b.IP) || b.Contains(a.IP)
 }

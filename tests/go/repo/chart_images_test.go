@@ -8,17 +8,15 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
-
-	"homelab/details/applications"
 )
 
 // Every chart's images are either governed here or declared as not governed.
 //
 // THE GAP THIS CLOSES. `scripts/approved-suppliers.yml` opens its registries
 // section by saying an image must come from an approved registry AND be pinned
-// by digest. `TestClusterImagesComeFromApprovedRegistriesAndArePinned` enforces
-// that for image references WRITTEN IN THIS REPOSITORY, which is not the same
-// set: an image a chart pulls by its own default has no reference here to read.
+// by digest. The image rule in policy/conftest/suppliers.rego enforces that for
+// image references WRITTEN IN THIS REPOSITORY, which is not the same set: an
+// image a chart pulls by its own default has no reference here to read.
 //
 // So the OpenEBS localpv provisioner - the component handing out the volumes
 // this estate's own OpenTofu state database sits on - is pulled from docker.io
@@ -124,7 +122,7 @@ repository nor appears in chart_images_not_governed_here.
 So nothing here knows what it pulls or from where, and the registries section
 of scripts/approved-suppliers.yml reads as though it did. Either set the image
 registry and digest in the HelmRelease's own values - which brings them into
-TestClusterImagesComeFromApprovedRegistriesAndArePinned with no new machinery,
+the suppliers rule (policy/conftest/suppliers.rego) with no new machinery,
 and is what the estate already does for the runner image - or declare the gap
 with what it pulls and what would close it.`, where, chart)
 	}
@@ -137,53 +135,6 @@ installs.
 
 A debt recorded against something that is gone is a line nobody can act on and
 a number that makes the gap look larger than it is.`, chart)
-		}
-	}
-}
-
-// Every Flux controller the generated manifest ships is pinned by this overlay.
-//
-// `gotk-components.yaml` is written wholesale by `flux bootstrap` and pins its
-// controllers by TAG. The kustomization beside it replaces each tag with a
-// digest, and the transformer matches on image NAME - so a controller the
-// overlay does not name keeps its tag and runs unpinned.
-//
-// `task render-flux-digests` now reads the tags out of the generated manifest
-// rather than a list, so a new controller is picked up automatically (#104).
-// This is the half that fails when it is not: a controller added upstream, or
-// one renamed, goes from pinned to mutable with the manifest still building and
-// every other check still green.
-func TestEveryFluxControllerIsPinnedHere(t *testing.T) {
-	install, components := fluxObject(t, fluxInstallKind, fluxInstallName)
-	overlay := readRepoFile(t, beside(install, applications.Kustomization))
-
-	shipped := map[string]bool{}
-	for _, m := range regexp.MustCompile(`ghcr\.io/fluxcd/([a-z-]+):v[0-9.]+`).
-		FindAllStringSubmatch(components, -1) {
-		shipped[m[1]] = true
-	}
-
-	const atLeastFourControllers = 4
-	if len(shipped) < atLeastFourControllers {
-		t.Fatalf(`found %d controller image(s) in gotk-components.yaml, and Flux ships
-at least four.
-
-The parse has stopped matching, so a controller running unpinned would be
-invisible to this - which is the same green as everything being pinned.`, len(shipped))
-	}
-
-	for name := range shipped {
-		if !strings.Contains(overlay, "ghcr.io/fluxcd/"+name+"\n") &&
-			!strings.Contains(overlay, "ghcr.io/fluxcd/"+name+" ") {
-			t.Errorf(`gotk-components.yaml ships ghcr.io/fluxcd/%s and the kustomization
-does not pin it.
-
-kustomize's image transformer matches on NAME, so a controller it does not name
-keeps the mutable tag the generated manifest carries - on the component that
-applies everything else in the cluster. The overlay still builds and nothing
-else objects.
-
-Run: task render-flux-digests`, name)
 		}
 	}
 }

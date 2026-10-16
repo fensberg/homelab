@@ -36,7 +36,7 @@ spec:
   interval: 1m
   # No secretRef. The release packages are public, like the images they pin,
   # and a secretRef naming a secret nothing creates fails the source closed
-  # rather than falling back to anonymous access (flux_source_secret_test.go).
+  # rather than falling back to anonymous access (policy/conftest/flux_source_secret.rego).
   url: oci://${RELEASE_REPOSITORY}-valheim-release
   ref:
     tag: "1.0.20-1"

@@ -1,9 +1,0 @@
-guard: TestEveryActionAWorkflowUsesIsOneTheRepositoryAllows
-file: management/estate/repository/workflows.tf
-find: '"pnpm/action-setup@*",'
-replace: '"pnpm/action-set-up@*",'
-mentions: "which it would refuse"
-why: >
-  A workflow that uses an action the list does not hold is refused by the
-  platform after the merge, as a job that never starts. A mistyped or
-  removed entry is the plausible way to get there.

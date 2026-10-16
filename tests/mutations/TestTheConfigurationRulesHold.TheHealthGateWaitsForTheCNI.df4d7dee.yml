@@ -1,0 +1,13 @@
+guard: TestTheConfigurationRulesHold
+file: modules/infrastructure/cluster/talos.tf
+find: "    terraform_data.cilium,"
+replace: "    talos_cluster_kubeconfig.this,"
+mentions: "does not depend on"
+why: >
+  Replaced with a dependency that is already there rather than deleted, so
+  the mutation is the realistic one: somebody tidying a depends_on list and
+  leaving it non-empty. The edge is the entire ordering of the ignition -
+  bootstrap, install the CNI, nodes go Ready, gate passes - and losing it
+  produces no error at all. It produces a ten-minute wait and then a
+  complaint about the cluster's health, ten minutes away from the line that
+  was actually wrong.

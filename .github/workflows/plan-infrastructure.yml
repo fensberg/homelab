@@ -48,7 +48,7 @@ concurrency:
   cancel-in-progress: true
 
 # GitHub's default shell for `run:` is `bash -e {0}`, which has no pipefail.
-# tests/go/repo/pipefail_test.go asserts this is present.
+# policy/conftest/workflow_shape.rego asserts this is present.
 defaults:
   run:
     shell: bash

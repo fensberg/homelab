@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+file: scripts/versions.env
+find: "HADOLINT_VERSION=2.15.1"
+replace: "HADOLINT_SHA256=c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507\nHADOLINT_VERSION=2.15.1"
+mentions: "A checksum does not belong here at all"
+why: >
+  versions.env holds decisions. A hash beside a version can be edited by
+  hand and nothing asks whether it was ever the file's; the lock is
+  written only by ordering. Before #416 this key was exported and
+  consumed, and the lane trusted whatever it said.

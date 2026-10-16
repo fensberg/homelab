@@ -1,0 +1,12 @@
+guard: TestTheConfigurationRulesHold
+file: .github/workflows/pr-validation.yml
+find: "node-version: ${{ env.NODE_VERSION }}"
+replace: 'node-version: "24.19.0"'
+mentions: "restates a pinned version"
+why: >
+  The literal agrees with scripts/versions.env on the day it is written,
+  which is exactly why it is dangerous: nothing reports the day it stops
+  agreeing. Four workflows carried one, including the lane that reaches
+  real hardware, while the pin file's header claimed this test existed.
+  The same drift had already put CI on a different OpenTofu from the one
+  that converged the estate.

@@ -72,8 +72,6 @@ debt:
   - "TF_ENCRYPTION"
   - "ansible-playbook"
   - "does not exist"
-  - "enforce-push"
-  - "enforce-standing-order"
   - "expected an error"
   - "guard-egress"
   - 'json:"IsDir"'
@@ -104,7 +102,6 @@ debt:
   - "no tools: entry in "
   - "north-street-office"
   - "nothing at all"
-  - "proxmox_virtual_environment_vm.talos_cp"
   - "set -euo pipefail"
   - "source_control.repo_url"
   - "source_control.token"
@@ -149,4 +146,3 @@ debt:
   # and the test tier holds every release pin to a digest. A kind is the API's
   # vocabulary rather than a fact this repository decides, and each reader
   # needs only the pins, so neither takes the other's parser.
-  - "OCIRepository"

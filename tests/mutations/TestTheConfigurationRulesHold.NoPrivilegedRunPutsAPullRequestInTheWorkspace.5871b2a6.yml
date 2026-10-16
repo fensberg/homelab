@@ -1,0 +1,23 @@
+guard: TestTheConfigurationRulesHold
+file: .github/workflows/zz-privileged-reset.yml
+create: |
+  name: planted
+  on:
+    issue_comment:
+      types: [created]
+  jobs:
+    planted:
+      runs-on: ubuntu-latest
+      timeout-minutes: 1
+      steps:
+        - name: Put the change where things run
+          run: |
+            git fetch origin refs/pull/1/head
+            git worktree add --detach change FETCH_HEAD
+            git reset --hard FETCH_HEAD
+mentions: 'runs "git reset'
+why: >
+  A worktree is only a boundary while nothing moves the workspace onto the
+  same commit. On a trigger that runs with secrets for anybody's pull
+  request, replacing the workspace puts unreviewed code where every later
+  step and every ./ action executes from.

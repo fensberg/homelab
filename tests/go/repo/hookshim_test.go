@@ -6,8 +6,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 // The supplier guard has to run before pre-commit, not as one of its hooks.
@@ -208,66 +206,6 @@ func TestEverySystemHookIsSkippedInTheFormatLane(t *testing.T) {
 	}
 }
 
-// The gate has to stand in front of the delivery in CI too.
-//
-// `pre-commit run` installs every hook repository before it runs any hook,
-// cloning it and building its environment - which executes setup code. So a
-// guard that is itself a hook reports after the download it exists to prevent,
-// however early it is ordered and whatever fail_fast says. That is why
-// githooks/pre-commit exists on a workstation, and the Format lane had no
-// equivalent: its first act was `pre-commit run`, and seven third-party
-// repositories were fetched and executed on the runner before anything could
-// object.
-//
-// The lane now runs the same program first, with -before-install. Ordering is
-// the entire property - a gate after the delivery is a receipt - and ordering
-// is exactly what a test asserting "the step exists" would not notice.
-func TestTheFormatLaneRefusesASupplierBeforeInstallingAnything(t *testing.T) {
-	body := workflowText(t, "pr-validation.yml")
-
-	gate := strings.Index(body, "guard-deliveries -before-install")
-	if gate < 0 {
-		t.Fatal("the Format lane does not run the supplier gate before installing.\n\n" +
-			"Without it, `pre-commit run` clones and installs every third-party hook " +
-			"repository on the runner before anything can refuse one - so an " +
-			"unapproved supplier added in a pull request executes its setup code " +
-			"before any check says no.")
-	}
-
-	// Everything that fetches or executes third-party code, in the order the
-	// lane would reach it.
-	for _, later := range []string{
-		"scripts/take-delivery.sh",
-		"pre-commit run --all-files",
-	} {
-		at := strings.Index(body, later)
-		if at < 0 {
-			continue
-		}
-		if at < gate {
-			t.Errorf("the Format lane runs %q before the supplier gate.\n\n"+
-				"The gate then reports on code that has already been downloaded and "+
-				"had its setup executed, which is a receipt rather than a refusal.",
-				later)
-		}
-	}
-
-	// The gate needs a toolchain, and the toolchain has to be the pinned one.
-	// A lane that installs its own Go version is the restatement this
-	// repository has already been bitten by once - see scripts/versions.env.
-	//
-	// Either directly, or through $/.github/workflows/setup-go - which is how
-	// every lane sets up Go once action commits are written in one place. That
-	// counts only while the shared action reads the pin itself and offers no
-	// way to pass a version in, because a `go-version` input would hand every
-	// caller the restatement back.
-	if !strings.Contains(body, "${{ env.GO_VERSION }}") && !sharedSetupGoReadsThePin(t, body) {
-		t.Error("the Format lane sets up Go without reading GO_VERSION from " +
-			"scripts/versions.env, so it can validate on a different toolchain " +
-			"than the one the estate pins")
-	}
-}
-
 // formatLaneDeliveries is every name the Format lane passes to
 // scripts/take-delivery.sh before it runs pre-commit.
 func formatLaneDeliveries(t *testing.T, workflow string) map[string]bool {
@@ -301,31 +239,6 @@ func lockedPythonPackage(entry string) (string, bool) {
 		return "", false
 	}
 	return strings.ReplaceAll(m[1], "_", "-"), true
-}
-
-// sharedSetupGoReadsThePin reports whether a workflow sets up Go through the
-// shared action, and that action takes its version only from GO_VERSION.
-func sharedSetupGoReadsThePin(t *testing.T, workflow string) bool {
-	t.Helper()
-	if !strings.Contains(workflow, "uses: $/.github/workflows/setup-go") {
-		return false
-	}
-	body, err := os.ReadFile(filepath.Join(repoRoot(t), ".github", "workflows", "setup-go", "action.yml"))
-	if err != nil {
-		t.Errorf("a workflow uses $/.github/workflows/setup-go, which cannot be read: %v", err)
-		return false
-	}
-	var doc struct {
-		Inputs map[string]any `yaml:"inputs"`
-	}
-	if err := yaml.Unmarshal(body, &doc); err != nil {
-		t.Errorf("parsing .github/workflows/setup-go/action.yml: %v", err)
-		return false
-	}
-	if _, restatable := doc.Inputs["go-version"]; restatable {
-		return false
-	}
-	return strings.Contains(string(body), "go-version: ${{ env.GO_VERSION }}")
 }
 
 // core.hooksPath REPLACES .git/hooks; it does not merge with it.

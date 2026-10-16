@@ -15,7 +15,7 @@ import (
 // There is no "a plan lane declares no environment" check here, and now
 // there does not need to be: plans run on GitHub's runner against the
 // as-built record and name no environment at all (#554), and
-// TestNoPullRequestJobRunsOnTheEstatesRunner holds the reason that is safe.
+// policy/conftest/pull_request_runners.rego holds the reason that is safe.
 // #158 - deployment records accumulating on a lane that never deploys -
 // closes with it.
 

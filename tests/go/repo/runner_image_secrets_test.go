@@ -135,32 +135,6 @@ func dockerBuildCommand(workflow string) (string, bool) {
 	return "", false
 }
 
-// A tag is a pointer somebody can move; the digest is the image. The scale set
-// is what a converge actually runs in, so a mutable reference there means the
-// estate can be changed by a registry push that never touched this repository -
-// which is the one pin that silently is not one.
+// scaleSetImage is the image a scale set's manifest names. That every one is
+// pinned by digest is a configuration rule (policy/conftest/runner_images.rego).
 var scaleSetImage = regexp.MustCompile(`(?m)^\s*image:\s*(\S+)`)
-
-func TestRunnerScaleSetPinsItsImageByDigest(t *testing.T) {
-	// Every set of runners, not the one this was written for.
-	for _, release := range runnerSets(t) {
-		t.Run(release, func(t *testing.T) { runnerImageIsPinned(t, release) })
-	}
-}
-
-// runnerImageIsPinned is that rule for one set of runners, by its release.
-func runnerImageIsPinned(t *testing.T, release string) {
-	_, manifest := fluxObject(t, kindHelmRelease, release)
-	m := scaleSetImage.FindStringSubmatch(manifest)
-	if m == nil {
-		t.Fatal("runner-scale-set.yaml names no image.\n\nWithout one the scale set silently falls back to the chart's default runner, which carries none of the toolchain the program shells out to - a converge would fail at Render with \"1Password CLI not found on PATH\".")
-	}
-	if !strings.Contains(m[1], "@sha256:") {
-		t.Errorf(`the runner scale set image %q is not pinned by digest.
-
-A tag can be moved by anyone who can push to the registry, so the estate would
-be converged by whatever that tag resolves to on the day - a change nothing in
-this repository would record or review. Use image@sha256:...; :latest is for
-humans reading the registry.`, m[1])
-	}
-}

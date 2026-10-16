@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+file: .pre-commit-config.yaml
+find: "        stages: [pre-push]\n        fail_fast: true"
+replace: "        stages: [pre-push]\n        fail_fast: false"
+mentions: "fail_fast"
+why: >
+  Without it a refused push still pays for the whole Go and OpenTofu corpus
+  before printing the refusal, which was measured rather than assumed and
+  is how a guard gets switched off.

@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+file: clusters/core/infrastructure/configs/dashboards/where-the-time-goes.json
+find: "rate(node_pressure_io_waiting_seconds_total[5m])"
+replace: "rate(node_pressure_io_waiting_seconds_total[$__rate_interval])"
+mentions: "arrives blank"
+why: >
+  It is what Grafana's own documentation says to write, and what every
+  dashboard copied from anywhere holds. Here it is substituted away before
+  Grafana sees it, the query is no longer one, and the panel is empty with
+  nothing to say why.

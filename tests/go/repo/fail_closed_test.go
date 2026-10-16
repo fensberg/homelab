@@ -244,10 +244,8 @@ func looksLikeAnErrorCheck(cond ast.Expr) bool {
 // Found by this guard on the day it was written: 25 across 13 files.
 var droppedErrors = map[string]int{
 	"build_artifacts_test.go":    2,
-	"cni_test.go":                1,
 	"duplicates_test.go":         1,
 	"estate_surfaces_test.go":    2,
-	"gitops_test.go":             1,
 	"go_invocation_test.go":      4,
 	"mutation_ledger_test.go":    5,
 	"pinned_endpoints_test.go":   2,
@@ -258,7 +256,7 @@ var droppedErrors = map[string]int{
 }
 
 // The ceiling on the whole debt. It may only fall.
-const droppedErrorCeiling = 26
+const droppedErrorCeiling = 22
 
 func TestNoGuardDropsAnErrorFromItsOwnSubject(t *testing.T) {
 	dir := filepath.Join(repoRoot(t), "tests", "go", "repo")

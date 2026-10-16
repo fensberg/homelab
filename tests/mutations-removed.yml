@@ -22,3 +22,151 @@ removed:
     reason: renamed with its guard, to TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake.an-estate-client.yml, unchanged in what it breaks (2026-10-15)
   - proof: TestThePullRequestRunnerCarriesWhatItsJobsInstallAndNothingThatReachesTheEstate.a-tool-left-out.yml
     reason: renamed with its guard, to TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake.a-tool-left-out.yml (2026-10-15)
+  - proof: TestEveryJobHardensTheRunnerFirst.311d2fd8.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_jobs.rego), as TestTheConfigurationRulesHold.EveryJobHardensTheRunnerFirst.311d2fd8.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryJobHardensTheRunnerFirst.cd49835a.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_jobs.rego), as TestTheConfigurationRulesHold.EveryJobHardensTheRunnerFirst.cd49835a.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryCheckoutRefusesToPersistCredentials.43fec9b5.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_jobs.rego), as TestTheConfigurationRulesHold.EveryCheckoutRefusesToPersistCredentials.43fec9b5.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryCheckoutRefusesToPersistCredentials.4e3c94c3.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_jobs.rego), as TestTheConfigurationRulesHold.EveryCheckoutRefusesToPersistCredentials.4e3c94c3.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryActionCommitIsWrittenOnce.62931efe.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/action_commits.rego), as TestTheConfigurationRulesHold.EveryActionCommitIsWrittenOnce.62931efe.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryActionCommitIsWrittenOnce.d147cc13.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/action_commits.rego), as TestTheConfigurationRulesHold.EveryActionCommitIsWrittenOnce.d147cc13.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryActionAWorkflowUsesIsOneTheRepositoryAllows.22519d5c.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/allowed_actions.rego), as TestTheConfigurationRulesHold.EveryActionAWorkflowUsesIsOneTheRepositoryAllows.22519d5c.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryActionAWorkflowUsesIsOneTheRepositoryAllows.a8df3df7.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/allowed_actions.rego), as TestTheConfigurationRulesHold.EveryActionAWorkflowUsesIsOneTheRepositoryAllows.a8df3df7.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryAppKeyAWorkflowHoldsIsProvedByThePatrol.53d8e20e.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/app_keys.rego), as TestTheConfigurationRulesHold.EveryAppKeyAWorkflowHoldsIsProvedByThePatrol.53d8e20e.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryBypassMergeIsJudgedWhereItMerges.68ad61ef.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/bypass_merge.rego), as TestTheConfigurationRulesHold.EveryBypassMergeIsJudgedWhereItMerges.68ad61ef.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryBypassMergeIsJudgedWhereItMerges.e9a2af9d.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/bypass_merge.rego), as TestTheConfigurationRulesHold.EveryBypassMergeIsJudgedWhereItMerges.e9a2af9d.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryConcurrencyGroupNamesWhatSupersedesIt.17b7079f.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_shape.rego), as TestTheConfigurationRulesHold.EveryConcurrencyGroupNamesWhatSupersedesIt.17b7079f.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestAStepThatRunsTheContractorHandsItTheTokenItFetchesAReleaseWith.b28759d6.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_shape.rego), as TestTheConfigurationRulesHold.AStepThatRunsTheContractorHandsItTheTokenItFetchesAReleaseWith.b28759d6.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNoWorkflowStepReadsTMPDIR.d1ff8fbc.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_shape.rego), as TestTheConfigurationRulesHold.NoWorkflowStepReadsTMPDIR.d1ff8fbc.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryAppTokenInputIsFedTheValueItsNameSays.837eaee1.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_shape.rego), as TestTheConfigurationRulesHold.EveryAppTokenInputIsFedTheValueItsNameSays.837eaee1.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestAWorkflowThatTakesInputsCanPublishNothing.90562b7d.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_trust.rego), as TestTheConfigurationRulesHold.AWorkflowThatTakesInputsCanPublishNothing.90562b7d.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestAWorkflowStartedByAnotherTakesNothingFromItButItsOutcome.1995c97b.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_trust.rego), as TestTheConfigurationRulesHold.AWorkflowStartedByAnotherTakesNothingFromItButItsOutcome.1995c97b.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNoCheckoutCanBePointedAtOtherCode.2610a6a8.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_trust.rego), as TestTheConfigurationRulesHold.NoCheckoutCanBePointedAtOtherCode.2610a6a8.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNoPrivilegedRunPutsAPullRequestInTheWorkspace.5871b2a6.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_trust.rego), as TestTheConfigurationRulesHold.NoPrivilegedRunPutsAPullRequestInTheWorkspace.5871b2a6.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNoPrivilegedRunPutsAPullRequestInTheWorkspace.e1d9211a.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_trust.rego), as TestTheConfigurationRulesHold.NoPrivilegedRunPutsAPullRequestInTheWorkspace.e1d9211a.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryDependabotEcosystemGroupsItsUpdates.75185ca7.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/dependabot.rego), as TestTheConfigurationRulesHold.EveryDependabotEcosystemGroupsItsUpdates.75185ca7.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNoPullRequestJobRunsOnTheEstatesRunner.df02785d.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/pull_request_runners.rego), as TestTheConfigurationRulesHold.NoPullRequestJobRunsOnTheEstatesRunner.df02785d.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheJobThatRunsABranchsCodeCannotWrite.291ee04e.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/plan_writer.rego), as TestTheConfigurationRulesHold.TheJobThatRunsABranchsCodeCannotWrite.291ee04e.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestAWidenedKeyIsAskedAboutInItsOwnConversation.9aee1aec.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/sensitive_paths.rego), as TestTheConfigurationRulesHold.AWidenedKeyIsAskedAboutInItsOwnConversation.9aee1aec.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheClusterIsAskedAboutEveryScheduledWorkflow.6fd80bb6.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/scheduled_workflows.rego), as TestTheConfigurationRulesHold.TheClusterIsAskedAboutEveryScheduledWorkflow.6fd80bb6.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheClusterIsAskedAboutEveryScheduledWorkflow.851bd13a.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/scheduled_workflows.rego), as TestTheConfigurationRulesHold.TheClusterIsAskedAboutEveryScheduledWorkflow.851bd13a.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryScheduledWorkflowHasADeadlineForHowOftenItIsAskedFor.unnamed.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/scheduled_workflows.rego), as TestTheConfigurationRulesHold.EveryScheduledWorkflowHasADeadlineForHowOftenItIsAskedFor.unnamed.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryScheduledWorkflowHasADeadlineForHowOftenItIsAskedFor.wrong-deadline.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/scheduled_workflows.rego), as TestTheConfigurationRulesHold.EveryScheduledWorkflowHasADeadlineForHowOftenItIsAskedFor.wrong-deadline.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryCheckAMergeIsHeldToIsAJobThatRuns.87620709.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/required_checks.rego), as TestTheConfigurationRulesHold.EveryCheckAMergeIsHeldToIsAJobThatRuns.87620709.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryReleaseIsPinnedByDigest.fad87b52.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/releases.rego), as TestTheConfigurationRulesHold.EveryReleaseIsPinnedByDigest.fad87b52.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryWorkerIsCountedAgainstTheFreePlan.3a01008f.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/free_plan.rego), as TestTheConfigurationRulesHold.EveryWorkerIsCountedAgainstTheFreePlan.3a01008f.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestAnImageThatInstallsUnpinnedPackagesStartsFromAPinnedBase.5f5516a0.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/image_bases.rego), as TestTheConfigurationRulesHold.AnImageThatInstallsUnpinnedPackagesStartsFromAPinnedBase.5f5516a0.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestScrapingTheControlPlaneChangesBothHalvesTogether.9f23028d.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/control_plane_metrics.rego), as TestTheConfigurationRulesHold.ScrapingTheControlPlaneChangesBothHalvesTogether.9f23028d.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestASiteRingsTheWatchmanAsOftenAsItLooksRound.10a9421b.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/heartbeat_cadence.rego), as TestTheConfigurationRulesHold.ASiteRingsTheWatchmanAsOftenAsItLooksRound.10a9421b.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestASiteRingsTheWatchmanAsOftenAsItLooksRound.8a9fbda4.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/heartbeat_cadence.rego), as TestTheConfigurationRulesHold.ASiteRingsTheWatchmanAsOftenAsItLooksRound.8a9fbda4.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryHelmReleaseRetriesRatherThanStalling.7802eeb9.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/helmrelease_remediation.rego), as TestTheConfigurationRulesHold.EveryHelmReleaseRetriesRatherThanStalling.7802eeb9.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestFluxSourcesOnlyNameSecretsThisRepositoryCreates.ab3aac71.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/flux_source_secret.rego), as TestTheConfigurationRulesHold.FluxSourcesOnlyNameSecretsThisRepositoryCreates.ab3aac71.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNothingADeviceReachesIsServedInTheClear.private-access.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/served_in_the_clear.rego), as TestTheConfigurationRulesHold.NothingADeviceReachesIsServedInTheClear.private-access.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryDashboardReachesGrafanaAndSaysWhatItIsFor.a-variable.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/dashboards.rego), as TestTheConfigurationRulesHold.EveryDashboardReachesGrafanaAndSaysWhatItIsFor.a-variable.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryDashboardReachesGrafanaAndSaysWhatItIsFor.not-listed.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/dashboards.rego), as TestTheConfigurationRulesHold.EveryDashboardReachesGrafanaAndSaysWhatItIsFor.not-listed.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheNetworkDoesNotRouteTheWeb.the-gateway-switch.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/one_owner_per_layer.rego), as TestTheConfigurationRulesHold.TheNetworkDoesNotRouteTheWeb.the-gateway-switch.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheFrontDoorGetsNoCertificates.a-resolver.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/one_owner_per_layer.rego), as TestTheConfigurationRulesHold.TheFrontDoorGetsNoCertificates.a-resolver.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryAlertSaysWhatToTryFirst.a-step-left-out.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/alerts.rego), as TestTheConfigurationRulesHold.EveryAlertSaysWhatToTryFirst.a-step-left-out.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheTaskfileDiscoversModulesRatherThanListingThem.f1dfa0c1.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/taskfile_modules.rego), as TestTheConfigurationRulesHold.TheTaskfileDiscoversModulesRatherThanListingThem.f1dfa0c1.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheCoverageShimDiesWithTheWorkflowStepThatNeedsIt.97484d98.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/coverage_shim.rego), as TestTheConfigurationRulesHold.TheCoverageShimDiesWithTheWorkflowStepThatNeedsIt.97484d98.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNothingIsBuiltOutsideTheToolshed.8790f9ba.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/toolshed.rego), as TestTheConfigurationRulesHold.NothingIsBuiltOutsideTheToolshed.8790f9ba.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestOnlyTheExpediteDutyRunsUnderItsCredential.36b9af0b.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/expedite_duty.rego), as TestTheConfigurationRulesHold.OnlyTheExpediteDutyRunsUnderItsCredential.36b9af0b.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestOnlyTheExpediteDutyRunsUnderItsCredential.ab64ec83.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/expedite_duty.rego), as TestTheConfigurationRulesHold.OnlyTheExpediteDutyRunsUnderItsCredential.ab64ec83.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryFluxControllerIsPinnedHere.bb76d275.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/flux_controllers.rego), as TestTheConfigurationRulesHold.EveryFluxControllerIsPinnedHere.bb76d275.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestPlainGitPushIsRefusedByAHook.f793a686.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/push_hooks.rego), as TestTheConfigurationRulesHold.PlainGitPushIsRefusedByAHook.f793a686.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryTaskAHookInvokesIsInvokable.344325e0.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/push_hooks.rego), as TestTheConfigurationRulesHold.EveryTaskAHookInvokesIsInvokable.344325e0.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestPoolMembershipNamesTheFunctionInTheResourceName.46887006.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/pools.rego), as TestTheConfigurationRulesHold.PoolMembershipNamesTheFunctionInTheResourceName.46887006.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestPoolMembershipDependsOnTheMachineItPlaces.4b847ebd.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/pools.rego), as TestTheConfigurationRulesHold.PoolMembershipDependsOnTheMachineItPlaces.4b847ebd.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheHealthGateWaitsForTheCNI.df4d7dee.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/cni.rego), as TestTheConfigurationRulesHold.TheHealthGateWaitsForTheCNI.df4d7dee.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheCNIReachesEveryNodeIncludingTaintedOnes.f7388667.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/cni.rego), as TestTheConfigurationRulesHold.TheCNIReachesEveryNodeIncludingTaintedOnes.f7388667.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestThePodMTUIsPinnedRatherThanDetected.b04f1e43.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/cni.rego), as TestTheConfigurationRulesHold.ThePodMTUIsPinnedRatherThanDetected.b04f1e43.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestCiliumTakesItsPodAddressesFromKubernetes.aefcc495.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/cni.rego), as TestTheConfigurationRulesHold.CiliumTakesItsPodAddressesFromKubernetes.aefcc495.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestAResourceOutsideAModuleIsDeclared.2053de0c.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/custom_blocks.rego), as TestTheConfigurationRulesHold.AResourceOutsideAModuleIsDeclared.2053de0c.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheFormatLaneRefusesASupplierBeforeInstallingAnything.535f3647.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/format_lane.rego), as TestTheConfigurationRulesHold.TheFormatLaneRefusesASupplierBeforeInstallingAnything.535f3647.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheFormatLaneRefusesASupplierBeforeInstallingAnything.7f819d4f.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/format_lane.rego), as TestTheConfigurationRulesHold.TheFormatLaneRefusesASupplierBeforeInstallingAnything.7f819d4f.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryPinnedVersionCanActuallyBeExported.4fccfd88.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/version_pins.rego), as TestTheConfigurationRulesHold.EveryPinnedVersionCanActuallyBeExported.4fccfd88.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTalosctlPinTracksTheClusterVersion.28ffaf5d.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/versions.rego), as TestTheConfigurationRulesHold.TalosctlPinTracksTheClusterVersion.28ffaf5d.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestKubectlPinTracksTheClusterVersion.04baafd4.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/versions.rego), as TestTheConfigurationRulesHold.KubectlPinTracksTheClusterVersion.04baafd4.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNoWorkflowRestatesAPinnedVersion.9898596c.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/versions.rego), as TestTheConfigurationRulesHold.NoWorkflowRestatesAPinnedVersion.9898596c.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNoPinIsReadAsConfigurationByTheToolItPins.420541e8.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/versions.rego), as TestTheConfigurationRulesHold.NoPinIsReadAsConfigurationByTheToolItPins.420541e8.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheSchedulerAChangeIsTriedWithIsTheOneASiteRuns.f4101645.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/versions.rego), as TestTheConfigurationRulesHold.TheSchedulerAChangeIsTriedWithIsTheOneASiteRuns.f4101645.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEverySupplierGivesAReason.a73cbae5.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/suppliers.rego), as TestTheConfigurationRulesHold.EverySupplierGivesAReason.a73cbae5.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryCommitHookIsAnApprovedSupplier.20942047.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/suppliers.rego), as TestTheConfigurationRulesHold.EveryCommitHookIsAnApprovedSupplier.20942047.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryProviderIsADeclaredSupplier.e059c08e.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/suppliers.rego), as TestTheConfigurationRulesHold.EveryProviderIsADeclaredSupplier.e059c08e.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryJobOnTheEstatesRunnersNamesItsSite.1091538b.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/runners.rego), as TestTheConfigurationRulesHold.EveryJobOnTheEstatesRunnersNamesItsSite.1091538b.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryJobOnTheEstatesRunnersNamesItsSite.fb7de3e3.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/runners.rego), as TestTheConfigurationRulesHold.EveryJobOnTheEstatesRunnersNamesItsSite.fb7de3e3.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestRunnerPodsCannotScheduleOntoAControlPlane.14806872.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/runners.rego), as TestTheConfigurationRulesHold.RunnerPodsCannotScheduleOntoAControlPlane.14806872.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestRunnerPodsAreNotBestEffort.12f6e271.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/runners.rego), as TestTheConfigurationRulesHold.RunnerPodsAreNotBestEffort.12f6e271.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheDescribingStepRunsWhetherOrNotThisRunPublished.2a24d17d.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/fabricator_describing.rego), as TestTheConfigurationRulesHold.TheDescribingStepRunsWhetherOrNotThisRunPublished.2a24d17d.yml, unchanged in what it breaks (2026-10-16)

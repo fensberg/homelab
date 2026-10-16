@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+file: .github/workflows/plan-infrastructure.yml
+find: "    # that converges. It runs in a pool on the untrusted worker.\n    runs-on: pr-builds-${{ vars.pull_request_runners_site }}\n"
+replace: "    # that converges. It runs in a pool on the untrusted worker.\n    runs-on: homelab-site0\n"
+mentions: "runs pull-request code on homelab-site0"
+why: >
+  Moving the plan back onto the estate's runner reads as a speed-up - it
+  already holds the providers. It hands every branch pushed to this
+  repository the estate's network and its runner, with no reviewer left to
+  stop it (#554).

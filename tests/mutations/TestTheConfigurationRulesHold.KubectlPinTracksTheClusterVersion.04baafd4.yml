@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+file: scripts/versions.env
+find: "KUBECTL_VERSION=v1.36.4"
+replace: "KUBECTL_VERSION=v1.31.1"
+mentions: "Kubernetes supports a client within one minor"
+why: >
+  kubectl supports one minor of skew from the API server. Three numbers
+  disagreed at once here - the cluster, the pin, and what the installer
+  actually fetched - and no two were within one.

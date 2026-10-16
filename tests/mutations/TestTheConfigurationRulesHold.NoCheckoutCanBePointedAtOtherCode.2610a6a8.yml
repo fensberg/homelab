@@ -1,0 +1,11 @@
+guard: TestTheConfigurationRulesHold
+file: .github/workflows/checkout/action.yml
+find: "persist-credentials: false"
+replace: "persist-credentials: false\n        repository: someone/else"
+mentions: 'gives actions/checkout "repository"'
+why: >
+  The clerk checked out a pull request's own code in a run holding its
+  App's private key, then built and ran it (#409). The shared checkout's
+  ref input is what made that reusable. Allowing only how deep to fetch -
+  not refusing ref by name - is what stops the same hole returning as
+  repository, or as whatever input checkout grows next.

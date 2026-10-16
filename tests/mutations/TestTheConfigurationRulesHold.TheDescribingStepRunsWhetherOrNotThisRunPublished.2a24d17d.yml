@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+file: .github/workflows/fabricator.yml
+find: "          VERSION: ${{ steps.number.outputs.version || steps.reuse.outputs.version }}"
+replace: "          VERSION: ${{ steps.number.outputs.version }}"
+mentions: "is handed the version only by"
+why: >
+  A version that was published and could not be described is described
+  by the next run to find it. Handed the version only by the run that
+  numbered it, that next run has none, and the release a site's pull
+  request shows is never written.

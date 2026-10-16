@@ -1,8 +1,8 @@
 guard: TestEveryGuardThatDiscoversItsSubjectAssertsItFoundSome
-file: tests/go/repo/suppliers_test.go
+file: tests/go/repo/chart_images_test.go
 reads_source: true
-find: "\t\tt.Fatal(\"no image references found under clusters/, so this test proves nothing\")"
-replace: "\t\t_ = checked // the floor used to be asserted here"
+find: "\tif len(charts) < atLeastFourCharts {"
+replace: "\tif false && len(charts) < atLeastFourCharts { // the floor used to be asserted here"
 mentions: "never assert they found any"
 why: >
   This is the first entry to mutate Go source, and it is legitimate for a
@@ -15,6 +15,6 @@ why: >
   is fine" and "walked nothing and said the same" - three defects in this
   estate came from that distinction being invisible - and a floor is
   exactly the kind of line that looks like dead weight to somebody tidying
-  up. suppliers_test.go is the right subject because its floor guards the
-  supply chain: without it, an image walk that stops matching reports every
-  image approved and digest-pinned.
+  up. chart_images_test.go is the right subject because its floor guards
+  the supply chain: without it, a walk for charts that stops matching
+  reports every chart's images governed.

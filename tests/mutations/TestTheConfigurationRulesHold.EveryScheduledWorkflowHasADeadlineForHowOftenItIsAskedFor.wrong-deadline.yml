@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+file: clusters/core/infrastructure/configs/scheduled-workflows.yaml
+find: 'instance=~"integration-tests.yml|pr-validation.yml|site-sweep.yml"'
+replace: 'instance=~"integration-tests.yml|pr-validation.yml|site-sweep.yml|security-patrol.yml"'
+mentions: "either never late or always late"
+why: >
+  Putting a workflow under the longer deadline is what quiets an alert that
+  fires too often, and it reads as tuning. A patrol asked for every hour and
+  held to thirty hours can be gone for a day before anybody is told.

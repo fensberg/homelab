@@ -37,7 +37,7 @@
 # Read this before trusting it.
 #
 #   Catches:      an unapproved registry or an unpinned image COMMITTED to this
-#                 repository. tests/go/repo/suppliers_test.go fails the build.
+#                 repository. policy/conftest/suppliers.rego fails the build.
 #   Catches:      a workflow inventing its own egress endpoint instead of
 #                 declaring it here.
 #   DOES NOT      a command pasted into a terminal. Nothing in CI can see that.
@@ -54,8 +54,8 @@
 # software with the same name, and nothing in git records that it moved.
 #
 # WHAT THIS GOVERNS, AND WHAT IT DOES NOT. This covers image references WRITTEN
-# IN THIS REPOSITORY. `TestClusterImagesComeFromApprovedRegistriesAndArePinned`
-# walks clusters/** and modules/** and checks what it finds spelled out there.
+# IN THIS REPOSITORY. The image rule in policy/conftest/suppliers.rego walks
+# clusters/** and checks what it finds spelled out there.
 #
 # It does not cover an image a Helm chart pulls by its own default, because
 # there is no reference here to read - the chart carries it. That gap is not
@@ -401,7 +401,7 @@ charts:
 # arrangement as a container image pinned by digest at its point of use. This
 # file answers the other half: who the estate takes delivery from.
 #
-# tests/go/repo/suppliers_test.go asserts the two agree in both directions, so
+# policy/conftest/suppliers.rego asserts the two agree in both directions, so
 # a provider cannot be added in one place and be invisible in the other.
 providers:
   - source: bpg/proxmox
@@ -1320,6 +1320,16 @@ tools:
       be reached when a cluster cannot (workstation/tunnel.sh). Taken as a
       single static binary from the publisher's own release, the version the
       clusters run, and installed only if its SHA256 matches the lock.
+  - source: open-policy-agent/conftest
+    version: CONFTEST_VERSION
+    fetch: https://github.com/open-policy-agent/conftest/releases/download/v{version}/conftest_{version}_Linux_x86_64.tar.gz
+    reason: >-
+      Runs the repository's configuration rules (policy/conftest): Open Policy
+      Agent's Rego over the parsed workflows, manifests, OpenTofu, the
+      suppliers list, the pins and the other configuration this estate keeps.
+      The industry's policy-as-code tool for configuration, chosen on
+      2026-10-16 over guards that matched text in Go; each rule carries its own
+      tests, run by `conftest verify`.
   - source: kubernetes-sigs/kwok
     version: KWOK_VERSION
     binary: kwokctl
@@ -1536,7 +1546,7 @@ tools:
 # was is what surfaced this.
 #
 # A hook must be listed here AND pinned by rev in .pre-commit-config.yaml.
-# tests/go/repo/suppliers_test.go fails the build when one is not.
+# policy/conftest/suppliers.rego fails the build when one is not.
 #
 # Audit the cache against this list with:
 #   for d in ~/.cache/pre-commit/repo*/; do git -C "$d" remote get-url origin; done
