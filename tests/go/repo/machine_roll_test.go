@@ -14,6 +14,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"homelab/details/applications"
+	"homelab/details/capacity"
+	"homelab/details/flux"
 )
 
 // The machine roll, run for real against a cluster that holds no machines.
@@ -103,24 +107,31 @@ func (w *rollWorld) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	// As the real ones answer: a client that reads a body only when it is
 	// said to be JSON must be told so.
 	rw.Header().Set("Content-Type", "application/json")
+	// GitHub's paths are read by their last parts: the workflow's runs and
+	// dispatches, a run, and a run's jobs.
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	last, before := parts[len(parts)-1], ""
+	if len(parts) > 1 {
+		before = parts[len(parts)-2]
+	}
 	switch {
 	case r.URL.Path == "/api/v1/query":
 		fmt.Fprintf(rw, `{"status": "success", "data": {"resultType": "vector", "result": %s}}`, w.c.alerts)
 	case r.URL.Path == "/api/v2/silences" && r.Method == http.MethodPost:
 		w.silenced++
 		fmt.Fprintf(rw, `{"silenceID": "s-%d"}`, w.silenced)
-	case strings.HasPrefix(r.URL.Path, "/api/v2/silence/") && r.Method == http.MethodDelete:
+	case before == "silence" && r.Method == http.MethodDelete:
 		w.unsilenced++
-	case strings.HasSuffix(r.URL.Path, "/actions/workflows/integration-tests.yml/dispatches"):
+	case last == "dispatches":
 		w.dispatched++
 		rw.WriteHeader(http.StatusNoContent)
-	case strings.HasSuffix(r.URL.Path, "/actions/workflows/integration-tests.yml/runs"):
+	case last == "runs" && before != "actions":
 		fmt.Fprintf(rw, `{"workflow_runs": [{"id": 9, "url": "%s/run/9"}]}`, url)
-	case r.URL.Path == "/run/9":
+	case before == "run":
 		fmt.Fprint(rw, `{"status": "completed", "conclusion": "success", "html_url": "https://example.invalid/run/9"}`)
-	case strings.HasSuffix(r.URL.Path, "/actions/runs"):
+	case last == "runs":
 		fmt.Fprintf(rw, `{"workflow_runs": [{"id": 1, "jobs_url": "%s/jobs/1"}]}`, url)
-	case r.URL.Path == "/jobs/1":
+	case before == "jobs":
 		fmt.Fprintf(rw, `{"jobs": %s}`, w.c.jobs)
 	default:
 		http.NotFound(rw, r)
@@ -133,68 +144,62 @@ type rollSite struct {
 	env             []string
 }
 
+// rollKinds are the kinds the roll reads that a bare API server does not
+// have: Flux's layers and the database's operator. Each is defined to hold
+// anything; its plural is its kind's, as Kubernetes makes them.
+var rollKinds = []struct{ group, version, kind string }{
+	{"kustomize.toolkit.fluxcd.io", "v1", flux.Kustomization},
+	{"helm.toolkit.fluxcd.io", "v2", "HelmRelease"},
+	{"postgresql.cnpg.io", "v1", "Cluster"},
+}
+
+func resourceOf(group, kind string) string { return strings.ToLower(kind) + "s." + group }
+
 func startRollSite(t *testing.T) *rollSite {
 	t.Helper()
 	heavy(t, "starts a cluster and runs ansible-playbook against it")
-	for _, program := range []string{"kwokctl", "etcd", "kube-apiserver", "kubectl", "ansible-playbook"} {
+	for _, program := range []string{capacity.TrialStarter, capacity.TrialStore, capacity.APIServer, rollAsker, "ansible-playbook"} {
 		if _, err := exec.LookPath(program); err != nil {
 			t.Fatalf("%s is not on PATH; take delivery of it with scripts/take-delivery.sh", program)
 		}
 	}
-	dir := t.TempDir()
-	s := &rollSite{dir: dir, kubeconfig: filepath.Join(dir, "kubeconfig")}
-	s.env = []string{"KWOK_WORKDIR=" + filepath.Join(dir, "work"), "KUBECONFIG=" + s.kubeconfig}
-	name := "roll-" + filepath.Base(dir)
-	if len(name) > 40 {
-		name = name[:40]
+	trial, err := capacity.StartTrial(capacity.APIServer)
+	if err != nil {
+		t.Fatal(err)
 	}
-	name = strings.ToLower(strings.Trim(name, "-"))
-	etcd, _ := exec.LookPath("etcd")
-	apiServer, _ := exec.LookPath("kube-apiserver")
-	s.run(t, "kwokctl", "create", "cluster", "--name", name, "--runtime", "binary",
-		"--components", "etcd,kube-apiserver", "--kubeconfig", s.kubeconfig,
-		"--etcd-binary", etcd, "--kube-apiserver-binary", apiServer)
-	t.Cleanup(func() {
-		cmd := exec.Command("kwokctl", "delete", "cluster", "--name", name)
-		cmd.Env = append(os.Environ(), s.env...)
-		_ = cmd.Run()
-	})
-	// The kinds the roll reads that a bare API server does not have: Flux's
-	// layers and the database's operator, as definitions that hold anything.
-	for _, crd := range [][3]string{
-		{"kustomize.toolkit.fluxcd.io", "kustomizations", "Kustomization"},
-		{"helm.toolkit.fluxcd.io", "helmreleases", "HelmRelease"},
-		{"postgresql.cnpg.io", "clusters", "Cluster"},
-	} {
-		version := map[string]string{"kustomize.toolkit.fluxcd.io": "v1", "helm.toolkit.fluxcd.io": "v2", "postgresql.cnpg.io": "v1"}[crd[0]]
+	t.Cleanup(trial.Stop)
+	s := &rollSite{dir: trial.Dir, kubeconfig: trial.Kubeconfig, env: trial.Env}
+	wait := []string{"wait", "--for=condition=Established", "--timeout=60s"}
+	for _, k := range rollKinds {
 		s.apply(t, fmt.Sprintf(`{"apiVersion": "apiextensions.k8s.io/v1", "kind": "CustomResourceDefinition",
-			"metadata": {"name": "%s.%s"},
+			"metadata": {"name": "%s"},
 			"spec": {"group": "%s", "scope": "Namespaced",
-				"names": {"plural": "%s", "singular": "%s", "kind": "%s"},
+				"names": {"plural": "%ss", "singular": "%s", "kind": "%s"},
 				"versions": [{"name": "%s", "served": true, "storage": true,
 					"schema": {"openAPIV3Schema": {"type": "object", "x-kubernetes-preserve-unknown-fields": true}}}]}}`,
-			crd[1], crd[0], crd[0], crd[1], strings.ToLower(crd[2]), crd[2], version))
+			resourceOf(k.group, k.kind), k.group, strings.ToLower(k.kind), strings.ToLower(k.kind), k.kind, k.version))
+		wait = append(wait, "crd/"+resourceOf(k.group, k.kind))
 	}
-	s.run(t, "kubectl", "wait", "--for=condition=Established", "--timeout=60s",
-		"crd/kustomizations.kustomize.toolkit.fluxcd.io", "crd/helmreleases.helm.toolkit.fluxcd.io", "crd/clusters.postgresql.cnpg.io")
+	s.kubectl(t, wait...)
 	return s
 }
 
-func (s *rollSite) run(t *testing.T, program string, args ...string) string {
+// rollAsker is what the test asks the cluster with.
+const rollAsker = "kubectl"
+
+func (s *rollSite) kubectl(t *testing.T, args ...string) string {
 	t.Helper()
-	cmd := exec.Command(program, args...)
-	cmd.Env = append(os.Environ(), s.env...)
-	out, err := cmd.CombinedOutput()
+	out, err := s.try(args...)
 	if err != nil {
-		t.Fatalf("%s %s: %v\n%s", program, strings.Join(args, " "), err, out)
+		t.Fatalf("kubectl %s: %v\n%s", strings.Join(args, " "), err, out)
 	}
-	return string(out)
+	return out
 }
 
-// try runs a program against the cluster and gives its error rather than
-// failing the test: for asking whether something is there.
-func (s *rollSite) try(program string, args ...string) (string, error) {
-	cmd := exec.Command(program, args...)
+// try asks the cluster and gives the error rather than failing the test: for
+// asking whether something is there.
+func (s *rollSite) try(args ...string) (string, error) {
+	cmd := exec.Command(rollAsker, args...)
 	cmd.Env = append(os.Environ(), s.env...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
@@ -206,33 +211,36 @@ func (s *rollSite) apply(t *testing.T, object string) {
 	if err := os.WriteFile(f, []byte(object), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s.run(t, "kubectl", "create", "-f", f)
+	s.kubectl(t, "create", "-f", f)
 }
 
 // prepare empties the cluster and builds the case's site in it.
 func (s *rollSite) prepare(t *testing.T, c rollCase) {
 	t.Helper()
-	s.run(t, "kubectl", "delete", "nodes", "--all", "--wait=false")
-	s.run(t, "kubectl", "delete", "configmap", "machine-image", "-n", "kube-system", "--ignore-not-found")
-	s.run(t, "kubectl", "delete", "clusters.postgresql.cnpg.io", "--all", "-A")
-	s.run(t, "kubectl", "delete", "pods", "--all", "-A", "--force", "--grace-period=0")
-	s.run(t, "kubectl", "delete", "events", "--all", "-n", "default")
+	s.kubectl(t, "delete", "nodes", "--all", "--wait=false")
+	s.kubectl(t, "delete", "configmap", "machine-image", "-n", "kube-system", "--ignore-not-found")
+	s.kubectl(t, "delete", resourceOf(rollKinds[2].group, rollKinds[2].kind), "--all", "-A")
+	s.kubectl(t, "delete", "pods", "--all", "-A", "--force", "--grace-period=0")
+	s.kubectl(t, "delete", "events", "--all", "-n", "default")
 
 	for _, m := range c.machines {
-		labels := map[string]string{"kubernetes.io/hostname": m.name}
+		labels := map[string]string{capacity.HostnameLabel: m.name}
 		if m.controlPlane {
-			labels["node-role.kubernetes.io/control-plane"] = ""
+			labels[capacity.ControlPlaneLabel] = ""
 		}
 		if m.untrusted {
-			labels["untrusted-zone"] = "dmz"
+			labels[capacity.UntrustedZone] = "dmz"
 		}
-		l, _ := json.Marshal(labels)
+		l, err := json.Marshal(labels)
+		if err != nil {
+			t.Fatal(err)
+		}
 		s.apply(t, fmt.Sprintf(`{"apiVersion": "v1", "kind": "Node", "metadata": {"name": "%s", "labels": %s}}`, m.name, l))
 		ready := "True"
 		if !m.ready {
 			ready = "False"
 		}
-		s.run(t, "kubectl", "patch", "node", m.name, "--subresource=status", "--type=merge", "-p",
+		s.kubectl(t, "patch", "node", m.name, "--subresource=status", "--type=merge", "-p",
 			fmt.Sprintf(`{"status": {"addresses": [{"type": "InternalIP", "address": "%s"}],
 				"conditions": [{"type": "Ready", "status": "%s", "reason": "Given", "message": "given",
 					"lastHeartbeatTime": "2026-01-01T00:00:00Z", "lastTransitionTime": "2026-01-01T00:00:00Z"}],
@@ -240,21 +248,24 @@ func (s *rollSite) prepare(t *testing.T, c rollCase) {
 					"kernelVersion": "6", "containerRuntimeVersion": "containerd://2", "kubeletVersion": "v1.36.3",
 					"kubeProxyVersion": "", "operatingSystem": "linux", "architecture": "amd64"}}}`, m.address, ready, m.version))
 	}
-	data, _ := json.Marshal(c.want)
+	data, err := json.Marshal(c.want)
+	if err != nil {
+		t.Fatal(err)
+	}
 	s.apply(t, fmt.Sprintf(`{"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "machine-image", "namespace": "kube-system"}, "data": %s}`, data))
 	s.apply(t, fmt.Sprintf(`{"apiVersion": "postgresql.cnpg.io/v1", "kind": "Cluster", "metadata": {"name": "state", "namespace": "default"},
 		"spec": {"instances": %d}, "status": {"readyInstances": %d}}`, c.instances, c.instances))
 	if c.backup {
 		// Made once and kept: a bare API server has no controller to finish
 		// deleting a namespace, so one deleted between cases never goes.
-		if _, err := s.try("kubectl", "get", "namespace", "given"); err != nil {
+		if strings.TrimSpace(s.kubectl(t, "get", "namespace", "given", "--ignore-not-found", "-o", "name")) == "" {
 			s.apply(t, `{"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "given"}}`)
 			// Nor one to give it the account every pod is admitted under.
 			s.apply(t, `{"apiVersion": "v1", "kind": "ServiceAccount", "metadata": {"name": "default", "namespace": "given"}}`)
 		}
 		s.apply(t, `{"apiVersion": "v1", "kind": "Pod", "metadata": {"name": "given-0", "namespace": "given", "labels": {"app": "given"}},
 			"spec": {"nodeName": "wk-202", "containers": [{"name": "saver", "image": "example.invalid/saver"}]}}`)
-		s.run(t, "kubectl", "patch", "pod", "given-0", "-n", "given", "--subresource=status", "--type=merge", "-p",
+		s.kubectl(t, "patch", "pod", "given-0", "-n", "given", "--subresource=status", "--type=merge", "-p",
 			`{"status": {"phase": "Running"}}`)
 	}
 }
@@ -287,7 +298,7 @@ func (s *rollSite) roll(t *testing.T, c rollCase) rollResult {
 
 	tree := filepath.Join(t.TempDir(), "tree")
 	play := copyRollPlay(t, filepath.Join(tree, "management", "roll"))
-	app := filepath.Join(tree, "modules", "applications", "given")
+	app := filepath.Join(tree, filepath.FromSlash(applications.Dir), "given")
 	if err := os.MkdirAll(app, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +307,7 @@ func (s *rollSite) roll(t *testing.T, c rollCase) rollResult {
 		declaration = `{"before_teardown": {"what": "the data", "selector": "app=given", "container": "saver", "command": ["save", "now"]}}`
 	}
 	if !c.noApps {
-		if err := os.WriteFile(filepath.Join(app, "application.json"), []byte(declaration), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(app, applications.Declaration), []byte(declaration), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -418,7 +429,7 @@ func copyRollPlay(t *testing.T, dest string) string {
 // nodeState is each node's version and whether it is cordoned.
 func (s *rollSite) nodeState(t *testing.T) map[string]string {
 	t.Helper()
-	out := s.run(t, "kubectl", "get", "nodes", "-o",
+	out := s.kubectl(t, "get", "nodes", "-o",
 		`jsonpath={range .items[*]}{.metadata.name}={.status.nodeInfo.osImage}/{.spec.unschedulable}{"\n"}{end}`)
 	state := map[string]string{}
 	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
@@ -463,7 +474,7 @@ func TestTheRollMovesEveryMachineInOrderAndHoldsTheSiteToItsHealth(t *testing.T)
 	if r.world.silenced != 6 || r.world.unsilenced != 6 {
 		t.Errorf("%d silences were made and %d lifted, want two for each of three machines, all lifted", r.world.silenced, r.world.unsilenced)
 	}
-	events := s.run(t, "kubectl", "get", "events", "-n", "default", "-o", `jsonpath={range .items[*]}{.involvedObject.name}:{.reason}{"\n"}{end}`)
+	events := s.kubectl(t, "get", "events", "-n", "default", "-o", `jsonpath={range .items[*]}{.involvedObject.name}:{.reason}{"\n"}{end}`)
 	for _, m := range []string{"wk-200", "wk-201", "cp-100"} {
 		for _, reason := range []string{"MachineRollStarted", "MachineRollFinished"} {
 			if !strings.Contains(events, m+":"+reason) {

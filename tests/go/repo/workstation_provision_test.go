@@ -42,7 +42,7 @@ func runWorkstationPlay(t *testing.T, statusCode, destroyCode string, extra ...s
 	if err := os.WriteFile(filepath.Join(bin, "qm"), []byte(qm), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	inventory := filepath.Join(dir, "inventory.yml")
+	inventory := filepath.Join(dir, "stand-in-hypervisor.yml")
 	if err := os.WriteFile(inventory, []byte("all:\n  children:\n    hypervisor:\n      hosts:\n        stand-in:\n          ansible_connection: local\n          ansible_become: false\n          ansible_python_interpreter: \"{{ ansible_playbook_python }}\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

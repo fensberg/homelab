@@ -328,7 +328,7 @@ func TestALibraryAndACollectionAreOrderedByTheResolverTheyShare(t *testing.T) {
 		"  - source: kubernetes-client/python\n    version: LIB_VERSION\n    library: kubernetes\n" +
 		"  - source: ansible-collections/kubernetes.core\n    version: COLL_VERSION\n" +
 		"    collection: https://galaxy.example/kubernetes-core-{version}.tar.gz\n"
-	for p, body := range map[string]string{suppliersPath: suppliers, versionsPath: "ANSIBLE_CORE_VERSION=2.21.3\nLIB_VERSION=36.0.3\nCOLL_VERSION=6.6.0\n"} {
+	for p, body := range map[string]string{suppliersPath: suppliers, versionsPath: "ANSIBLE_CORE_VERSION=2.21.3\nLIB_VERSION=4.2.0\nCOLL_VERSION=6.6.0\n"} {
 		if err := os.WriteFile(filepath.Join(root, p), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -338,7 +338,7 @@ func TestALibraryAndACollectionAreOrderedByTheResolverTheyShare(t *testing.T) {
 		asked = append(asked, strings.Join(reqs, " "))
 		return set(
 			resolvedPackage{"ansible-core", "2.21.3", []string{"PyYAML"}},
-			resolvedPackage{"kubernetes", "36.0.3", []string{"PyYAML"}},
+			resolvedPackage{"kubernetes", "4.2.0", []string{"PyYAML"}},
 			resolvedPackage{"PyYAML", "6.0.3", nil},
 		), nil
 	}
@@ -348,11 +348,11 @@ func TestALibraryAndACollectionAreOrderedByTheResolverTheyShare(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(asked) != len(lockedPythons) || !strings.Contains(asked[0], "kubernetes==36.0.3") || !strings.Contains(asked[0], "ansible-core==2.21.3") {
+	if len(asked) != len(lockedPythons) || !strings.Contains(asked[0], "kubernetes==4.2.0") || !strings.Contains(asked[0], "ansible-core==2.21.3") {
 		t.Errorf("the library was not resolved in one resolution with the tool: %v", asked)
 	}
 	for _, want := range []string{
-		"# [library: kubernetes LIB_VERSION=36.0.3]\nkubernetes==36.0.3 --hash=sha256:h-kubernetes\npyyaml==6.0.3 --hash=sha256:h-pyyaml\n# [end]\n",
+		"# [library: kubernetes LIB_VERSION=4.2.0]\nkubernetes==4.2.0 --hash=sha256:h-kubernetes\npyyaml==6.0.3 --hash=sha256:h-pyyaml\n# [end]\n",
 		"# [collection: kubernetes-core COLL_VERSION=6.6.0]\nhttps://galaxy.example/kubernetes-core-6.6.0.tar.gz --hash=sha256:f-hash\n# [end]\n",
 		"# [pypi: ansible-core ANSIBLE_CORE_VERSION=2.21.3]\n",
 	} {

@@ -159,6 +159,10 @@ judges_nothing:
   INSPECTOR_MODEL_VERSION: a model the inspector asks to explain; the gate does not call it
   CLOUDFLARED_VERSION: the tunnel's connector
   ETCD_VERSION: the store of the cluster a change is tried in
+  ANSIBLE_POSIX_VERSION: modules hypervisor-prep.yml plays; ansible is what judges
+  COMMUNITY_CRYPTO_VERSION: modules hypervisor-prep.yml plays; ansible is what judges
+  KUBERNETES_CORE_VERSION: modules the machine roll plays; ansible is what judges
+  PYTHON_KUBERNETES_VERSION: the Kubernetes client those modules import
   FLUX_VERSION: the reconciler
   HELM_VERSION: renders charts for validation
   KUBECTL_VERSION: builds manifests and talks to a cluster
