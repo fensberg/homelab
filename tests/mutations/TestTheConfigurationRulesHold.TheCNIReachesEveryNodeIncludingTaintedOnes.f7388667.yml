@@ -1,4 +1,4 @@
-guard: TestTheCNIReachesEveryNodeIncludingTaintedOnes
+guard: TestTheConfigurationRulesHold
 file: clusters/bootstrap/cilium.yaml
 find: "      tolerations:\n        - operator: Exists\n\n      volumes:"
 replace: "      tolerations:\n        - key: node-role.kubernetes.io/control-plane\n          operator: Exists\n\n      volumes:"

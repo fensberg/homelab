@@ -128,3 +128,11 @@ removed:
     reason: moved with its guard to the configuration rules (policy/conftest/pools.rego), as TestTheConfigurationRulesHold.PoolMembershipNamesTheFunctionInTheResourceName.46887006.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestPoolMembershipDependsOnTheMachineItPlaces.4b847ebd.yml
     reason: moved with its guard to the configuration rules (policy/conftest/pools.rego), as TestTheConfigurationRulesHold.PoolMembershipDependsOnTheMachineItPlaces.4b847ebd.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheHealthGateWaitsForTheCNI.df4d7dee.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/cni.rego), as TestTheConfigurationRulesHold.TheHealthGateWaitsForTheCNI.df4d7dee.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheCNIReachesEveryNodeIncludingTaintedOnes.f7388667.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/cni.rego), as TestTheConfigurationRulesHold.TheCNIReachesEveryNodeIncludingTaintedOnes.f7388667.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestThePodMTUIsPinnedRatherThanDetected.b04f1e43.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/cni.rego), as TestTheConfigurationRulesHold.ThePodMTUIsPinnedRatherThanDetected.b04f1e43.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestCiliumTakesItsPodAddressesFromKubernetes.aefcc495.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/cni.rego), as TestTheConfigurationRulesHold.CiliumTakesItsPodAddressesFromKubernetes.aefcc495.yml, unchanged in what it breaks (2026-10-16)
