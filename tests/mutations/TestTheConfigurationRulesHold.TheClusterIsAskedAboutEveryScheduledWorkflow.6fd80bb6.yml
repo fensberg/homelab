@@ -1,4 +1,4 @@
-guard: TestTheClusterIsAskedAboutEveryScheduledWorkflow
+guard: TestTheConfigurationRulesHold
 file: clusters/core/infrastructure/configs/scheduled-workflows.yaml
 find: "  scrapeInterval: 15m"
 replace: "  scrapeInterval: 5m"

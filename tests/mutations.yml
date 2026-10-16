@@ -221,8 +221,6 @@ unprovable:
     reason: table
   - test: TestPathsIntoTheEstateNamesEachWayOneIsOpened
     reason: table
-  - test: TestUnpinnedReleasesNamesEachWayAReleaseIsNotPinned
-    reason: table
   # Removes each application from a copy of the repository and runs every
   # guard against it: a check on the checks, like the ledger's own runner.
   # What it removes is proved by the table beside it.
@@ -257,8 +255,6 @@ unprovable:
   # The reader behind TestEveryConcurrencyGroupNamesWhatSupersedesIt, which
   # its own ledger entry proves. Its table holds each way to share a group.
   - test: TestAPoolsPolicyIsHeldToItsListAndItsRunnersToNothingOfTheClusters
-    reason: table
-  - test: TestARequiredCheckIsReadAndAJobIsKnownByItsNameOrItsKey
     reason: table
   - test: TestAMachineWithNoAddressIsSeenAndATemplateIsNotAMachine
     reason: table

@@ -70,3 +70,15 @@ removed:
     reason: moved with its guard to the configuration rules (policy/conftest/plan_writer.rego), as TestTheConfigurationRulesHold.TheJobThatRunsABranchsCodeCannotWrite.291ee04e.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestAWidenedKeyIsAskedAboutInItsOwnConversation.9aee1aec.yml
     reason: moved with its guard to the configuration rules (policy/conftest/sensitive_paths.rego), as TestTheConfigurationRulesHold.AWidenedKeyIsAskedAboutInItsOwnConversation.9aee1aec.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheClusterIsAskedAboutEveryScheduledWorkflow.6fd80bb6.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/scheduled_workflows.rego), as TestTheConfigurationRulesHold.TheClusterIsAskedAboutEveryScheduledWorkflow.6fd80bb6.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheClusterIsAskedAboutEveryScheduledWorkflow.851bd13a.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/scheduled_workflows.rego), as TestTheConfigurationRulesHold.TheClusterIsAskedAboutEveryScheduledWorkflow.851bd13a.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryScheduledWorkflowHasADeadlineForHowOftenItIsAskedFor.unnamed.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/scheduled_workflows.rego), as TestTheConfigurationRulesHold.EveryScheduledWorkflowHasADeadlineForHowOftenItIsAskedFor.unnamed.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryScheduledWorkflowHasADeadlineForHowOftenItIsAskedFor.wrong-deadline.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/scheduled_workflows.rego), as TestTheConfigurationRulesHold.EveryScheduledWorkflowHasADeadlineForHowOftenItIsAskedFor.wrong-deadline.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryCheckAMergeIsHeldToIsAJobThatRuns.87620709.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/required_checks.rego), as TestTheConfigurationRulesHold.EveryCheckAMergeIsHeldToIsAJobThatRuns.87620709.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryReleaseIsPinnedByDigest.fad87b52.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/releases.rego), as TestTheConfigurationRulesHold.EveryReleaseIsPinnedByDigest.fad87b52.yml, unchanged in what it breaks (2026-10-16)

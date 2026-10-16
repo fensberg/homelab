@@ -148,4 +148,3 @@ debt:
   # and the test tier holds every release pin to a digest. A kind is the API's
   # vocabulary rather than a fact this repository decides, and each reader
   # needs only the pins, so neither takes the other's parser.
-  - "OCIRepository"

@@ -1,4 +1,4 @@
-guard: TestEveryScheduledWorkflowHasADeadlineForHowOftenItIsAskedFor
+guard: TestTheConfigurationRulesHold
 file: clusters/core/infrastructure/configs/scheduled-workflows.yaml
 find: 'instance=~"expedite.yml|security-patrol.yml"'
 replace: 'instance=~"expedite.yml"'

@@ -1,4 +1,4 @@
-guard: TestEveryReleaseIsPinnedByDigest
+guard: TestTheConfigurationRulesHold
 file: clusters/core/infrastructure/configs/planted-release.yaml
 create: |
   ---

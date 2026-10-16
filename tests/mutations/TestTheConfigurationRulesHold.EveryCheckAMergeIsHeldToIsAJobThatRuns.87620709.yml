@@ -1,4 +1,4 @@
-guard: TestEveryCheckAMergeIsHeldToIsAJobThatRuns
+guard: TestTheConfigurationRulesHold
 file: management/estate/repository/rulesets.tf
 find: "    \"Plan\",\n"
 replace: "    \"The Plan\",\n"
