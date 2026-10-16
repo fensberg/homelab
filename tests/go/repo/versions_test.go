@@ -17,8 +17,8 @@ import (
 // KUBECTL_VERSION with `curl https://dl.k8s.io/release/stable.txt`, so the
 // workstation installed whatever upstream called stable that day while the
 // runner image honoured the pin. The file whose entire job is making those two
-// agree was the one being ignored, and the kubectl pin's rule would have been checking
-// a number nothing used. #178.
+// agree was the one being ignored, and the kubectl pin's rule would have been
+// checking a number nothing used. #178.
 func TestTheInstallerDoesNotOverrideAPinnedVersion(t *testing.T) {
 	body, err := os.ReadFile(filepath.Join(repoRoot(t), "scripts", "install-dependencies.sh"))
 	if err != nil {
