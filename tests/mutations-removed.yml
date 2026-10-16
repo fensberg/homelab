@@ -62,3 +62,11 @@ removed:
     reason: moved with its guard to the configuration rules (policy/conftest/workflow_trust.rego), as TestTheConfigurationRulesHold.NoPrivilegedRunPutsAPullRequestInTheWorkspace.5871b2a6.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestNoPrivilegedRunPutsAPullRequestInTheWorkspace.e1d9211a.yml
     reason: moved with its guard to the configuration rules (policy/conftest/workflow_trust.rego), as TestTheConfigurationRulesHold.NoPrivilegedRunPutsAPullRequestInTheWorkspace.e1d9211a.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryDependabotEcosystemGroupsItsUpdates.75185ca7.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/dependabot.rego), as TestTheConfigurationRulesHold.EveryDependabotEcosystemGroupsItsUpdates.75185ca7.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNoPullRequestJobRunsOnTheEstatesRunner.df02785d.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/pull_request_runners.rego), as TestTheConfigurationRulesHold.NoPullRequestJobRunsOnTheEstatesRunner.df02785d.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheJobThatRunsABranchsCodeCannotWrite.291ee04e.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/plan_writer.rego), as TestTheConfigurationRulesHold.TheJobThatRunsABranchsCodeCannotWrite.291ee04e.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestAWidenedKeyIsAskedAboutInItsOwnConversation.9aee1aec.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/sensitive_paths.rego), as TestTheConfigurationRulesHold.AWidenedKeyIsAskedAboutInItsOwnConversation.9aee1aec.yml, unchanged in what it breaks (2026-10-16)

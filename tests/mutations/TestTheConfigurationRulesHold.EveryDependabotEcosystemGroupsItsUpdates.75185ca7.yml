@@ -1,4 +1,4 @@
-guard: TestEveryDependabotEcosystemGroupsItsUpdates
+guard: TestTheConfigurationRulesHold
 file: .github/dependabot.yml
 find: "      test-toolchain:\n        applies-to: version-updates"
 replace: "      test-toolchain:\n        applies-to: security-updates"

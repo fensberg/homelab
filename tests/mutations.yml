@@ -87,7 +87,7 @@
 # entry - which is also where the comment check's own decision is proved, in
 # TestSatisfiedByProseOnlyNamesAPassToFailFlip.
 
-owed_ceiling: 47
+owed_ceiling: 44
 
 unprovable:
   # --- cannot be proved by mutation ----------------------------------------
@@ -322,8 +322,6 @@ unprovable:
   # sprint, and doing it badly would produce entries that prove nothing.
   - test: TestAWorkstationWithNoOverlayKeyIsRefused
     owed: true
-  - test: TestAuditWorkflowCatchesTheWaysInAndIgnoresTheOthers
-    owed: true
   - test: TestBreakGlassIdentityIsNeverReferencedByOpenTofu
     owed: true
   - test: TestBreakGlassIdentityIsNotInTheConfigTemplate
@@ -368,8 +366,6 @@ unprovable:
     owed: true
   - test: TestParseSensitivePaths
     owed: true
-  - test: TestReachableFromPullRequest
-    owed: true
   - test: TestRunnerImageCarriesEveryBinaryTheContractorInvokes
     owed: true
   - test: TestRunnerManifestsAgreeWithOpenTofu
@@ -390,8 +386,6 @@ unprovable:
     owed: true
   - test: TestTheCodeLawsAreCoveredBySensitivePaths
     owed: true
-  - test: TestTheDigestCoversOnlyTheSensitiveFiles
-    owed: true
   - test: TestTheHealthGateDependsOnTheMachines
     owed: true
   - test: TestTheLabelMechanismIsGone
@@ -399,10 +393,6 @@ unprovable:
   - test: TestTheRoutingFixIsAppliedPerHostNotPerSite
     owed: true
   - test: TestTheToolshedIsIgnored
-    owed: true
-  - test: TestTheTripwireCanRefuse
-    owed: true
-  - test: TestTheTripwireOpensAConversation
     owed: true
   - test: TestTheWorkstationDoesNotWearTheRouterTag
     owed: true

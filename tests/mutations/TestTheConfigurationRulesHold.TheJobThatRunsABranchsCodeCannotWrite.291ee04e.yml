@@ -1,4 +1,4 @@
-guard: TestTheJobThatRunsABranchsCodeCannotWrite
+guard: TestTheConfigurationRulesHold
 file: .github/workflows/plan-infrastructure.yml
 find: "          # artifact and the scripts through the action.\n          checkout: \"false\""
 replace: "          # artifact and the scripts through the action.\n          checkout: \"true\""

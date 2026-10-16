@@ -1,4 +1,4 @@
-guard: TestAWidenedKeyIsAskedAboutInItsOwnConversation
+guard: TestTheConfigurationRulesHold
 file: .github/workflows/sensitive-paths.yml
 find: "            -topic keys \\"
 replace: "            -topic sensitive \\"
