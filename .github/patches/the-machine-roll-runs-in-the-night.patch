@@ -1,0 +1,643 @@
+diff --git a/.github/pull-request-runner-image/Dockerfile b/.github/pull-request-runner-image/Dockerfile
+index d230fd4..7fd2560 100644
+--- a/.github/pull-request-runner-image/Dockerfile
++++ b/.github/pull-request-runner-image/Dockerfile
+@@ -123,8 +123,8 @@ ENV PATH=/home/runner/.local/bin:/opt/hostedtoolcache/go/${GO_VERSION}/x64/bin:/
+ # change in, which it starts itself and which holds nothing.
+ RUN --mount=type=bind,from=reads,target=/reads \
+     bash /reads/scripts/take-delivery.sh \
+-        checkov codespell etcd hadolint kube-apiserver kube-scheduler kubeconform kubectl kustomize \
+-        kwokctl opentofu pre-commit pre-commit-hooks shellcheck zizmor
++        ansible-core checkov codespell etcd hadolint kube-apiserver kube-scheduler kubeconform kubectl \
++        kubernetes kubernetes-core kustomize kwokctl opentofu pre-commit pre-commit-hooks shellcheck zizmor
+ 
+ # Each one runs, as the account a job runs as, before the image is published.
+ RUN for b in go node git envsubst tofu checkov codespell etcd hadolint kube-apiserver kube-scheduler \
+diff --git a/.github/workflows/deploy-infrastructure.yml b/.github/workflows/deploy-infrastructure.yml
+index c62ec87..43fd97b 100644
+--- a/.github/workflows/deploy-infrastructure.yml
++++ b/.github/workflows/deploy-infrastructure.yml
+@@ -40,6 +40,13 @@ on:
+       # converge here applies nothing of its own. It waits for Flux to
+       # settle and takes the record, which is the point.
+       - "clusters/**"
++  # The machine roll (management/roll): the hours from 07:23 to 11:23 UTC,
++  # which hold 02:00 to 06:00 in Chicago whichever side of daylight saving it
++  # is on. The play decides whether it is inside the window; this only keeps
++  # the timer to the hours that can be. Under this workflow's own lock, so a
++  # roll and a converge never run at once.
++  schedule:
++    - cron: "23 7-11 * * *"
+ 
+ permissions:
+   contents: read
+@@ -118,6 +125,16 @@ jobs:
+           PUSH_AFTER: ${{ github.sha }}
+         run: |
+           set -euo pipefail
++          # A timer is the machine roll's, and changes nothing. Without this
++          # it fell through to the diff below with no push to diff, compared
++          # the last commit with its parent, and converged every hour the
++          # last merge had touched management/.
++          if [ "${EVENT}" = "schedule" ]; then
++            echo "management=false" >> "$GITHUB_OUTPUT"
++            echo "workload=false" >> "$GITHUB_OUTPUT"
++            exit 0
++          fi
++
+           # THE WORKLOAD TIER HAS WORK ONLY WHEN ITS DIRECTORY EXISTS (#370).
+           #
+           # The apply job cds into environments/<env>/infrastructure/. No such
+@@ -395,6 +412,293 @@ jobs:
+           if-no-files-found: ignore
+           retention-days: 7
+ 
++  # ---------------------------------------------------------------------
++  # THE MACHINE ROLL - every machine moved to the Talos the cluster says it
++  # should run, one at a time, in the night's window (management/roll).
++  #
++  # On the site's own runners, holding the converge's credential and its
++  # lock: the play reads the Talos client configuration the converge keeps in
++  # the site's vault, through op run, for as long as the run. Most runs find
++  # the window shut or nothing behind and are over in a minute.
++  # ---------------------------------------------------------------------
++  roll:
++    name: Roll ${{ matrix.site }}
++    needs: changes
++    if: github.event_name == 'schedule'
++    runs-on: homelab-${{ matrix.site }}
++    environment: management
++    permissions:
++      contents: read
++      # To start the integration tier against the site and read how it went,
++      # and to read which jobs passed on the canary.
++      actions: write
++    # Three machines, a soak and two runs of the integration tier, with room.
++    timeout-minutes: 180
++    strategy:
++      fail-fast: false
++      matrix:
++        site: ${{ fromJSON(needs.changes.outputs.sites) }}
++    outputs:
++      handed_over: ${{ steps.roll.outputs.handed_over }}
++      touched: ${{ steps.roll.outputs.touched }}
++      machine: ${{ steps.roll.outputs.machine }}
++    steps:
++      - name: Mobilize
++        uses: $/.github/workflows/mobilize
++        with:
++          # audit, for the converge's reason: harden-runner does nothing on
++          # this runner. Owned by scripts/approved-suppliers.yml under
++          # `egress:`, which says which job may reach what.
++          egress-policy: audit
++          disable-sudo-and-containers: "false"
++
++      - name: Read pinned versions
++        uses: $/.github/actions/versions
++
++      # ansible-core, the Kubernetes client its modules import, and
++      # kubernetes.core, from the lock by hash.
++      - name: Take delivery of the roll's tools
++        run: scripts/take-delivery.sh ansible-core kubernetes kubernetes-core
++
++      - name: Roll
++        id: roll
++        env:
++          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
++          GITHUB_TOKEN: ${{ github.token }}
++          SITE: ${{ matrix.site }}
++        run: |
++          # The access lives in this directory for the length of the run and
++          # no longer; op run hands it to the play and masks it in the log.
++          workdir="$(mktemp -d)"
++          trap 'rm -rf "$workdir"' EXIT
++          printf 'TALOS_ACCESS=op://%s/talos/talosconfig\n' "$SITE" > "$workdir/vault.env"
++          ROLL_WORKDIR="$workdir" op run --env-file "$workdir/vault.env" -- \
++            ansible-playbook management/roll/talos-upgrade.yml 2>&1 | tee roll.log
++
++      # The play's own words where it stopped, for the issue the aftermath
++      # opens. What the play prints is structure: machines, versions, checks.
++      - name: Record why it stopped
++        if: failure()
++        run: |
++          grep -m1 '^fatal:' roll.log | sed 's/^[^{]*//' | jq -r '.msg // "The roll stopped without saying why."' > roll-why.txt || echo "The roll stopped without saying why." > roll-why.txt
++
++      - name: Keep why it stopped
++        if: failure()
++        uses: $/.github/workflows/upload-artifact
++        with:
++          name: roll-why-${{ matrix.site }}
++          path: roll-why.txt
++          if-no-files-found: ignore
++          retention-days: 7
++
++  # The machine the first job ran on, which it cordoned rather than drain
++  # under itself. This job is placed elsewhere because that machine is
++  # cordoned, and finishes it.
++  roll-handover:
++    name: Roll ${{ matrix.site }}, its last machine
++    needs: [changes, roll]
++    if: needs.roll.outputs.handed_over == 'true'
++    runs-on: homelab-${{ matrix.site }}
++    environment: management
++    permissions:
++      contents: read
++      actions: write
++    timeout-minutes: 90
++    strategy:
++      fail-fast: false
++      matrix:
++        site: ${{ fromJSON(needs.changes.outputs.sites) }}
++    outputs:
++      touched: ${{ steps.roll.outputs.touched }}
++      machine: ${{ steps.roll.outputs.machine }}
++    steps:
++      - name: Mobilize
++        uses: $/.github/workflows/mobilize
++        with:
++          # As the roll's, for its reason.
++          egress-policy: audit
++          disable-sudo-and-containers: "false"
++
++      - name: Read pinned versions
++        uses: $/.github/actions/versions
++
++      - name: Take delivery of the roll's tools
++        run: scripts/take-delivery.sh ansible-core kubernetes kubernetes-core
++
++      - name: Roll
++        id: roll
++        env:
++          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
++          GITHUB_TOKEN: ${{ github.token }}
++          SITE: ${{ matrix.site }}
++        run: |
++          workdir="$(mktemp -d)"
++          trap 'rm -rf "$workdir"' EXIT
++          printf 'TALOS_ACCESS=op://%s/talos/talosconfig\n' "$SITE" > "$workdir/vault.env"
++          ROLL_WORKDIR="$workdir" op run --env-file "$workdir/vault.env" -- \
++            ansible-playbook management/roll/talos-upgrade.yml 2>&1 | tee roll.log
++
++      - name: Record why it stopped
++        if: failure()
++        run: |
++          grep -m1 '^fatal:' roll.log | sed 's/^[^{]*//' | jq -r '.msg // "The roll stopped without saying why."' > roll-why.txt || echo "The roll stopped without saying why." > roll-why.txt
++
++      - name: Keep why it stopped
++        if: failure()
++        uses: $/.github/workflows/upload-artifact
++        with:
++          name: roll-why-${{ matrix.site }}
++          path: roll-why.txt
++          if-no-files-found: ignore
++          retention-days: 7
++
++  # ---------------------------------------------------------------------
++  # A ROLL THAT STOPPED - said where somebody will see it, and nothing
++  # retried. Like the converge's aftermath, on GitHub's runner, holding
++  # nothing that reaches the estate.
++  #
++  # A roll that refused before its first machine changed nothing: an issue
++  # says why, and the next night's run asks again. One that stopped part-way
++  # left that machine cordoned: an issue says which, and when the bump was a
++  # patch release a pull request reverting it is opened, for the operator to
++  # merge or not. Reverted, the next window rolls the moved machines back.
++  # Across a minor version there is no revert: Talos goes forward only.
++  # ---------------------------------------------------------------------
++  roll-aftermath:
++    name: Roll aftermath
++    needs: [roll, roll-handover]
++    if: always() && (needs.roll.result == 'failure' || needs.roll-handover.result == 'failure')
++    runs-on: ubuntu-latest
++    permissions:
++      contents: read
++      issues: write
++    timeout-minutes: 10
++    steps:
++      - name: Mobilize
++        uses: $/.github/workflows/mobilize
++        with:
++          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
++          # which job may reach what; `security guard-egress` refuses any drift.
++          # The copy lives here because harden-runner reads its policy in a
++          # pre-step, before any step of this job can run.
++          egress-policy: block
++          disable-sudo-and-containers: "true"
++          allowed-endpoints: >
++            api.github.com:443
++            github.com:443
++            objects.githubusercontent.com:443
++            release-assets.githubusercontent.com:443
++          fetch-depth: 0
++
++      - name: Collect why it stopped
++        uses: $/.github/workflows/download-artifact
++        with:
++          pattern: roll-why-*
++          path: why
++          merge-multiple: true
++
++      - name: Decide what a revert would be
++        id: bump
++        env:
++          TOUCHED: ${{ needs.roll-handover.outputs.touched || needs.roll.outputs.touched }}
++        run: |
++          # The change that moved the machines: the last commit to touch the
++          # module that declares their version.
++          sha=$(git log -1 --format=%H -- modules/infrastructure/machine-image/)
++          version=$(sed -n 's/^ *talos_version *= *"\(v[0-9.]*\)".*/\1/p' modules/infrastructure/machine-image/machine-image.tf)
++          from=$(sed -n 's/^ *talos_upgrades_from *= *"\(v[0-9.]*\)".*/\1/p' modules/infrastructure/machine-image/machine-image.tf)
++          patch=false
++          [ "${version%.*}" = "$from" ] && patch=true
++          {
++            echo "sha=$sha"
++            echo "version=$version"
++            echo "revertible=$([ "$TOUCHED" = true ] && [ "$patch" = true ] && echo true || echo false)"
++          } >> "$GITHUB_OUTPUT"
++
++      - name: Mint the revert token
++        id: revert-token
++        if: steps.bump.outputs.revertible == 'true'
++        uses: $/.github/workflows/app-token
++        with:
++          client-id: ${{ secrets.PROCUREMENT_BOT_CLIENT_ID }}
++          private-key: ${{ secrets.PROCUREMENT_BOT_PRIVATE_KEY }}
++          permission-contents: write
++          permission-pull-requests: write
++          owner: ${{ github.repository_owner }}
++          repositories: ${{ github.event.repository.name }}
++
++      # The module put back as it was before the bump, and nothing else: the
++      # tree is main's with that one directory swapped, signed by GitHub as
++      # the converge's revert is. A pull request, never merged here.
++      - name: Offer a revert of the bump
++        id: revert
++        if: steps.bump.outputs.revertible == 'true'
++        env:
++          GH_TOKEN: ${{ steps.revert-token.outputs.token }}
++          SHA: ${{ steps.bump.outputs.sha }}
++          VERSION: ${{ steps.bump.outputs.version }}
++          REPO: ${{ github.repository }}
++          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
++        run: |
++          before=$(git rev-parse "$SHA^:modules/infrastructure/machine-image")
++          tree=$(gh api "repos/$REPO/git/trees" \
++            -f base_tree="$(git rev-parse "HEAD^{tree}")" \
++            -f "tree[][path]=modules/infrastructure/machine-image" \
++            -f "tree[][mode]=040000" \
++            -f "tree[][type]=tree" \
++            -f "tree[][sha]=$before" \
++            --jq .sha)
++          commit=$(gh api "repos/$REPO/git/commits" \
++            -f message="revert: the machines go back from Talos $VERSION" \
++            -f tree="$tree" \
++            -f "parents[]=$(git rev-parse HEAD)" \
++            --jq .sha)
++          branch="revert/roll-stopped-${SHA::8}"
++          gh api "repos/$REPO/git/refs" -f ref="refs/heads/$branch" -f sha="$commit" >/dev/null
++          url=$(gh pr create --draft --base main --head "$branch" \
++            --title "revert: the machine roll to Talos $VERSION stopped" \
++            --body "$(printf '%s\n' \
++              "The machine roll to Talos $VERSION stopped part-way. Merging this puts modules/infrastructure/machine-image back as it was before ${SHA::8}; the next window then rolls the machines already moved back to the version before, the same way they went forward. Talos moves between patch versions in either direction." \
++              "" \
++              "**Do not merge it if the failure is not the version's** - a runner, the cluster, a check of the roll's own. Read the issue the roll opened, and the run, first." \
++              "" \
++              "Run: $RUN_URL")")
++          echo "url=$url" >> "$GITHUB_OUTPUT"
++
++      - name: Say the roll stopped
++        env:
++          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++          TOUCHED: ${{ needs.roll-handover.outputs.touched || needs.roll.outputs.touched }}
++          MACHINE: ${{ needs.roll-handover.outputs.machine || needs.roll.outputs.machine }}
++          VERSION: ${{ steps.bump.outputs.version }}
++          REVERT: ${{ steps.revert.outputs.url }}
++          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
++        run: |
++          why="$(cat why/roll-why.txt 2>/dev/null || echo 'The roll left no account of why it stopped. Read the run.')"
++          if [ "$TOUCHED" = true ]; then
++            title="The machine roll to Talos $VERSION stopped on $MACHINE"
++            what="**$MACHINE is left cordoned**, deliberately: nothing is retried, and a machine that will not come back is replaced rather than repaired. The machines before it are on $VERSION."
++            if [ -n "$REVERT" ]; then
++              what="$what A revert of the bump is open, unmerged: $REVERT"
++            else
++              what="$what There is no revert: the bump crosses a minor version, and Talos goes forward only. Fix forward."
++            fi
++            labels="priority:P1,type:correctness,epoch:05"
++          else
++            title="The machine roll to Talos $VERSION has not started"
++            what="**Nothing was touched.** The roll refused before its first machine, and asks again in the next window."
++            labels="priority:P2,type:correctness,epoch:05"
++          fi
++          body="$(printf '%s\n' "$what" "" "The roll's own words, where it stopped:" "" '```' "$why" '```' "" "Run: $RUN_URL")"
++          # One issue for a roll that will not start, not one an hour: the
++          # same refusal tomorrow is a comment on today's.
++          existing=$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
++          if [ -n "$existing" ]; then
++            gh issue comment "$existing" --body "$body"
++          else
++            gh issue create --title "$title" --label "$labels" --body "$body"
++          fi
++
+   # ---------------------------------------------------------------------
+   # AFTERMATH - make main stop being wrong after a failed converge.
+   #
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index effe84f..084389f 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -802,7 +802,9 @@ jobs:
+     runs-on: ${{ github.event_name == 'schedule' && format('pr-builds-{0}', vars.pull_request_runners_site) || 'ubuntu-latest' }}
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows.
+-    timeout-minutes: 15
++    # Thirty since the plays are run here: the machine roll's tests start a
++    # cluster and run it several times over, about four minutes more.
++    timeout-minutes: 30
+     permissions:
+       contents: read
+     steps:
+@@ -817,11 +819,15 @@ jobs:
+           disable-sudo-and-containers: "true"
+           allowed-endpoints: >
+             api.github.com:443
++            dl.k8s.io:443
++            files.pythonhosted.org:443
++            galaxy.ansible.com:443
+             get.opentofu.org:443
+             github.com:443
+             go.dev:443
+             objects.githubusercontent.com:443
+             proxy.golang.org:443
++            pypi.org:443
+             registry.opentofu.org:443
+             release-assets.githubusercontent.com:443
+             storage.googleapis.com:443
+@@ -847,6 +853,12 @@ jobs:
+         # nothing checking what arrived.
+         run: scripts/take-delivery.sh opentofu kustomize
+ 
++      # The plays are run here, not read: the machine roll against a cluster
++      # of Kubernetes' own store and API server, and the workstation's play
++      # against a stand-in hypervisor.
++      - name: Take delivery of what the plays are run with
++        run: scripts/take-delivery.sh kwokctl etcd kube-apiserver kubectl ansible-core kubernetes kubernetes-core
++
+       # Untagged, so this compiles and runs only the hermetic tests in
+       # tests/go: the repository-invariant checks and the state-encryption
+       # cutover rehearsal. The integration, api and e2e tiers all carry a
+@@ -870,7 +882,9 @@ jobs:
+     runs-on: ${{ github.event_name == 'schedule' && format('pr-builds-{0}', vars.pull_request_runners_site) || 'ubuntu-latest' }}
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows.
+-    timeout-minutes: 15
++    # Thirty since the plays are run here: the machine roll's tests start a
++    # cluster and run it several times over, about four minutes more.
++    timeout-minutes: 30
+     permissions:
+       contents: read
+     steps:
+@@ -885,11 +899,15 @@ jobs:
+           disable-sudo-and-containers: "true"
+           allowed-endpoints: >
+             api.github.com:443
++            dl.k8s.io:443
++            files.pythonhosted.org:443
++            galaxy.ansible.com:443
+             get.opentofu.org:443
+             github.com:443
+             go.dev:443
+             objects.githubusercontent.com:443
+             proxy.golang.org:443
++            pypi.org:443
+             registry.opentofu.org:443
+             release-assets.githubusercontent.com:443
+             storage.googleapis.com:443
+@@ -915,6 +933,10 @@ jobs:
+         # nothing checking what arrived.
+         run: scripts/take-delivery.sh opentofu kustomize
+ 
++      # A proof runs its guard, and the plays' guards run the plays.
++      - name: Take delivery of what the plays are run with
++        run: scripts/take-delivery.sh kwokctl etcd kube-apiserver kubectl ansible-core kubernetes kubernetes-core
++
+       # The two tests that prove the other tests: the mutation ledger breaks
+       # each guarded file and checks its guard fails, and the comment test
+       # strips every comment and re-runs the guards to prove none is satisfied
+diff --git a/clusters/core/infrastructure/configs/pull-requests-builds.yaml b/clusters/core/infrastructure/configs/pull-requests-builds.yaml
+index 75467eb..0d2521e 100644
+--- a/clusters/core/infrastructure/configs/pull-requests-builds.yaml
++++ b/clusters/core/infrastructure/configs/pull-requests-builds.yaml
+@@ -134,6 +134,8 @@ spec:
+               - matchName: api.github.com
+               - matchName: codeload.github.com
+               - matchName: dl.k8s.io
++              - matchName: files.pythonhosted.org
++              - matchName: galaxy.ansible.com
+               - matchName: get.opentofu.org
+               - matchName: ghcr.io
+               - matchName: github.com
+@@ -141,6 +143,7 @@ spec:
+               - matchName: objects.githubusercontent.com
+               - matchName: pkg-containers.githubusercontent.com
+               - matchName: proxy.golang.org
++              - matchName: pypi.org
+               - matchName: raw.githubusercontent.com
+               - matchName: registry.opentofu.org
+               - matchName: release-assets.githubusercontent.com
+@@ -152,6 +155,8 @@ spec:
+         - matchName: api.github.com
+         - matchName: codeload.github.com
+         - matchName: dl.k8s.io
++        - matchName: files.pythonhosted.org
++        - matchName: galaxy.ansible.com
+         - matchName: get.opentofu.org
+         - matchName: ghcr.io
+         - matchName: github.com
+@@ -159,6 +164,7 @@ spec:
+         - matchName: objects.githubusercontent.com
+         - matchName: pkg-containers.githubusercontent.com
+         - matchName: proxy.golang.org
++        - matchName: pypi.org
+         - matchName: raw.githubusercontent.com
+         - matchName: registry.opentofu.org
+         - matchName: release-assets.githubusercontent.com
+diff --git a/clusters/core/infrastructure/configs/scheduled-workflows.yaml b/clusters/core/infrastructure/configs/scheduled-workflows.yaml
+index bfa6d24..870aa4c 100644
+--- a/clusters/core/infrastructure/configs/scheduled-workflows.yaml
++++ b/clusters/core/infrastructure/configs/scheduled-workflows.yaml
+@@ -16,7 +16,7 @@
+ #
+ # WHAT IT COSTS. GitHub allows a caller with no token sixty requests an hour,
+ # counted by the address they come from, which is the site's. Each workflow
+-# is asked about every fifteen minutes: six workflows are 24 an hour.
++# is asked about every twenty minutes: eight workflows are 24 an hour.
+ #
+ # WHAT IT CANNOT SAY. That a schedule has stopped running at all - the latest
+ # run stays the last good one - and anything at all while the site is down.
+@@ -210,13 +210,14 @@ spec:
+   jobName: scheduled-workflows
+   metricsPath: /probe
+   # Sixty requests an hour is the allowance; see the top of this file.
+-  scrapeInterval: 15m
++  scrapeInterval: 20m
+   scrapeTimeout: 30s
+   params:
+     module: [latest-scheduled-run]
+   staticConfigs:
+     - targets:
+         - https://api.github.com/repos/${RELEASE_REPOSITORY#ghcr.io/}/actions/workflows/codeql.yml/runs?event=schedule&status=completed&per_page=1
++        - https://api.github.com/repos/${RELEASE_REPOSITORY#ghcr.io/}/actions/workflows/deploy-infrastructure.yml/runs?event=schedule&status=completed&per_page=1
+         - https://api.github.com/repos/${RELEASE_REPOSITORY#ghcr.io/}/actions/workflows/expedite.yml/runs?event=schedule&status=completed&per_page=1
+         - https://api.github.com/repos/${RELEASE_REPOSITORY#ghcr.io/}/actions/workflows/integration-tests.yml/runs?event=schedule&status=completed&per_page=1
+         - https://api.github.com/repos/${RELEASE_REPOSITORY#ghcr.io/}/actions/workflows/pr-validation.yml/runs?event=schedule&status=completed&per_page=1
+@@ -245,8 +246,8 @@ spec:
+     - name: scheduled-workflows
+       rules:
+         # A workflow is failing while its newest completed scheduled run is
+-        # one that failed. Asked every fifteen minutes and looked back on
+-        # over forty, because a series asked about that rarely is absent
++        # one that failed. Asked every twenty minutes and looked back on
++        # over fifty, because a series asked about that rarely is absent
+         # between answers. The comparison is what clears it: once a newer
+         # run has succeeded, the failed one is no longer the newest.
+         #
+@@ -255,10 +256,10 @@ spec:
+         - alert: ScheduledWorkflowIsFailing
+           expr: >-
+             max by (workflow) (
+-              last_over_time(scheduled_workflow_run_number{conclusion=~"failure|timed_out|startup_failure"}[40m])
++              last_over_time(scheduled_workflow_run_number{conclusion=~"failure|timed_out|startup_failure"}[50m])
+             )
+             >= on (workflow)
+-            max by (workflow) (last_over_time(scheduled_workflow_run_number[40m]))
++            max by (workflow) (last_over_time(scheduled_workflow_run_number[50m]))
+           labels:
+             severity: warning
+           annotations:
+@@ -299,7 +300,7 @@ spec:
+         # tests/go/repo holds every scheduled workflow to being named in the
+         # one of these that matches how often it is asked for.
+         - record: scheduled_workflow:latest_run_number
+-          expr: max by (instance) (last_over_time(scheduled_workflow_run_number[40m]))
++          expr: max by (instance) (last_over_time(scheduled_workflow_run_number[50m]))
+         - alert: ScheduledWorkflowHasNotRunWhenDue
+           expr: >-
+             changes(scheduled_workflow:latest_run_number{instance=~"expedite.yml|security-patrol.yml"}[12h:15m]) == 0
+@@ -322,7 +323,7 @@ spec:
+               the schedule but does the work it is behind on.
+         - alert: ScheduledWorkflowHasNotRunWhenDue
+           expr: >-
+-            changes(scheduled_workflow:latest_run_number{instance=~"integration-tests.yml|pr-validation.yml|site-sweep.yml"}[30h:15m]) == 0
++            changes(scheduled_workflow:latest_run_number{instance=~"deploy-infrastructure.yml|integration-tests.yml|pr-validation.yml|site-sweep.yml"}[30h:15m]) == 0
+             and on (instance)
+             count_over_time(scheduled_workflow:latest_run_number[30h:15m]) >= 100
+           labels:
+@@ -363,7 +364,7 @@ spec:
+         # The other way this goes quiet: GitHub refusing the question, most
+         # likely because the site's address has used its hourly allowance.
+         - alert: ScheduledWorkflowsCannotBeRead
+-          expr: last_over_time(up{job="scheduled-workflows"}[40m]) == 0
++          expr: last_over_time(up{job="scheduled-workflows"}[50m]) == 0
+           for: 2h
+           labels:
+             severity: warning
+diff --git a/scripts/approved-suppliers.yml b/scripts/approved-suppliers.yml
+index a27b29f..50585ba 100644
+--- a/scripts/approved-suppliers.yml
++++ b/scripts/approved-suppliers.yml
+@@ -506,6 +506,14 @@ endpoints:
+       - pypi.org:443
+       - files.pythonhosted.org:443
+ 
++  - group: ansible-collections
++    reason: >-
++      Ansible's collections, each fetched by take-delivery.sh from the file
++      the lock hashed and installed offline: kubernetes.core for the machine
++      roll, community.crypto and ansible.posix for the hypervisor's play.
++    hosts:
++      - galaxy.ansible.com:443
++
+   - group: infrastructure-tooling
+     reason: OpenTofu itself and its provider registry.
+     hosts:
+@@ -737,6 +745,30 @@ egress:
+       list to transcribe. Egress for these pods has to be controlled at the
+       cluster's network layer instead (#411); until then it is uncontrolled
+       and unrecorded, and this entry says so rather than implying otherwise.
++  - job: deploy-infrastructure.yml/roll
++    policy: audit
++    reason: >-
++      The machine roll, on the site's own runners: reaches 1Password, the
++      Talos and Kubernetes APIs at addresses deliberately not in git, the
++      cluster's own Prometheus and Alertmanager, GitHub's API, and PyPI and
++      Galaxy for the roll's tools. Harden-runner does nothing on this runner,
++      as the converge's entry says, so its egress is the cluster's network
++      layer's to control (#411).
++
++  - job: deploy-infrastructure.yml/roll-handover
++    policy: audit
++    reason: >-
++      The machine roll's second job, which finishes the machine the first ran
++      on. The same reaches as the roll's, for the same reason.
++
++  - job: deploy-infrastructure.yml/roll-aftermath
++    policy: block
++    hosts:
++      - api.github.com:443
++      - github.com:443
++      - objects.githubusercontent.com:443
++      - release-assets.githubusercontent.com:443
++
+   - job: deploy-infrastructure.yml/aftermath
+     policy: block
+     hosts:
+@@ -1067,11 +1099,15 @@ egress:
+     policy: block
+     hosts:
+       - api.github.com:443
++      - dl.k8s.io:443
++      - files.pythonhosted.org:443
++      - galaxy.ansible.com:443
+       - get.opentofu.org:443
+       - github.com:443
+       - go.dev:443
+       - objects.githubusercontent.com:443
+       - proxy.golang.org:443
++      - pypi.org:443
+       - registry.opentofu.org:443
+       - release-assets.githubusercontent.com:443
+       - storage.googleapis.com:443
+@@ -1082,11 +1118,15 @@ egress:
+     policy: block
+     hosts:
+       - api.github.com:443
++      - dl.k8s.io:443
++      - files.pythonhosted.org:443
++      - galaxy.ansible.com:443
+       - get.opentofu.org:443
+       - github.com:443
+       - go.dev:443
+       - objects.githubusercontent.com:443
+       - proxy.golang.org:443
++      - pypi.org:443
+       - registry.opentofu.org:443
+       - release-assets.githubusercontent.com:443
+       - storage.googleapis.com:443
+@@ -1637,6 +1677,16 @@ work:
+     kind: cannot-wait
+     takes: 5m
+ 
++  # Not to be stopped once a machine is drained, so the priority set. Most
++  # runs find the window shut or nothing behind, and are over in a minute.
++  - job: deploy-infrastructure.yml/roll
++    kind: cannot-wait
++    takes: 2m
++
++  - job: deploy-infrastructure.yml/roll-handover
++    kind: cannot-wait
++    takes: 30m
++
+   - job: converge-estate.yml/converge
+     kind: cannot-wait
+     takes: 5m
