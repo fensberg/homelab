@@ -90,6 +90,31 @@ capacity above" or names another criterion, it means epoch 04's.
 - **17. The bet has been tested.** Staging is overfilled on purpose and the
   right things are shed in the right order.
 
+## Decided 2026-10-15: rolled by Ansible, shaped like the standard
+
+**Chose:** machines are changed one at a time by an Ansible play run with
+`op run -- ansible-playbook`, one host at a time (`serial: 1`), each step a
+standard tool: `kubernetes.core.k8s_drain`, which honours disruption
+budgets; `talosctl upgrade` or `talosctl reset --graceful`; a health wait
+before the next. A machine that will not come back is replaced, not
+repaired. OpenTofu declares what the machines should be and never orders
+them; Flux keeps what runs on them safe to move.
+**Because:** the operator: "I like standard. It's a transferable skill."
+The ordering is what Ansible's rolling plays are for, and building it into
+the contractor would have been one more piece of the contractor re-doing a
+standard tool's job (epoch 06 now replaces those, one criterion each).
+**Rejected:** #626's `retire` phase in the contractor, closed; its design is
+the play's - the order of operations, and the refusals before anything is
+touched: etcd not voting, a database of one instance, a volume nothing will
+move, the runner's own machine. Cluster API and Omni, for now: the Talos
+Cluster API providers are in community hands with Sidero's development
+ended, and Omni holds every machine's admin credential for good, owns the
+Talos configuration, sits above every site, and needs a commercial licence
+for anything a business depends on. Omni can import an existing Talos
+cluster, so neither is closed off.
+**The credential:** the play's Talos and cluster credentials come from the
+vault through `op run` and live as long as the run, as the converge's do.
+
 ## Scope
 
 **This epoch adopts and integrates. It does not build a node controller.**
