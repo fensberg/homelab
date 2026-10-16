@@ -232,8 +232,6 @@ unprovable:
     reason: table
   - test: TestUnversionedSitesWantsALineForEverySiteAndNoOther
     reason: table
-  - test: TestResourcesInRootsFindsOnlyWhatARootItselfDeclares
-    reason: table
   - test: TestAssertingDeclarationsAndExpectedFailuresAreReadNotMatched
     reason: table
   - test: TestRootsNamedRefusesEachWayOfNamingARoot

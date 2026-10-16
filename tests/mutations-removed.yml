@@ -136,3 +136,5 @@ removed:
     reason: moved with its guard to the configuration rules (policy/conftest/cni.rego), as TestTheConfigurationRulesHold.ThePodMTUIsPinnedRatherThanDetected.b04f1e43.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestCiliumTakesItsPodAddressesFromKubernetes.aefcc495.yml
     reason: moved with its guard to the configuration rules (policy/conftest/cni.rego), as TestTheConfigurationRulesHold.CiliumTakesItsPodAddressesFromKubernetes.aefcc495.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestAResourceOutsideAModuleIsDeclared.2053de0c.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/custom_blocks.rego), as TestTheConfigurationRulesHold.AResourceOutsideAModuleIsDeclared.2053de0c.yml, unchanged in what it breaks (2026-10-16)
