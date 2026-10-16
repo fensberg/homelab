@@ -44,6 +44,9 @@ type languageDeclaration struct {
 		Kind     string `yaml:"kind"`
 		Reader   string `yaml:"read_by"`
 		Optional bool   `yaml:"optional"`
+		// Which rule engines are handed every file of this kind, by name:
+		// conftest for the configuration rules (policy/conftest).
+		ParsedBy []string `yaml:"parsed_by"`
 	} `yaml:"governed"`
 	Ungoverned []struct {
 		Kind string `yaml:"kind"`

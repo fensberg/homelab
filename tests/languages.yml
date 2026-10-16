@@ -40,6 +40,11 @@
 # more.
 
 governed:
+  - kind: ".rego"
+    read_by: >-
+      conftest, which runs every rule in policy/conftest over the files of
+      each kind parsed_by names it (TestTheConfigurationRulesHold), and runs
+      each rule's own tests (TestEveryConfigurationRuleProvesItself).
   - kind: ".go"
     read_by: >-
       go vet and go build over every module (task validate), gofmt via
@@ -47,10 +52,12 @@ governed:
       tests/coverage-baseline.json, and the mutation ledger for anything under
       tests/go/repo.
   - kind: ".tf"
+    parsed_by: [conftest]
     read_by: >-
       tofu validate against the placeholder config and tofu fmt via pre-commit
       (task validate), plus checkov in the slow lane.
   - kind: ".hcl"
+    parsed_by: [conftest]
     read_by: >-
       Two different files, both read: registry.tftest.hcl by tofu test (task
       test:tofu), and .terraform.lock.hcl by tofu init and by the guard that
@@ -78,15 +85,18 @@ governed:
       the estate runs at its object-storage vendor. Semgrep scans it, and the
       estate root's tests plan the resource that uploads it.
   - kind: ".yaml"
+    parsed_by: [conftest]
     read_by: >-
       prettier and check-yaml via pre-commit, kubectl kustomize and kubeconform
       for manifests (task validate), checkov for policy, and
       TestRepositoryHasNoDuplicateKeys.
   - kind: ".yml"
+    parsed_by: [conftest]
     read_by: >-
       As .yaml, plus actionlint and zizmor over .github/workflows and the
       egress guard over every job.
   - kind: ".json"
+    parsed_by: [conftest]
     read_by: >-
       prettier via pre-commit and TestRepositoryHasNoDuplicateKeys; the config
       template is additionally parsed by the Render phase.
@@ -105,19 +115,23 @@ governed:
       The Go toolchain verifies every dependency against it on build. Machine
       written, never edited by hand.
   - kind: ".env"
+    parsed_by: [conftest]
     read_by: >-
       scripts/versions.env is sourced by the provisioning script, the runner
       image build and the composite action, and
       TestEveryPinnedVersionIsUsed reads it.
   - kind: ".toml"
+    parsed_by: [conftest]
     read_by: "gitleaks, which loads .gitleaks.toml on every pre-commit run."
   - kind: ".cfg"
     read_by: "ansible, which loads ansible.cfg when the hypervisor play runs."
   - kind: "Dockerfile"
+    parsed_by: [conftest]
     read_by: >-
       hadolint over every Dockerfile the estate builds (task lint, discovered
       with git ls-files), and docker build in the image lanes.
   - kind: ".gitignore"
+    parsed_by: [conftest]
     read_by: >-
       git itself, and now the guards: the tracked-file enumeration every check
       walks is defined by what this does not exclude.

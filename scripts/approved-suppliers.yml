@@ -1320,6 +1320,16 @@ tools:
       be reached when a cluster cannot (workstation/tunnel.sh). Taken as a
       single static binary from the publisher's own release, the version the
       clusters run, and installed only if its SHA256 matches the lock.
+  - source: open-policy-agent/conftest
+    version: CONFTEST_VERSION
+    fetch: https://github.com/open-policy-agent/conftest/releases/download/v{version}/conftest_{version}_Linux_x86_64.tar.gz
+    reason: >-
+      Runs the repository's configuration rules (policy/conftest): Open Policy
+      Agent's Rego over the parsed workflows, manifests, OpenTofu, the
+      suppliers list, the pins and the other configuration this estate keeps.
+      The industry's policy-as-code tool for configuration, chosen on
+      2026-10-16 over guards that matched text in Go; each rule carries its own
+      tests, run by `conftest verify`.
   - source: kubernetes-sigs/kwok
     version: KWOK_VERSION
     binary: kwokctl

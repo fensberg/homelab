@@ -13,6 +13,10 @@
 https://github.com/cloudflare/cloudflared/releases/download/2026.9.1/cloudflared-linux-amd64 --hash=sha256:03f1f25d1cc93b9ad6c60569d44060bc4f17ed97075760ed8cfca4b12dcd68cc
 # [end]
 
+# [fetch: conftest CONFTEST_VERSION=0.70.1]
+https://github.com/open-policy-agent/conftest/releases/download/v0.70.1/conftest_0.70.1_Linux_x86_64.tar.gz --hash=sha256:613d124b8f6c1f3cee890491f7ab19114cca5a2102ca47cb2e6c35b4c23f9c8a
+# [end]
+
 # [fetch: etcd ETCD_VERSION=3.6.10]
 https://github.com/etcd-io/etcd/releases/download/v3.6.10/etcd-v3.6.10-linux-amd64.tar.gz --hash=sha256:ed579fafab5701e3aaa95509969e7bc74776a4ae5269d32e3928408b406456ec
 # [end]

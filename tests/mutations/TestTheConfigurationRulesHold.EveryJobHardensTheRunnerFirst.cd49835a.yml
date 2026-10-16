@@ -1,4 +1,4 @@
-guard: TestEveryJobHardensTheRunnerFirst
+guard: TestTheConfigurationRulesHold
 file: .github/workflows/zz-starts-with-a-missing-action.yml
 create: |
   name: planted

@@ -22,3 +22,11 @@ removed:
     reason: renamed with its guard, to TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake.an-estate-client.yml, unchanged in what it breaks (2026-10-15)
   - proof: TestThePullRequestRunnerCarriesWhatItsJobsInstallAndNothingThatReachesTheEstate.a-tool-left-out.yml
     reason: renamed with its guard, to TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake.a-tool-left-out.yml (2026-10-15)
+  - proof: TestEveryJobHardensTheRunnerFirst.311d2fd8.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_jobs.rego), as TestTheConfigurationRulesHold.EveryJobHardensTheRunnerFirst.311d2fd8.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryJobHardensTheRunnerFirst.cd49835a.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_jobs.rego), as TestTheConfigurationRulesHold.EveryJobHardensTheRunnerFirst.cd49835a.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryCheckoutRefusesToPersistCredentials.43fec9b5.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_jobs.rego), as TestTheConfigurationRulesHold.EveryCheckoutRefusesToPersistCredentials.43fec9b5.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryCheckoutRefusesToPersistCredentials.4e3c94c3.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_jobs.rego), as TestTheConfigurationRulesHold.EveryCheckoutRefusesToPersistCredentials.4e3c94c3.yml, unchanged in what it breaks (2026-10-16)
