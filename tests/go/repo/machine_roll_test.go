@@ -3,6 +3,7 @@ package repo
 import (
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"io/fs"
@@ -62,6 +63,7 @@ type rollCase struct {
 	jobs         string // the jobs array of the run that passed
 	backup       bool   // a workload declares a backup and has a pod
 	noApps       bool   // no application's declaration is there to read
+	zone         string // the site's timezone in the config template
 	upgradeFails bool
 }
 
@@ -82,6 +84,8 @@ func baseRollCase() rollCase {
 		},
 		runner: "wk-202",
 		hour:   "03",
+		// Not the estate's own, so a zone written into the play would show.
+		zone: "Pacific/Auckland",
 		etcd: "NODE         ID                 HOSTNAME   PEER URLS                 CLIENT URLS               LEARNER\n" +
 			"10.0.0.100   0123456789abcdef   cp-100     https://10.0.0.100:2380   https://10.0.0.100:2379   false\n",
 		instances: 2,
@@ -103,7 +107,6 @@ func (w *rollWorld) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	_, _ = io.Copy(io.Discard, r.Body)
-	url := "http://" + r.Host
 	// As the real ones answer: a client that reads a body only when it is
 	// said to be JSON must be told so.
 	rw.Header().Set("Content-Type", "application/json")
@@ -126,13 +129,13 @@ func (w *rollWorld) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		w.dispatched++
 		rw.WriteHeader(http.StatusNoContent)
 	case last == "runs" && before != "actions":
-		fmt.Fprintf(rw, `{"workflow_runs": [{"id": 9, "url": "%s/run/9"}]}`, url)
-	case before == "run":
-		fmt.Fprint(rw, `{"status": "completed", "conclusion": "success", "html_url": "https://example.invalid/run/9"}`)
+		fmt.Fprint(rw, `{"workflow_runs": [{"id": 9}]}`)
 	case last == "runs":
-		fmt.Fprintf(rw, `{"workflow_runs": [{"id": 1, "jobs_url": "%s/jobs/1"}]}`, url)
-	case before == "jobs":
+		fmt.Fprint(rw, `{"workflow_runs": [{"id": 1}]}`)
+	case last == "jobs":
 		fmt.Fprintf(rw, `{"jobs": %s}`, w.c.jobs)
+	case before == "runs":
+		fmt.Fprint(rw, `{"status": "completed", "conclusion": "success", "html_url": "https://example.invalid/run/9"}`)
 	default:
 		http.NotFound(rw, r)
 	}
@@ -293,8 +296,24 @@ func (s *rollSite) roll(t *testing.T, c rollCase) rollResult {
 	t.Helper()
 	s.prepare(t, c)
 	world := &rollWorld{c: c}
-	srv := httptest.NewServer(world)
-	defer srv.Close()
+	// GitHub, over TLS as the real one is, with a certificate the play is
+	// told to trust.
+	github := httptest.NewTLSServer(world)
+	defer github.Close()
+	ca := filepath.Join(t.TempDir(), "github-ca.pem")
+	if err := os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: github.Certificate().Raw}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Prometheus and Alertmanager, which the play reaches through the
+	// cluster's API server. A bare API server has no network to proxy into,
+	// so kubectl is stood in for those requests alone: one naming either
+	// service's proxy is answered here, and anything else is the real one's.
+	monitoring := httptest.NewServer(world)
+	defer monitoring.Close()
+	realKubectl, err := exec.LookPath(rollAsker)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	tree := filepath.Join(t.TempDir(), "tree")
 	play := copyRollPlay(t, filepath.Join(tree, "management", "roll"))
@@ -310,6 +329,23 @@ func (s *rollSite) roll(t *testing.T, c rollCase) rollResult {
 		if err := os.WriteFile(filepath.Join(app, applications.Declaration), []byte(declaration), 0o644); err != nil {
 			t.Fatal(err)
 		}
+	}
+
+	// The site's entry in the config template, which is where the play
+	// reads the clock the site keeps.
+	site := map[string]any{"timezone": c.zone}
+	if c.zone == "" {
+		site = map[string]any{}
+	}
+	template, err := json.Marshal(map[string]any{"sites": map[string]any{"north": site}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(tree, "config"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tree, "config", "management.tpl.json"), template, 0o644); err != nil {
+		t.Fatal(err)
 	}
 
 	scratch := t.TempDir()
@@ -330,7 +366,27 @@ func (s *rollSite) roll(t *testing.T, c rollCase) rollResult {
 		fails = "exit 1"
 	}
 	stubs := map[string]string{
-		"date": "#!/bin/sh\necho " + c.hour + "\n",
+		// The hour, when asked on the site's clock; asked on any other, an
+		// hour no window holds.
+		"date": "#!/bin/sh\n[ \"$TZ\" = \"" + c.zone + "\" ] && echo " + c.hour + " || echo 12\n",
+		// kubectl: a raw request through either monitoring service's proxy
+		// goes to this test's server; anything else to the real kubectl.
+		"kubectl": `#!/usr/bin/env bash
+if [ "$2" = --raw ]; then
+  path="$3"
+  case "$path" in
+    /api/v1/namespaces/monitoring/services/http:kube-prometheus-stack-prometheus:9090/proxy/*) path="${path#*/proxy}" ;;
+    /api/v1/namespaces/monitoring/services/http:kube-prometheus-stack-alertmanager:9093/proxy/*) path="${path#*/proxy}" ;;
+    *) echo "Error from server (NotFound): $path" >&2; exit 1 ;;
+  esac
+  case "$1" in
+    get) exec curl -fsS "` + monitoring.URL + `$path" ;;
+    create) exec curl -fsS -X POST -H 'Content-Type: application/json' --data-binary "@$5" "` + monitoring.URL + `$path" ;;
+    delete) exec curl -fsS -X DELETE "` + monitoring.URL + `$path" ;;
+  esac
+fi
+exec ` + realKubectl + ` "$@"
+`,
 		// talosctl --talosconfig <file> --nodes <address> <command> ...
 		"talosctl": `#!/usr/bin/env bash
 echo "$*" >>` + calls + `
@@ -359,7 +415,7 @@ esac
 	// rounds that do not wait between them, since nothing here changes
 	// with time. How many rounds there are is still the play's own.
 	cmd := exec.Command("ansible-playbook", "talos-upgrade.yml",
-		"-e", "github_api="+srv.URL, "-e", "prometheus="+srv.URL, "-e", "alertmanager="+srv.URL,
+		"-e", "github_host="+strings.TrimPrefix(github.URL, "https://"), "-e", "github_ca="+ca,
 		"-e", "soak_round_minutes=0")
 	cmd.Dir = play
 	cmd.Env = append(os.Environ(),
@@ -557,9 +613,10 @@ func TestTheRollRefusesASiteNotFitToBeRolledAndTouchesNothing(t *testing.T) {
 		"a canary something alerted about": {func(c *rollCase) {
 			c.alerts = `[{"metric": {"alertname": "NodeNotReady", "node": "dmz-100"}, "value": [0, "1"]}]`
 		}, "An alert has fired for dmz-100"},
-		"a canary no job has passed on":        {func(c *rollCase) { c.jobs = `[{"conclusion": "failure", "runner_name": "pr-source-north-abcde"}]` }, "No pull-request job has passed"},
-		"no application's declaration to read": {func(c *rollCase) { c.noApps = true }, "No application.json was found"},
-		"a backup that cannot be taken":        {func(c *rollCase) { c.backup = true }, "Have every workload take a backup before the first machine goes"},
+		"a canary no job has passed on":                 {func(c *rollCase) { c.jobs = `[{"conclusion": "failure", "runner_name": "pr-source-north-abcde"}]` }, "No pull-request job has passed"},
+		"a site that does not say which clock it keeps": {func(c *rollCase) { c.zone = "" }, "has no timezone"},
+		"no application's declaration to read":          {func(c *rollCase) { c.noApps = true }, "No application.json was found"},
+		"a backup that cannot be taken":                 {func(c *rollCase) { c.backup = true }, "Have every workload take a backup before the first machine goes"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			c := baseRollCase()

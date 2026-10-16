@@ -349,12 +349,12 @@ ok "python tools installed at the locked versions"
 
 step "Ansible collections"
 # ansible-core does not bundle community collections the way the full
-# 'ansible' metapackage does, so the plays' collections are installed
-# explicitly: community.crypto and ansible.posix for hypervisor-prep.yml,
-# kubernetes.core and the Python client it imports for the machine roll. From
-# the lock, by hash, like every other delivery - they used to come from Galaxy
-# on version ranges with nothing checking what arrived.
-"$(dirname "$0")/take-delivery.sh" kubernetes kubernetes-core community-crypto ansible-posix
+# 'ansible' package does, so that package is taken as well: community.crypto
+# and ansible.posix for hypervisor-prep.yml, kubernetes.core and the Python
+# client it imports for the machine roll. From the lock, by hash, like every
+# other delivery - they used to come from Galaxy on version ranges with
+# nothing checking what arrived.
+"$(dirname "$0")/take-delivery.sh" ansible kubernetes
 ok "ansible collections installed at the locked versions"
 
 step "pre-commit"

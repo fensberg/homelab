@@ -118,7 +118,8 @@ vault through `op run` and live as long as the run, as the converge's do.
 ### Built 2026-10-15: the machine roll
 
 `management/roll/talos-upgrade.yml`, run by the deploy workflow's `roll` job
-on a timer in the 02:00-06:00 Chicago window, under the converge's lock.
+every hour, under the converge's lock; the play rolls only between 02:00
+and 06:00 on the site's own clock, its `timezone` in the config template.
 
 - **What it rolls to.** `modules/infrastructure/machine-image` is the one
   place a site's Talos and Kubernetes versions and schematics are declared;
@@ -196,9 +197,11 @@ Each is a piece of its own, not a debt of this one.
   window with nobody involved, to be revisited if rolls fail too often.
 - **A queue that never drops a converge.** GitHub keeps one run waiting per
   lock and cancels an older waiting one, so a roll timed while one converge
-  runs and another waits would cancel the waiting converge. The timer is
-  kept to the night's hours, when merges are rare; a queue that holds every
-  converge is not built.
+  runs and another waits would cancel the waiting converge. The timer fires
+  every hour, because each site keeps its own clock and the play decides
+  whether its window is open; outside a window the run is over in a minute,
+  but it still takes the lock. A queue that holds every converge is not
+  built.
 - **The roll waits on a pull-request job.** The canary's last check needs a
   job to have passed on the untrusted worker since it was rebuilt, and the
   nightly checks are what usually provide one. A bump merged after them waits

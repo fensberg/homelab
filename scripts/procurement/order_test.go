@@ -316,19 +316,17 @@ func TestABinaryNamedUnlikeItsRepositoryIsDeliveredByThatName(t *testing.T) {
 }
 
 // A library is resolved in the one resolution with the tools that import it,
-// and a collection is hashed as a fetched file is; each section keeps its own
-// kind, which is what tells take-delivery.sh how to install it.
-func TestALibraryAndACollectionAreOrderedByTheResolverTheyShare(t *testing.T) {
+// and its section keeps its own kind, which is what tells take-delivery.sh to
+// give it nothing on PATH.
+func TestALibraryIsResolvedWithTheToolsThatImportIt(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "scripts"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	suppliers := "tools:\n" +
 		"  - source: ansible/ansible\n    version: ANSIBLE_CORE_VERSION\n    pypi: ansible-core\n" +
-		"  - source: kubernetes-client/python\n    version: LIB_VERSION\n    library: kubernetes\n" +
-		"  - source: ansible-collections/kubernetes.core\n    version: COLL_VERSION\n" +
-		"    collection: https://galaxy.example/kubernetes-core-{version}.tar.gz\n"
-	for p, body := range map[string]string{suppliersPath: suppliers, versionsPath: "ANSIBLE_CORE_VERSION=2.21.3\nLIB_VERSION=4.2.0\nCOLL_VERSION=6.6.0\n"} {
+		"  - source: kubernetes-client/python\n    version: LIB_VERSION\n    library: kubernetes\n"
+	for p, body := range map[string]string{suppliersPath: suppliers, versionsPath: "ANSIBLE_CORE_VERSION=2.21.3\nLIB_VERSION=4.2.0\n"} {
 		if err := os.WriteFile(filepath.Join(root, p), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -353,7 +351,6 @@ func TestALibraryAndACollectionAreOrderedByTheResolverTheyShare(t *testing.T) {
 	}
 	for _, want := range []string{
 		"# [library: kubernetes LIB_VERSION=4.2.0]\nkubernetes==4.2.0 --hash=sha256:h-kubernetes\npyyaml==6.0.3 --hash=sha256:h-pyyaml\n# [end]\n",
-		"# [collection: kubernetes-core COLL_VERSION=6.6.0]\nhttps://galaxy.example/kubernetes-core-6.6.0.tar.gz --hash=sha256:f-hash\n# [end]\n",
 		"# [pypi: ansible-core ANSIBLE_CORE_VERSION=2.21.3]\n",
 	} {
 		if !strings.Contains(got, want) {

@@ -1,7 +1,7 @@
 ---
 # =============================================================================
 # The machine roll: every machine moved to the Talos the cluster says it
-# should run, one at a time, between 02:00 and 06:00 in Chicago.
+# should run, one at a time, in the night's window on the site's own clock.
 #
 # Run by the deploy workflow on a timer, under the converge's own lock, with
 # the Talos client configuration from the site's vault:
@@ -55,17 +55,6 @@
       kubeconfig: "{{ kubeconfig }}"
 
   tasks:
-    - name: Ask the clock what hour it is in Chicago
-      ansible.builtin.command: date +%H
-      environment:
-        TZ: "{{ roll_zone }}"
-      register: hour
-      changed_when: false
-
-    - name: Stop outside the window
-      ansible.builtin.meta: end_play
-      when: (hour.stdout | int) not in roll_window_hours
-
     - name: Refuse to run without the access the run is handed
       ansible.builtin.assert:
         that:
@@ -80,6 +69,29 @@
           SITE and GITHUB_TOKEN must all be set: the workflow sets them, and op run
           supplies TALOS_ACCESS from the site's vault.
         quiet: true
+
+    - name: Read which clock the site keeps
+      ansible.builtin.set_fact:
+        site_zone: "{{ ((lookup('ansible.builtin.file', site_template) | from_json).sites[site] | default({})).timezone | default('') }}"
+
+    - name: Refuse a site that does not say
+      ansible.builtin.assert:
+        that: site_zone | length > 0
+        fail_msg: >-
+          Site {{ site }} has no timezone in config/management.tpl.json, so
+          when its window is cannot be told.
+        quiet: true
+
+    - name: Ask the clock what hour it is on the site
+      ansible.builtin.command: date +%H
+      environment:
+        TZ: "{{ site_zone }}"
+      register: hour
+      changed_when: false
+
+    - name: Stop outside the window
+      ansible.builtin.meta: end_play
+      when: (hour.stdout | int) not in roll_window_hours
 
     - name: Write the Talos client configuration for the length of the run
       ansible.builtin.copy:
@@ -245,14 +257,19 @@
         quiet: true
 
     - name: Ask what has alerted since the canary was built
-      ansible.builtin.uri:
-        url: "{{ prometheus }}/api/v1/query"
-        body_format: form-urlencoded
-        method: POST
-        body:
-          query: >-
-            max_over_time(ALERTS{alertstate="firing"}[{{ ((now(utc=true) - (item.created | to_datetime('%Y-%m-%dT%H:%M:%SZ'))).total_seconds() | int) + 60 }}s])
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - get
+          - --raw
+          - "{{ prometheus }}/api/v1/query?query={{ query | urlencode }}"
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+      vars:
+        query: >-
+          max_over_time(ALERTS{alertstate="firing"}[{{ ((now(utc=true) - (item.created | to_datetime('%Y-%m-%dT%H:%M:%SZ'))).total_seconds() | int) + 60 }}s])
       register: canary_alerts
+      changed_when: false
       loop: "{{ canaries }}"
       loop_control:
         label: "{{ item.name }}"
@@ -264,7 +281,7 @@
         alerted: >-
           {%- set out = [] -%}
           {%- for r in canary_alerts.results -%}
-          {%- set seen = r.json.data.result | map(attribute='metric') | map('dict2items') | flatten | map(attribute='value') | list -%}
+          {%- set seen = (r.stdout | from_json).data.result | map(attribute='metric') | map('dict2items') | flatten | map(attribute='value') | list -%}
           {%- if r.item.name in seen or (seen | select('match', (r.item.address | regex_escape) ~ '(:|$)') | list | length > 0) -%}
           {%- set _ = out.append(r.item.name) -%}
           {%- endif -%}
@@ -279,7 +296,8 @@
 
     - name: Ask which runs have passed since the canary was built
       ansible.builtin.uri:
-        url: "{{ github_api }}/repos/{{ repository }}/actions/runs?status=success&per_page=50&created=%3E%3D{{ canaries | map(attribute='created') | max }}"
+        url: "https://{{ github_host }}/repos/{{ repository }}/actions/runs?status=success&per_page=50&created=%3E%3D{{ canaries | map(attribute='created') | max }}"
+        ca_path: "{{ github_ca | default(omit) }}"
         headers:
           Authorization: "Bearer {{ lookup('ansible.builtin.env', 'GITHUB_TOKEN') }}"
           Accept: application/vnd.github+json
@@ -287,7 +305,8 @@
 
     - name: Ask which runners their jobs ran on
       ansible.builtin.uri:
-        url: "{{ item.jobs_url }}?per_page=100"
+        url: "https://{{ github_host }}/repos/{{ repository }}/actions/runs/{{ item.id }}/jobs?per_page=100"
+        ca_path: "{{ github_ca | default(omit) }}"
         headers:
           Authorization: "Bearer {{ lookup('ansible.builtin.env', 'GITHUB_TOKEN') }}"
           Accept: application/vnd.github+json
@@ -433,6 +452,16 @@
   vars_files: [settings.yml]
   vars:
     want: "{{ hostvars['localhost'].want }}"
+    # An alert names a machine by its name or by its address.
+    silence_matchers:
+      - name: node
+        value: "{{ inventory_hostname }}"
+        isRegex: false
+        isEqual: true
+      - name: instance
+        value: "{{ address | regex_escape }}(:.*)?"
+        isRegex: true
+        isEqual: true
 
   module_defaults:
     group/kubernetes.core.k8s:
@@ -441,171 +470,206 @@
   tasks:
     # Never drained under the job doing the draining. Cordoned, so the job
     # that finishes it is placed somewhere else, and the run ends saying so.
-    - name: Hand the machine this job runs on to the next job
+    - name: Cordon the machine this job runs on, for the next job
+      kubernetes.core.k8s_drain:
+        name: "{{ inventory_hostname }}"
+        state: cordon
       when: own
-      block:
-        - name: Cordon it
-          kubernetes.core.k8s_drain:
-            name: "{{ inventory_hostname }}"
-            state: cordon
 
-        - name: Say it was handed over
-          ansible.builtin.lineinfile:
-            path: "{{ lookup('ansible.builtin.env', 'GITHUB_OUTPUT') }}"
-            line: handed_over=true
-            create: true
-            mode: "0600"
-          when: lookup('ansible.builtin.env', 'GITHUB_OUTPUT') | length > 0
-
-        - name: Remember it for what follows
-          ansible.builtin.set_fact:
-            handed_over: true
-          delegate_to: localhost
-          delegate_facts: true
-
-        - name: Stop here
-          ansible.builtin.meta: end_play
-
-    # For the workflow, which answers a failure by what it touched: a roll
-    # that stopped before its first machine changed nothing, and one that
-    # stopped part-way left this machine cordoned.
-    - name: Say which machine the roll is on
+    - name: Say it was handed over
       ansible.builtin.lineinfile:
         path: "{{ lookup('ansible.builtin.env', 'GITHUB_OUTPUT') }}"
-        line: "{{ item }}"
+        line: handed_over=true
         create: true
         mode: "0600"
-      loop: [touched=true, "machine={{ inventory_hostname }}"]
-      when: lookup('ansible.builtin.env', 'GITHUB_OUTPUT') | length > 0
+      when: own and lookup('ansible.builtin.env', 'GITHUB_OUTPUT') | length > 0
 
-    - name: Record that the machine's roll has begun
-      ansible.builtin.include_tasks: tasks/event.yml
-      vars:
-        reason: MachineRollStarted
-        message: "Moving to Talos {{ want.talos_version }}: drained, upgraded, and held to the site's health before the next."
+    - name: Remember it for what follows
+      ansible.builtin.set_fact:
+        handed_over: true
+      delegate_to: localhost
+      delegate_facts: true
+      when: own
 
-    # The alerts a machine raises while it is down are the roll's own doing.
-    # Silenced for this machine alone, by name and by address, and only for
-    # as long as one machine's roll can take; lifted when it is back.
-    - name: Silence this machine's alerts while it is down
-      ansible.builtin.uri:
-        url: "{{ alertmanager }}/api/v2/silences"
-        method: POST
-        body_format: json
-        body:
-          matchers: ["{{ item }}"]
-          startsAt: "{{ '%Y-%m-%dT%H:%M:%SZ' | strftime(utc=true) }}"
-          # Forty-five minutes: a drain, an upgrade and the health that
-          # follows, and no longer. A roll that dies part-way leaves nothing
-          # silenced for long.
-          endsAt: "{{ '%Y-%m-%dT%H:%M:%SZ' | strftime(second=(now(utc=true).timestamp() | int) + 2700, utc=true) }}"
-          createdBy: machine-roll
-          comment: "The machine roll is moving {{ inventory_hostname }} to Talos {{ want.talos_version }}."
-      register: silences
-      loop:
-        - name: node
-          value: "{{ inventory_hostname }}"
-          isRegex: false
-          isEqual: true
-        - name: instance
-          value: "{{ address | regex_escape }}(:.*)?"
-          isRegex: true
-          isEqual: true
-      loop_control:
-        label: "{{ item.name }}"
+    - name: Stop here, on the machine this job runs on
+      ansible.builtin.meta: end_play
+      when: own
 
-    - name: Drain it, through the eviction API so disruption budgets hold
-      kubernetes.core.k8s_drain:
-        name: "{{ inventory_hostname }}"
-        state: drain
-        delete_options:
-          ignore_daemonsets: true
-          delete_emptydir_data: true
-          wait_timeout: 900
-
-    - name: Upgrade it in place
-      ansible.builtin.command:
-        argv:
-          - talosctl
-          - --talosconfig
-          - "{{ talosconfig }}"
-          - --nodes
-          - "{{ address }}"
-          - upgrade
-          - --image
-          - "{{ want.installer_image }}"
-          - --wait
-          - --timeout
-          - 20m
-      changed_when: true
-
-    - name: Wait for it to come back Ready on the new version
-      kubernetes.core.k8s_info:
-        kind: Node
-        name: "{{ inventory_hostname }}"
-      register: back
-      until: >-
-        back.resources | length == 1
-        and want.talos_version in back.resources[0].status.nodeInfo.osImage
-        and (back.resources[0].status.conditions | selectattr('type', 'equalto', 'Ready') | map(attribute='status') | list) == ['True']
-      retries: 90
-      delay: 10
-
-    - name: Hold it to the site's health
-      ansible.builtin.include_tasks: tasks/health.yml
-      vars:
-        rolled: "{{ inventory_hostname }}"
-
-    - name: Give it its work back
-      kubernetes.core.k8s_drain:
-        name: "{{ inventory_hostname }}"
-        state: uncordon
-
-    - name: Defragment etcd on a control plane once it is back
-      ansible.builtin.command:
-        argv:
-          - talosctl
-          - --talosconfig
-          - "{{ talosconfig }}"
-          - --nodes
-          - "{{ address }}"
-          - etcd
-          - defrag
-      changed_when: true
-      when: control_plane
-
-    - name: Soak the first trusted worker before anything else is touched
-      when: canary
+    - name: Move the machine
       block:
-        - name: Run the integration tier against the site while it soaks
+        # For the workflow, which answers a failure by what it touched: a
+        # roll that stopped before its first machine changed nothing, and one
+        # that stopped part-way left this machine cordoned.
+        - name: Say which machine the roll is on
+          ansible.builtin.lineinfile:
+            path: "{{ lookup('ansible.builtin.env', 'GITHUB_OUTPUT') }}"
+            line: "{{ item }}"
+            create: true
+            mode: "0600"
+          loop: [touched=true, "machine={{ inventory_hostname }}"]
+          when: lookup('ansible.builtin.env', 'GITHUB_OUTPUT') | length > 0
+
+        - name: Record that the machine's roll has begun
+          ansible.builtin.include_tasks: tasks/event.yml
+          vars:
+            reason: MachineRollStarted
+            message: "Moving to Talos {{ want.talos_version }}: drained, upgraded, and held to the site's health before the next."
+
+        # The alerts a machine raises while it is down are the roll's own
+        # doing. Silenced for this machine alone, by name and by address, and
+        # only for as long as one machine's roll can take; lifted when it is
+        # back. Asked of Alertmanager through the cluster's API, on the
+        # cluster's own credential and its TLS.
+        - name: Write what to silence
+          ansible.builtin.copy:
+            dest: "{{ workdir }}/silence-{{ item.name }}.json"
+            mode: "0600"
+            content: "{{ silence | to_json }}"
+          vars:
+            silence:
+              matchers: ["{{ item }}"]
+              startsAt: "{{ '%Y-%m-%dT%H:%M:%SZ' | strftime(utc=true) }}"
+              # Forty-five minutes: a drain, an upgrade and the health that
+              # follows, and no longer. A roll that dies part-way leaves
+              # nothing silenced for long.
+              endsAt: "{{ '%Y-%m-%dT%H:%M:%SZ' | strftime(second=(now(utc=true).timestamp() | int) + 2700, utc=true) }}"
+              createdBy: machine-roll
+              comment: "The machine roll is moving {{ inventory_hostname }} to Talos {{ want.talos_version }}."
+          loop: "{{ silence_matchers }}"
+          loop_control:
+            label: "{{ item.name }}"
+
+        - name: Silence this machine's alerts while it is down
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - create
+              - --raw
+              - "{{ alertmanager }}/api/v2/silences"
+              - -f
+              - "{{ workdir }}/silence-{{ item.name }}.json"
+          environment:
+            KUBECONFIG: "{{ kubeconfig }}"
+          register: silences
+          changed_when: true
+          loop: "{{ silence_matchers }}"
+          loop_control:
+            label: "{{ item.name }}"
+
+        - name: Drain it, through the eviction API so disruption budgets hold
+          kubernetes.core.k8s_drain:
+            name: "{{ inventory_hostname }}"
+            state: drain
+            delete_options:
+              ignore_daemonsets: true
+              delete_emptydir_data: true
+              wait_timeout: 900
+
+        - name: Upgrade it in place
+          ansible.builtin.command:
+            argv:
+              - talosctl
+              - --talosconfig
+              - "{{ talosconfig }}"
+              - --nodes
+              - "{{ address }}"
+              - upgrade
+              - --image
+              - "{{ want.installer_image }}"
+              - --wait
+              - --timeout
+              - 20m
+          changed_when: true
+
+        - name: Wait for it to come back Ready on the new version
+          kubernetes.core.k8s_info:
+            kind: Node
+            name: "{{ inventory_hostname }}"
+          register: back
+          until: >-
+            back.resources | length == 1
+            and want.talos_version in back.resources[0].status.nodeInfo.osImage
+            and (back.resources[0].status.conditions | selectattr('type', 'equalto', 'Ready') | map(attribute='status') | list) == ['True']
+          retries: 90
+          delay: 10
+
+        - name: Hold it to the site's health
+          ansible.builtin.include_tasks: tasks/health.yml
+          vars:
+            rolled: "{{ inventory_hostname }}"
+
+        - name: Give it its work back
+          kubernetes.core.k8s_drain:
+            name: "{{ inventory_hostname }}"
+            state: uncordon
+
+        - name: Defragment etcd on a control plane once it is back
+          ansible.builtin.command:
+            argv:
+              - talosctl
+              - --talosconfig
+              - "{{ talosconfig }}"
+              - --nodes
+              - "{{ address }}"
+              - etcd
+              - defrag
+          changed_when: true
+          when: control_plane
+
+        # The first trusted worker is the second canary: the integration
+        # tier runs against the site while it soaks, and nothing else is
+        # touched until both are through.
+        - name: Run the integration tier against the site while the canary soaks
           ansible.builtin.include_tasks: tasks/integration.yml
           vars:
             wait: false
+          when: canary
 
         - name: Hold the site's health through the soak
           ansible.builtin.include_tasks: tasks/soak-round.yml
           loop: "{{ range(soak_rounds | int) | list }}"
           loop_control:
             loop_var: round
+          when: canary
 
         - name: Wait for the integration tier to pass
           ansible.builtin.include_tasks: tasks/integration.yml
           vars:
             wait: true
+          when: canary
 
-    - name: Lift the silence
-      ansible.builtin.uri:
-        url: "{{ alertmanager }}/api/v2/silence/{{ item.json.silenceID }}"
-        method: DELETE
-      loop: "{{ silences.results }}"
-      loop_control:
-        label: "{{ item.item.name }}"
+        - name: Lift the silence
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - delete
+              - --raw
+              - "{{ alertmanager }}/api/v2/silence/{{ (item.stdout | from_json).silenceID }}"
+          environment:
+            KUBECONFIG: "{{ kubeconfig }}"
+          changed_when: true
+          loop: "{{ silences.results }}"
+          loop_control:
+            label: "{{ item.item.name }}"
 
-    - name: Record that the machine's roll is done
-      ansible.builtin.include_tasks: tasks/event.yml
-      vars:
-        reason: MachineRollFinished
-        message: "On Talos {{ want.talos_version }}, and the site held its health."
+        - name: Record that the machine's roll is done
+          ansible.builtin.include_tasks: tasks/event.yml
+          vars:
+            reason: MachineRollFinished
+            message: "On Talos {{ want.talos_version }}, and the site held its health."
+
+      # Nothing is retried and nothing is undone: the machine stays cordoned,
+      # and says so on itself, where whoever looks at it next will read it.
+      rescue:
+        - name: Record on the machine that the roll stopped there
+          ansible.builtin.include_tasks: tasks/event.yml
+          vars:
+            reason: MachineRollStopped
+            message: "The roll to Talos {{ want.talos_version }} stopped here, and left this machine cordoned. Nothing was retried."
+
+        - name: Stop the roll
+          ansible.builtin.fail:
+            msg: "The roll stopped on {{ inventory_hostname }}, which is left cordoned. What stopped it is said above."
 
 - name: Prove the site whole once every machine has moved
   hosts: localhost
@@ -614,17 +678,20 @@
   vars_files: [settings.yml]
 
   tasks:
-    - name: Run the integration tier again, which plans the site and must find nothing to change
+    # Again after every machine: the integration tier's plan of the site must
+    # find nothing to change.
+    - name: Run the integration tier again
+      ansible.builtin.include_tasks: tasks/integration.yml
+      vars:
+        wait: false
       when:
         - groups['roll'] | default([]) | length > 0
         - not (handed_over | default(false))
-      block:
-        - name: Start it
-          ansible.builtin.include_tasks: tasks/integration.yml
-          vars:
-            wait: false
 
-        - name: Wait for it to pass
-          ansible.builtin.include_tasks: tasks/integration.yml
-          vars:
-            wait: true
+    - name: Wait for it to pass
+      ansible.builtin.include_tasks: tasks/integration.yml
+      vars:
+        wait: true
+      when:
+        - groups['roll'] | default([]) | length > 0
+        - not (handed_over | default(false))

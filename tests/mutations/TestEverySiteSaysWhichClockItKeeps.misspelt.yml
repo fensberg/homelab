@@ -1,0 +1,8 @@
+guard: TestEverySiteSaysWhichClockItKeeps
+file: config/management.tpl.json
+find: '      "timezone": "America/Chicago",'
+replace: '      "timezone": "America/Chigard",'
+mentions: "which the zone database does not know"
+why: >
+  A zone the database does not know is no zone at all, and what is done at an
+  hour of the site's day lands on the runner's clock instead.

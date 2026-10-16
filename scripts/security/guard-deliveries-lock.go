@@ -3,8 +3,8 @@
 // say what the declarations say?
 //
 // SECURITY CHECKS; PROCUREMENT ORDERS. `procurement order` writes the lock from
-// the versions in scripts/versions.env and the pypi:, library:, fetch: and
-// collection: fields on the tools: entries in scripts/approved-suppliers.yml.
+// the versions in scripts/versions.env and the pypi:, library: and fetch:
+// fields on the tools: entries in scripts/approved-suppliers.yml.
 // This reads the same two files and refuses a lock that disagrees, and never writes one. Both programs
 // read the declarations - separate modules, no shared code, by design - and
 // `task order-deliveries` runs this straight after ordering, so a reading that
@@ -68,9 +68,6 @@ var deliveryKinds = map[string]func(source, spec string) string{
 	"pypi":    func(_, spec string) string { return strings.ToLower(pep503.ReplaceAllString(spec, "-")) },
 	"fetch":   func(source, _ string) string { return source[strings.LastIndex(source, "/")+1:] },
 	"library": func(_, spec string) string { return strings.ToLower(pep503.ReplaceAllString(spec, "-")) },
-	"collection": func(source, _ string) string {
-		return strings.ReplaceAll(source[strings.LastIndex(source, "/")+1:], ".", "-")
-	},
 }
 
 var (
@@ -97,7 +94,7 @@ func declaredDeliveries(root string) ([]lockedDelivery, error) {
 		// Not a pass. This estate installs tools that are delivered this way, so
 		// finding none means the read has stopped matching the file - and a
 		// guard reporting clean over a list it could not read is a blind spot.
-		return nil, errors.New("no tools: entry in " + suppliersPath + " declares pypi:, library:, fetch: or collection:, " +
+		return nil, errors.New("no tools: entry in " + suppliersPath + " declares pypi:, library: or fetch:, " +
 			"so every delivery would pass unchecked")
 	}
 	return deliveries, nil
@@ -248,7 +245,7 @@ func checkDeliveriesLock(root string) ([]string, error) {
 			if !found {
 				findings = append(findings, fmt.Sprintf("%s's section does not pin %s itself at %s", d.Name, d.Name, d.Version))
 			}
-		case "fetch", "collection":
+		case "fetch":
 			want := strings.ReplaceAll(d.Spec, "{version}", d.Version)
 			if u, err := url.Parse(want); err != nil || u.Scheme != "https" || u.Host == "" {
 				findings = append(findings, fmt.Sprintf("%s fetches %q, which is not an https URL", d.Name, want))
@@ -282,9 +279,9 @@ Anything the lock covers is installed only from it, by hash, so a lock that
 has drifted installs something nobody pinned - or refuses a version somebody
 did.
 
-Change a version in scripts/versions.env, or a pypi:, library:, fetch: or
-collection: field on a tools: entry in scripts/approved-suppliers.yml, then
-order again rather than editing the lock:
+Change a version in scripts/versions.env, or a pypi:, library: or fetch:
+field on a tools: entry in scripts/approved-suppliers.yml, then order again
+rather than editing the lock:
 
     task order-deliveries
 `)

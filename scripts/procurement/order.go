@@ -32,13 +32,10 @@
 // version into pinned, hashed lines. PyPI is order-pypi.go; a file fetched from
 // a URL is order-fetch.go. A third is a new resolver, not a new mechanism.
 //
-// Two kinds share a resolver with another and differ only in how they are
-// installed. A library (`library: kubernetes`) is a PyPI package with no
-// command, which a tool in the same environment imports: it is resolved in
-// the one resolution with the tools, and take-delivery.sh links nothing for
-// it. A collection (`collection: <url>`) is an Ansible collection's file,
-// hashed as a fetch is, which take-delivery.sh hands to ansible-galaxy
-// rather than putting on PATH.
+// A library (`library: kubernetes`) shares PyPI's resolver and differs only
+// in how it is installed: a package with no command, which a tool in the
+// same environment imports, resolved in the one resolution with the tools,
+// and given nothing on PATH by take-delivery.sh.
 package main
 
 import (
@@ -64,7 +61,7 @@ const (
 
 // declaredDelivery is one tools: entry that says how it is delivered.
 type declaredDelivery struct {
-	Kind   string // "pypi", "library", "fetch" or "collection"
+	Kind   string // "pypi", "library" or "fetch"
 	Name   string // the section's name, and what take-delivery.sh is asked for
 	Source string // the tools: entry's source, owner/repository
 	Spec   string
@@ -96,12 +93,6 @@ var deliveryKinds = map[string]func(source, spec string) string{
 	"fetch": func(source, _ string) string { return source[strings.LastIndex(source, "/")+1:] },
 	// A library is a PyPI package, named as pip names it.
 	"library": func(_, spec string) string { return normalizeName(spec) },
-	// The collection's own name, as Galaxy names its file: kubernetes-core
-	// for ansible-collections/kubernetes.core. take-delivery.sh takes names
-	// of letters, digits and dashes.
-	"collection": func(source, _ string) string {
-		return strings.ReplaceAll(source[strings.LastIndex(source, "/")+1:], ".", "-")
-	},
 }
 
 func order(args []string) int {
@@ -162,7 +153,7 @@ func renderDeliveriesLock(root string, resolve resolveFunc, hashes hashFunc, fet
 	if err != nil {
 		return "", err
 	}
-	fetched, err := fetchSections(append(byKind["collection"], byKind["fetch"]...), fetch)
+	fetched, err := fetchSections(byKind["fetch"], fetch)
 	if err != nil {
 		return "", err
 	}
@@ -265,7 +256,7 @@ func formatDeliveriesLock(sections []lockSection) string {
 # pinned by version and by hash - and, for a Python tool, everything it pulls in.
 #
 # GENERATED - do not edit. Run ` + "`task order-deliveries`" + ` after changing a version in
-# scripts/versions.env or a pypi:, library:, fetch: or collection: field on a tools: entry in
+# scripts/versions.env or a pypi:, library: or fetch: field on a tools: entry in
 # scripts/approved-suppliers.yml. ` + "`security guard-deliveries`" + ` refuses a lock that
 # disagrees with either, on every commit and before CI installs anything.
 #

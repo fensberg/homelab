@@ -3,55 +3,57 @@
 # database's backups and its archive, the storage driver, placement, the
 # runners, and a plan of the site that must find nothing to change. Started
 # with `wait: false`, waited for with `wait: true`.
-- name: Start the integration tier
+- name: Note when the integration tier was started
+  ansible.builtin.set_fact:
+    integration_started: "{{ '%Y-%m-%dT%H:%M:%SZ' | strftime(second=(now(utc=true).timestamp() | int) - 5, utc=true) }}"
   when: not wait
-  block:
-    - name: Note when it was started
-      ansible.builtin.set_fact:
-        integration_started: "{{ '%Y-%m-%dT%H:%M:%SZ' | strftime(second=(now(utc=true).timestamp() | int) - 5, utc=true) }}"
 
-    - name: Ask for a run
-      ansible.builtin.uri:
-        url: "{{ github_api }}/repos/{{ repository }}/actions/workflows/integration-tests.yml/dispatches"
-        method: POST
-        body_format: json
-        body:
-          ref: main
-          inputs:
-            tier: integration
-            site: "{{ site }}"
-        headers:
-          Authorization: "Bearer {{ lookup('ansible.builtin.env', 'GITHUB_TOKEN') }}"
-          Accept: application/vnd.github+json
-        status_code: 204
+- name: Start the integration tier
+  ansible.builtin.uri:
+    url: "https://{{ github_host }}/repos/{{ repository }}/actions/workflows/integration-tests.yml/dispatches"
+    ca_path: "{{ github_ca | default(omit) }}"
+    method: POST
+    body_format: json
+    body:
+      ref: main
+      inputs:
+        tier: integration
+        site: "{{ site }}"
+    headers:
+      Authorization: "Bearer {{ lookup('ansible.builtin.env', 'GITHUB_TOKEN') }}"
+      Accept: application/vnd.github+json
+    status_code: 204
+  when: not wait
 
-- name: Wait for the integration tier to pass
+- name: Find the run that was asked for
+  ansible.builtin.uri:
+    url: "https://{{ github_host }}/repos/{{ repository }}/actions/workflows/integration-tests.yml/runs?event=workflow_dispatch&created=%3E%3D{{ integration_started }}"
+    ca_path: "{{ github_ca | default(omit) }}"
+    headers:
+      Authorization: "Bearer {{ lookup('ansible.builtin.env', 'GITHUB_TOKEN') }}"
+      Accept: application/vnd.github+json
+  register: found
+  until: found.json.workflow_runs | length > 0
+  retries: 20
+  delay: 15
   when: wait
-  block:
-    - name: Find the run that was asked for
-      ansible.builtin.uri:
-        url: "{{ github_api }}/repos/{{ repository }}/actions/workflows/integration-tests.yml/runs?event=workflow_dispatch&created=%3E%3D{{ integration_started }}"
-        headers:
-          Authorization: "Bearer {{ lookup('ansible.builtin.env', 'GITHUB_TOKEN') }}"
-          Accept: application/vnd.github+json
-      register: found
-      until: found.json.workflow_runs | length > 0
-      retries: 20
-      delay: 15
 
-    - name: Wait for it to finish
-      ansible.builtin.uri:
-        url: "{{ found.json.workflow_runs[0].url }}"
-        headers:
-          Authorization: "Bearer {{ lookup('ansible.builtin.env', 'GITHUB_TOKEN') }}"
-          Accept: application/vnd.github+json
-      register: integration_run
-      until: integration_run.json.status == 'completed'
-      retries: 120
-      delay: 30
+- name: Wait for it to finish
+  ansible.builtin.uri:
+    url: "https://{{ github_host }}/repos/{{ repository }}/actions/runs/{{ found.json.workflow_runs[0].id }}"
+    ca_path: "{{ github_ca | default(omit) }}"
+    headers:
+      Authorization: "Bearer {{ lookup('ansible.builtin.env', 'GITHUB_TOKEN') }}"
+      Accept: application/vnd.github+json
+  register: integration_run
+  until: integration_run.json.status == 'completed'
+  retries: 120
+  delay: 30
+  when: wait
 
-    - name: Refuse to go on unless it passed
-      ansible.builtin.assert:
-        that: integration_run.json.conclusion == 'success'
-        fail_msg: "The integration tier did not pass against the site: {{ integration_run.json.html_url }}"
-        quiet: true
+- name: Refuse to go on unless it passed
+  ansible.builtin.assert:
+    that: integration_run.json.conclusion == 'success'
+    fail_msg: "The integration tier did not pass against the site: {{ integration_run.json.html_url }}"
+    quiet: true
+  when: wait

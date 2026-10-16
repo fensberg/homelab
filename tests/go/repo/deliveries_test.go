@@ -55,7 +55,7 @@ task order-deliveries, and install it with:
 // The same for an Ansible collection. Galaxy has no lockfile: a version range
 // in a requirements file, which is how this estate took its collections until
 // the machine roll, installs whatever Galaxy serves inside it, checked against
-// nothing.
+// nothing. They come from the ansible package on PyPI, through the lock.
 func TestNothingInstallsACollectionOutsideTakeDelivery(t *testing.T) {
 	offenders := installsOutsideTakeDelivery(t, galaxyInstall)
 	if len(offenders) > 0 {
@@ -64,11 +64,11 @@ func TestNothingInstallsACollectionOutsideTakeDelivery(t *testing.T) {
   %s
 
 Galaxy has no lockfile, so a version written anywhere else installs whatever
-Galaxy serves for it. Declare the collection with collection: on its tools:
-entry in scripts/approved-suppliers.yml, pin its version in
-scripts/versions.env, run task order-deliveries, and install it with:
+Galaxy serves for it. The collections come in Ansible's own release on PyPI,
+the ansible package, locked by hash; a collection it does not carry is a
+decision to make, not a line to add. Install them with:
 
-    %s <name>`, takeDelivery, strings.Join(offenders, "\n  "), takeDelivery)
+    %s ansible`, takeDelivery, strings.Join(offenders, "\n  "), takeDelivery)
 	}
 }
 

@@ -184,18 +184,13 @@ func TestABinaryFieldNamesTheSectionSecurityExpects(t *testing.T) {
 	}
 }
 
-// A library is held to what a PyPI tool is held to, and a collection to what
-// a fetched file is: each kind's section must pin the thing itself, by hash,
-// at the declared version and from the declared address.
-func TestALibraryAndACollectionAreCheckedLikeTheKindsTheyShareAResolverWith(t *testing.T) {
+// A library is held to what a PyPI tool is held to: its section must pin
+// the library itself, by hash, at the declared version.
+func TestALibraryIsCheckedLikeAPythonTool(t *testing.T) {
 	suppliers := "tools:\n" +
-		"  - source: kubernetes-client/python\n    version: LIB_VERSION\n    library: a-client\n" +
-		"  - source: ansible-collections/kubernetes.core\n    version: COLL_VERSION\n" +
-		"    collection: https://galaxy.example/kubernetes-core-{version}.tar.gz\n"
-	versions := "LIB_VERSION=4.2.0\nCOLL_VERSION=6.6.0\n"
-	lock := "# [collection: kubernetes-core COLL_VERSION=6.6.0]\n" +
-		"https://galaxy.example/kubernetes-core-6.6.0.tar.gz --hash=sha256:" + hashD + "\n# [end]\n" +
-		"# [library: a-client LIB_VERSION=4.2.0]\n" +
+		"  - source: example/a-client\n    version: LIB_VERSION\n    library: a-client\n"
+	versions := "LIB_VERSION=4.2.0\n"
+	lock := "# [library: a-client LIB_VERSION=4.2.0]\n" +
 		"a-client==4.2.0 --hash=sha256:" + hashA + "\n# [end]\n"
 	if findings, err := checkDeliveriesLock(writeLockFixture(t, suppliers, versions, lock)); err != nil || len(findings) != 0 {
 		t.Fatalf("want a clean lock, got %v %v", findings, err)
@@ -203,10 +198,8 @@ func TestALibraryAndACollectionAreCheckedLikeTheKindsTheyShareAResolverWith(t *t
 	for name, tc := range map[string]struct{ lock, want string }{
 		"a library missing itself": {
 			strings.Replace(lock, "a-client==4.2.0", "urllib3==2.5.0", 1), "does not pin a-client itself"},
-		"a collection from another address": {
-			strings.Replace(lock, "galaxy.example", "elsewhere.example", 1), "must be exactly one line fetching"},
-		"a collection taken as a fetch": {
-			strings.Replace(lock, "# [collection: ", "# [fetch: ", 1), "kubernetes-core is declared as a collection delivery and has no section"},
+		"a library taken as a tool": {
+			strings.Replace(lock, "# [library: ", "# [pypi: ", 1), "a-client is declared as a library delivery and has no section"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			findings, err := checkDeliveriesLock(writeLockFixture(t, suppliers, versions, tc.lock))
