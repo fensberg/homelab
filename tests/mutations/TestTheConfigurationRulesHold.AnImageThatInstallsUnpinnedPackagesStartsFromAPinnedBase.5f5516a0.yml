@@ -1,7 +1,7 @@
-guard: TestAnImageThatInstallsUnpinnedPackagesStartsFromAPinnedBase
+guard: TestTheConfigurationRulesHold
 file: .github/runner-image/Dockerfile
 find: "FROM ghcr.io/actions/actions-runner:${RUNNER_VERSION}@sha256:"
-replace: "FROM ghcr.io/actions/actions-runner:${RUNNER_VERSION} #"
+replace: "FROM ghcr.io/actions/actions-runner:${RUNNER_VERSION}-sha256-"
 mentions: "which is not pinned by digest"
 why: >
   The packages this image installs are unpinned on purpose, and hadolint

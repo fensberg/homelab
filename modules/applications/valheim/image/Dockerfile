@@ -33,7 +33,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # and the build fails outright - and until it does, the pin holds the image on
 # a version deliberately not receiving those updates. What decides what this
 # image actually runs is the base digest above and the server fetched below.
-# proved by TestAnImageThatInstallsUnpinnedPackagesStartsFromAPinnedBase
+# proved by TestTheConfigurationRulesHold (policy/conftest/image_bases.rego)
 # hadolint ignore=DL3008
 RUN apt-get update \
 	&& apt-get install --no-install-recommends -y \
@@ -214,7 +214,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # never loaded by a headless server. Installing them would be several megabytes
 # of attack surface bought to silence a scan that is correctly reporting
 # something harmless.
-# proved by TestAnImageThatInstallsUnpinnedPackagesStartsFromAPinnedBase
+# proved by TestTheConfigurationRulesHold (policy/conftest/image_bases.rego)
 # hadolint ignore=DL3008
 RUN apt-get update \
 	&& apt-get install --no-install-recommends -y \

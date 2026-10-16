@@ -1,4 +1,4 @@
-guard: TestEveryWorkerIsCountedAgainstTheFreePlan
+guard: TestTheConfigurationRulesHold
 file: management/estate/free-plan.tf
 find: "    watchman = module.watchman.use\n"
 replace: "    watchmen = module.watchman.use\n"

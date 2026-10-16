@@ -94,6 +94,9 @@ func TestTheConfigurationRulesHold(t *testing.T) {
 				refused = append(refused, strings.TrimSpace(line))
 			}
 		}
+		if len(refused) == 0 {
+			t.Fatalf("conftest did not run the rules:\n\n%s", out)
+		}
 		t.Errorf("a configuration rule refuses the repository:\n\n  %s\n\nThe rule is in %s, named by its package; its own tests beside it show what it accepts.",
 			strings.Join(refused, "\n  "), conftestRules)
 	}

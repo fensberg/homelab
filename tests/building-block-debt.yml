@@ -103,7 +103,6 @@ debt:
   - "no tools: entry in "
   - "north-street-office"
   - "nothing at all"
-  - "proxmox_virtual_environment_vm.talos_cp"
   - "set -euo pipefail"
   - "source_control.repo_url"
   - "source_control.token"

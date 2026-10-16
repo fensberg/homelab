@@ -1,4 +1,4 @@
-guard: TestScrapingTheControlPlaneChangesBothHalvesTogether
+guard: TestTheConfigurationRulesHold
 file: modules/infrastructure/cluster/talos.tf
 find: 'listen-metrics-urls = "http://0.0.0.0:2381"'
 replace: 'listen-metrics-urls-disabled = "http://0.0.0.0:2381"'

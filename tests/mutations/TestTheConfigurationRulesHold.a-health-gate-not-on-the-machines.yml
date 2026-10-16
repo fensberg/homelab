@@ -1,0 +1,11 @@
+guard: TestTheConfigurationRulesHold
+file: modules/infrastructure/cluster/talos.tf
+find: "    talos_cluster_kubeconfig.this,\n    proxmox_virtual_environment_vm.talos_cp,\n"
+replace: "    talos_cluster_kubeconfig.this,\n"
+mentions: "does not depend on proxmox_virtual_environment_vm.talos_cp"
+why: >
+  The health gate reads the nodes the config asks for, which a plan knows in
+  full. Depending on the machines is what defers the read to apply time when
+  they change; without it a plan that changes the machine count waits on
+  addresses with no machine behind them and times out producing nothing
+  (#117), and a teardown does the same.

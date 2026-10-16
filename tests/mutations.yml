@@ -87,7 +87,7 @@
 # entry - which is also where the comment check's own decision is proved, in
 # TestSatisfiedByProseOnlyNamesAPassToFailFlip.
 
-owed_ceiling: 44
+owed_ceiling: 43
 
 unprovable:
   # --- cannot be proved by mutation ----------------------------------------
@@ -381,8 +381,6 @@ unprovable:
   - test: TestSetupConfiguresCommitSigning
     owed: true
   - test: TestTheCodeLawsAreCoveredBySensitivePaths
-    owed: true
-  - test: TestTheHealthGateDependsOnTheMachines
     owed: true
   - test: TestTheLabelMechanismIsGone
     owed: true

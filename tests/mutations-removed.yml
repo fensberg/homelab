@@ -82,3 +82,9 @@ removed:
     reason: moved with its guard to the configuration rules (policy/conftest/required_checks.rego), as TestTheConfigurationRulesHold.EveryCheckAMergeIsHeldToIsAJobThatRuns.87620709.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestEveryReleaseIsPinnedByDigest.fad87b52.yml
     reason: moved with its guard to the configuration rules (policy/conftest/releases.rego), as TestTheConfigurationRulesHold.EveryReleaseIsPinnedByDigest.fad87b52.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryWorkerIsCountedAgainstTheFreePlan.3a01008f.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/free_plan.rego), as TestTheConfigurationRulesHold.EveryWorkerIsCountedAgainstTheFreePlan.3a01008f.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestAnImageThatInstallsUnpinnedPackagesStartsFromAPinnedBase.5f5516a0.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/image_bases.rego), as TestTheConfigurationRulesHold.AnImageThatInstallsUnpinnedPackagesStartsFromAPinnedBase.5f5516a0.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestScrapingTheControlPlaneChangesBothHalvesTogether.9f23028d.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/control_plane_metrics.rego), as TestTheConfigurationRulesHold.ScrapingTheControlPlaneChangesBothHalvesTogether.9f23028d.yml, unchanged in what it breaks (2026-10-16)
