@@ -139,16 +139,20 @@ func discover(t *testing.T) []unit {
 		units = append(units, unit{"shell", p})
 	}
 
-	// Ansible: a YAML that actually plays something. requirements.yml declares
-	// collections and executes nothing, so it is not a unit.
+	// Ansible: a playbook, wherever it is - a YAML file whose document is a
+	// list of plays, each naming the hosts it plays on. Found by what it is
+	// rather than by the directory the first one was in, which is how the
+	// machine roll's play would have been missed: this read only
+	// management/hypervisor/. A file of tasks that a playbook includes is run
+	// by that playbook and is not a unit of its own.
 	for _, p := range tracked(t, func(rel string) bool {
-		return strings.HasPrefix(rel, "management/hypervisor/") && strings.HasSuffix(rel, ".yml")
+		return strings.HasSuffix(rel, ".yml") || strings.HasSuffix(rel, ".yaml")
 	}) {
 		body, err := os.ReadFile(filepath.Join(root, p))
 		if err != nil {
 			t.Fatalf("reading %s: %v", p, err)
 		}
-		if regexp.MustCompile(`(?m)^\s*-?\s*(hosts|tasks):`).Match(body) {
+		if isPlaybook(body) {
 			units = append(units, unit{"ansible", p})
 		}
 	}
@@ -455,4 +459,20 @@ run "c" {
 	if got := expectedFailures(test); strings.Join(got, " ") != strings.Join(wantExpected, " ") {
 		t.Errorf("expected failures are %v, want %v", got, wantExpected)
 	}
+}
+
+// isPlaybook says whether a YAML file is an Ansible playbook: its first
+// document a non-empty list of plays, every one of them saying which hosts
+// it plays on. A Kubernetes list, a workflow and a file of tasks all fail it.
+func isPlaybook(body []byte) bool {
+	var plays []map[string]any
+	if err := yaml.Unmarshal(body, &plays); err != nil || len(plays) == 0 {
+		return false
+	}
+	for _, play := range plays {
+		if _, ok := play["hosts"]; !ok {
+			return false
+		}
+	}
+	return true
 }

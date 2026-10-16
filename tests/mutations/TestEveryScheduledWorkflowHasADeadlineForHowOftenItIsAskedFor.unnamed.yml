@@ -1,7 +1,7 @@
 guard: TestEveryScheduledWorkflowHasADeadlineForHowOftenItIsAskedFor
 file: clusters/core/infrastructure/configs/scheduled-workflows.yaml
-find: 'instance=~"expedite.yml|security-patrol.yml"'
-replace: 'instance=~"expedite.yml"'
+find: 'instance=~"deploy-infrastructure.yml|expedite.yml|security-patrol.yml"'
+replace: 'instance=~"deploy-infrastructure.yml|expedite.yml"'
 mentions: "has no deadline"
 why: >
   A workflow is added to the watch by adding its address to a list, and the

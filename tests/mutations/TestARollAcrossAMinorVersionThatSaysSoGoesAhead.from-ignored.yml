@@ -1,0 +1,9 @@
+guard: TestARollAcrossAMinorVersionThatSaysSoGoesAhead
+file: management/roll/talos-upgrade.yml
+find: "          {{ behind | rejectattr('version', 'match', '^v(' ~ (to | regex_escape) ~ '|' ~ (from | regex_escape) ~ ')\\.') | list }}"
+replace: "          {{ behind | rejectattr('version', 'match', '^v(' ~ (to | regex_escape) ~ ')\\.') | list }}"
+mentions: "a declared minor bump was refused"
+why: >
+  A bump across a minor version that says so in the same change is how a
+  site moves up a minor at all; ignoring what it says leaves every site on
+  its first minor for good.

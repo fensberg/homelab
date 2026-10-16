@@ -1,0 +1,34 @@
+---
+# What every play of the roll reads, in one place.
+
+# The hours the roll may start a machine in, on the site's own clock: its
+# timezone in config/management.tpl.json. GitHub's timer speaks only UTC and
+# a zone may move twice a year, so the workflow fires every hour and the roll
+# decides.
+roll_window_hours: [2, 3, 4, 5]
+site_template: "{{ playbook_dir }}/../../config/management.tpl.json"
+
+# The first trusted worker's soak: rounds of the site's health, this far
+# apart. Fifteen minutes in all.
+soak_rounds: 3
+soak_round_minutes: 5
+
+# What the run is handed, by the workflow and by op run. Nothing here is a
+# secret; the access is written under the run's own directory, which the
+# workflow removes.
+workdir: "{{ lookup('ansible.builtin.env', 'ROLL_WORKDIR') }}"
+talosconfig: "{{ workdir }}/talosconfig"
+kubeconfig: "{{ workdir }}/kubeconfig"
+runner_node: "{{ lookup('ansible.builtin.env', 'RUNNER_NODE_NAME') }}"
+repository: "{{ lookup('ansible.builtin.env', 'GITHUB_REPOSITORY') }}"
+site: "{{ lookup('ansible.builtin.env', 'SITE') }}"
+
+# Where the roll asks. Prometheus and Alertmanager through the cluster's own
+# API, on its credential and its TLS: neither serves anything but plain HTTP
+# inside the cluster, and nothing of the roll's goes out in plain HTTP.
+# GitHub's API for the jobs that ran on the canary and the integration tier;
+# github_ca names a certificate authority to trust for it, when GitHub is
+# reached through one of the estate's own.
+github_host: api.github.com
+prometheus: /api/v1/namespaces/monitoring/services/http:kube-prometheus-stack-prometheus:9090/proxy
+alertmanager: /api/v1/namespaces/monitoring/services/http:kube-prometheus-stack-alertmanager:9093/proxy

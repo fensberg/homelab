@@ -3,7 +3,7 @@
 - **Tier / path:** `management/`, `clusters/management/`
 - **Branch:** `epoch/05-node-lifecycle`
 - **PR:** #
-- **Status:** Not started
+- **Status:** In progress - the machine roll, 2026-10-15
 
 ## Goal
 
@@ -90,6 +90,161 @@ capacity above" or names another criterion, it means epoch 04's.
 - **17. The bet has been tested.** Staging is overfilled on purpose and the
   right things are shed in the right order.
 
+## Decided 2026-10-15: rolled by Ansible, shaped like the standard
+
+**Chose:** machines are changed one at a time by an Ansible play run with
+`op run -- ansible-playbook`, one host at a time (`serial: 1`), each step a
+standard tool: `kubernetes.core.k8s_drain`, which honours disruption
+budgets; `talosctl upgrade` or `talosctl reset --graceful`; a health wait
+before the next. A machine that will not come back is replaced, not
+repaired. OpenTofu declares what the machines should be and never orders
+them; Flux keeps what runs on them safe to move.
+**Because:** the operator: "I like standard. It's a transferable skill."
+The ordering is what Ansible's rolling plays are for, and building it into
+the contractor would have been one more piece of the contractor re-doing a
+standard tool's job (epoch 06 now replaces those, one criterion each).
+**Rejected:** #626's `retire` phase in the contractor, closed; its design is
+the play's - the order of operations, and the refusals before anything is
+touched: etcd not voting, a database of one instance, a volume nothing will
+move, the runner's own machine. Cluster API and Omni, for now: the Talos
+Cluster API providers are in community hands with Sidero's development
+ended, and Omni holds every machine's admin credential for good, owns the
+Talos configuration, sits above every site, and needs a commercial licence
+for anything a business depends on. Omni can import an existing Talos
+cluster, so neither is closed off.
+**The credential:** the play's Talos and cluster credentials come from the
+vault through `op run` and live as long as the run, as the converge's do.
+
+### Built 2026-10-15: the machine roll
+
+`management/roll/talos-upgrade.yml`, run by the deploy workflow's `roll` job
+every hour, under the converge's lock; the play rolls only between 02:00
+and 06:00 on the site's own clock, its `timezone` in the config template.
+
+- **What it rolls to.** `modules/infrastructure/machine-image` is the one
+  place a site's Talos and Kubernetes versions and schematics are declared;
+  the cluster root builds machines from it, and the platform root writes it
+  into `kube-system/machine-image`, which the play reads. A node whose
+  `osImage` differs is behind.
+- **Its access.** The converge keeps the Talos client configuration in the
+  site's vault (`op://<site>/talos/talosconfig`, written when it changes);
+  the job hands it to the play through `op run`, and the play has Talos issue
+  a cluster credential for the run. Both live in a directory the job removes.
+- **What it refuses, touching nothing:** outside the window; a node not
+  Ready; an etcd member not voting or missing; a database under two
+  instances or not all ready; a version Talos does not move between (a minor
+  skipped, crossed without `talos_upgrades_from` saying so, or moved
+  backwards); a canary that is not well. A workload whose backup cannot be
+  taken stops it as well.
+- **The canaries.** The untrusted worker is rebuilt on the new version at
+  merge, so it is the first: Ready on the new version, nothing alerted about
+  it since it was built, and a pull-request job passed on it since. The first
+  trusted worker is the second: fifteen minutes' soak, the site's health held
+  three times, and the integration tier run against the site, which must
+  pass.
+- **Each machine:** an event; its alerts silenced by name and address for 45
+  minutes at most; drained through the eviction API; `talosctl upgrade` to the
+  installer image; back Ready on the new version; the site's health (Talos,
+  etcd, every Flux layer, every database instance, every DaemonSet, no pod
+  restarting that was not moved, nothing put off its machine for room);
+  uncordoned; etcd defragmented after a control plane; the silence lifted;
+  an event. Workers first, then control planes.
+- **Its own machine** last: cordoned, and a second job, placed elsewhere,
+  finishes it.
+- **A failure** stops it with the machine left cordoned. The aftermath opens
+  one issue (a refusal that repeats each hour is a comment on it) and, when
+  the bump was a patch release and a machine was touched, a draft revert of
+  the module; merged, the next window rolls the moved machines back. Across a
+  minor there is no revert.
+- **After every machine,** the integration tier again, whose plan of the site
+  must find nothing to change.
+
+Tested whole in `tests/go/repo/machine_roll_test.go`: the real play against
+Kubernetes' own store and API server, with `talosctl`, the clock and the
+outside world stood in for, each refusal tripped and nothing touched.
+
+**Owed on site0 before it is trusted**, with a patch release (v1.13.9 to
+v1.13.11), the record's own three proofs: a marker on a database-style volume
+survives its machine's upgrade; the image's extensions are still there
+afterwards; the bump's plan replaces no machine and none of the cluster's
+secrets, and the plan after the roll finds nothing to change.
+
+## Not built, from the discussion of 2026-10-15
+
+Agreed or raised while the roll was designed, and left for later initiatives.
+Each is a piece of its own, not a debt of this one.
+
+- **The Kubernetes stage.** `talosctl upgrade-k8s`, after a whole Talos roll
+  has succeeded, the first control plane its canary, and forward only:
+  Kubernetes does not downgrade. Before it, every manifest Flux applies and
+  every object in the cluster checked for APIs the new version removes, with
+  Pluto, a new supplier that comes in with this stage.
+- **Rolling machine configuration** (the second play). OpenTofu writes each
+  machine's configuration and the play applies it one machine at a time with
+  health between, instead of OpenTofu applying it to all at once. It unparks
+  criterion 16 (#767), and changes who applies configuration, which ties into
+  epoch 06's Terragrunt work.
+- **Retiring machines** (the third), which is this epoch's acceptance test:
+  `talosctl reset --graceful` in the same play family, etcd membership
+  removed, 5 control planes to 3 by a merge.
+- **The dead host.** A machine that will not come back is replaced rather
+  than repaired; the replacement path itself is not built.
+- **A compliance check after the roll.** `kube-bench`, the CIS benchmark of
+  the running site, a new supplier.
+- **The game server joined from outside** (epoch 04, criterion 23). When it
+  exists it belongs in the soak: it is the one check a player would notice.
+- **A "go" before a roll.** Decided against for now: the roll runs inside the
+  window with nobody involved, to be revisited if rolls fail too often.
+- **A queue that never drops a converge.** GitHub keeps one run waiting per
+  lock and cancels an older waiting one, so a roll timed while one converge
+  runs and another waits would cancel the waiting converge. The timer fires
+  every hour, because each site keeps its own clock and the play decides
+  whether its window is open; outside a window the run is over in a minute,
+  but it still takes the lock. A queue that holds every converge is not
+  built.
+- **The roll waits on a pull-request job.** The canary's last check needs a
+  job to have passed on the untrusted worker since it was rebuilt, and the
+  nightly checks are what usually provide one. A bump merged after them waits
+  a night.
+- **Cluster API and Omni, again**, when Sidero's Talos providers settle under
+  community maintenance, or a second node is bought (epoch 10). The roll is
+  shaped like Cluster API's model - declared versions, ordered machine
+  replacement, health between - so either could take it over.
+- **Cross-host placement**, with a second hypervisor (epoch 10).
+- **Runners.** A hot tool - a runner already waiting with everything in it -
+  and a waiting runner for every job of a push (the swarm); the lifeline's
+  router, generic to any estate, sending only jobs that hold nothing to
+  GitHub's runners when the pools fall behind; the heavy lanes moving to the
+  pools for good; a third pool runner and the runners' sizes; the converge
+  runner's memory, sized from measured use.
+- **The game server's own machine**, rather than three workers each sized to
+  hold it (three options, not decided), and its volume onto the storage
+  driver (epoch 04, criterion 31, not decided).
+- **The record keeps refusable fields for more kinds** (#771), and **one
+  refused object stops a whole layer** (#769).
+- **The roll's tools in the converge runner image.** Today the roll's job
+  takes delivery of ansible-core, Ansible's collections and the Kubernetes
+  client at the start of every run, about 50 MB from PyPI, hourly. Taken in
+  the image instead, as the pool image takes its tools, a run starts at once,
+  needs no package index while it holds the vault token, and the image is
+  what the scale set says it is: a container that installs nothing. The job
+  would still take delivery, and find everything already there as the lock
+  orders it. The cost is a larger image, and a version move that needs the
+  image rebuilt and its pin moved (#751).
+- **A warm Python for Ansible**, for further research. Each of the roll's
+  tasks starts a Python of its own and imports the Kubernetes client again,
+  about half a second each, which is most of a roll's time in its tests and
+  much of it on a site. Mitogen is the standard answer: one interpreter per
+  host, imported once, and it supports Ansible 14. It plugs in as a strategy
+  plugin, which Ansible deprecated for third parties in Ansible 12, so a
+  later ansible-core may refuse it; and it is a new supplier.
+- **The workstation's build half** is not run by its test, which stops
+  before the cloud image is fetched.
+- **Dashboards and alerts** for the roll, deliberately: the events and the
+  silences are collection, not a view.
+- **The contractor's other pieces** go to standard tools in epoch 06,
+  criteria 6-15.
+
 ## Scope
 
 **This epoch adopts and integrates. It does not build a node controller.**
@@ -138,37 +293,21 @@ worse version of a thing that already exists, and would then need maintaining.
 **Rejected:** a bespoke roll driver, which is what the first draft of this
 record proposed.
 
-### A candidate for upgrades in place: Tuppr, beside Cluster API
+### Rejected 2026-10-03: Tuppr
 
-**Not decided.** From [ionfury/homelab](https://github.com/ionfury/homelab),
-read at `150097e` on 2026-09-11, the nearest neighbour this estate has.
+[Tuppr](https://github.com/home-operations/tuppr), from
+[ionfury/homelab](https://github.com/ionfury/homelab), is a small controller:
+a `TalosUpgrade` and a `KubernetesUpgrade` resource each name a version, a
+maintenance window and health checks written as CEL, and it rolls the nodes
+one at a time. It was this record's undecided candidate for upgrades in place.
 
-[Tuppr](https://github.com/home-operations/tuppr) is a small controller. A
-`TalosUpgrade` and a `KubernetesUpgrade` resource each name a version, a
-maintenance window, and health checks written as CEL over live resources: every
-node Ready, the database at its full instance count, storage healthy - the
-questions the Health phase already asks. Bump the version in git and it rolls
-the nodes one at a time, refusing to continue while a check is false.
-
-It solves a different problem from Cluster API: Cluster API replaces machines,
-Tuppr upgrades the ones you have. For "patch Talos without losing a disk" it is
-the smaller tool, and it does not preclude Cluster API later. It would close
-most of #97, where a Talos version reaches these machines only by rebuilding
-them.
-
-What has to be proved before trusting it:
-
-- **That the data partition survives.** OpenEBS hostpath volumes live on it,
-  and whether an upgrade preserves it has been a flag rather than a guarantee
-  across Talos releases. Seed a sentinel on a volume, upgrade that node,
-  check the sentinel - before the world is ever on a node being upgraded.
-- **That the schematic is kept.** The image is a Factory image carrying the
-  Tailscale extension; an upgrade that drops the schematic brings nodes back
-  without the overlay.
-- **That OpenTofu reads the same version** it does, or the next ignition
-  quietly downgrades (#339).
-- It is a new supplier, `home-operations`, so it comes in a pull request of its
-  own.
+**Rejected** because it holds the Talos admin credential in the cluster for
+good, which is the objection upheld against Cluster API's providers. The roll
+takes what it had - a window, health between machines, one at a time - and
+holds the credential only for the length of a run. The proofs it listed are
+the roll's: the data partition survives (a sentinel on a volume), the
+schematic is kept (the installer image carries it), and OpenTofu reads the
+same version (#339; one module declares it for both).
 
 ### A failed converge does not get to pull this epoch forward
 
@@ -381,6 +520,10 @@ operation everybody assumes is supported, which is silently not.
 Whatever this epoch adopts has to own image rollout as well as node count, and
 Cluster API's machine templates are exactly that mechanism - replacing a
 machine when its template changes is the thing it does.
+
+Since 2026-10-15 a running machine is moved by the roll instead, in place,
+from the version and schematic `modules/infrastructure/machine-image`
+declares. A new machine is still built from its template.
 
 - **Cluster API needs a management cluster, and here it would manage its own.**
   The controllers have to run somewhere, and the only cluster is the one being

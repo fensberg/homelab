@@ -1,0 +1,11 @@
+---
+# One round of the first trusted worker's soak: a wait, and the site's health
+# asked again, so it is held for the whole soak rather than at its end.
+- name: Let the site run on the canary
+  ansible.builtin.pause:
+    minutes: "{{ soak_round_minutes }}"
+
+- name: Hold it to the site's health
+  ansible.builtin.include_tasks: health.yml
+  vars:
+    rolled: "{{ inventory_hostname }}"

@@ -16,7 +16,7 @@
 #
 # WHAT IT COSTS. GitHub allows a caller with no token sixty requests an hour,
 # counted by the address they come from, which is the site's. Each workflow
-# is asked about every fifteen minutes: six workflows are 24 an hour.
+# is asked about every twenty minutes: eight workflows are 24 an hour.
 #
 # WHAT IT CANNOT SAY. That a schedule has stopped running at all - the latest
 # run stays the last good one - and anything at all while the site is down.
@@ -210,13 +210,14 @@ spec:
   jobName: scheduled-workflows
   metricsPath: /probe
   # Sixty requests an hour is the allowance; see the top of this file.
-  scrapeInterval: 15m
+  scrapeInterval: 20m
   scrapeTimeout: 30s
   params:
     module: [latest-scheduled-run]
   staticConfigs:
     - targets:
         - https://api.github.com/repos/${RELEASE_REPOSITORY#ghcr.io/}/actions/workflows/codeql.yml/runs?event=schedule&status=completed&per_page=1
+        - https://api.github.com/repos/${RELEASE_REPOSITORY#ghcr.io/}/actions/workflows/deploy-infrastructure.yml/runs?event=schedule&status=completed&per_page=1
         - https://api.github.com/repos/${RELEASE_REPOSITORY#ghcr.io/}/actions/workflows/expedite.yml/runs?event=schedule&status=completed&per_page=1
         - https://api.github.com/repos/${RELEASE_REPOSITORY#ghcr.io/}/actions/workflows/integration-tests.yml/runs?event=schedule&status=completed&per_page=1
         - https://api.github.com/repos/${RELEASE_REPOSITORY#ghcr.io/}/actions/workflows/pr-validation.yml/runs?event=schedule&status=completed&per_page=1
@@ -245,8 +246,8 @@ spec:
     - name: scheduled-workflows
       rules:
         # A workflow is failing while its newest completed scheduled run is
-        # one that failed. Asked every fifteen minutes and looked back on
-        # over forty, because a series asked about that rarely is absent
+        # one that failed. Asked every twenty minutes and looked back on
+        # over fifty, because a series asked about that rarely is absent
         # between answers. The comparison is what clears it: once a newer
         # run has succeeded, the failed one is no longer the newest.
         #
@@ -255,10 +256,10 @@ spec:
         - alert: ScheduledWorkflowIsFailing
           expr: >-
             max by (workflow) (
-              last_over_time(scheduled_workflow_run_number{conclusion=~"failure|timed_out|startup_failure"}[40m])
+              last_over_time(scheduled_workflow_run_number{conclusion=~"failure|timed_out|startup_failure"}[50m])
             )
             >= on (workflow)
-            max by (workflow) (last_over_time(scheduled_workflow_run_number[40m]))
+            max by (workflow) (last_over_time(scheduled_workflow_run_number[50m]))
           labels:
             severity: warning
           annotations:
@@ -299,10 +300,10 @@ spec:
         # tests/go/repo holds every scheduled workflow to being named in the
         # one of these that matches how often it is asked for.
         - record: scheduled_workflow:latest_run_number
-          expr: max by (instance) (last_over_time(scheduled_workflow_run_number[40m]))
+          expr: max by (instance) (last_over_time(scheduled_workflow_run_number[50m]))
         - alert: ScheduledWorkflowHasNotRunWhenDue
           expr: >-
-            changes(scheduled_workflow:latest_run_number{instance=~"expedite.yml|security-patrol.yml"}[12h:15m]) == 0
+            changes(scheduled_workflow:latest_run_number{instance=~"deploy-infrastructure.yml|expedite.yml|security-patrol.yml"}[12h:15m]) == 0
             and on (instance)
             count_over_time(scheduled_workflow:latest_run_number[12h:15m]) >= 40
           labels:
@@ -363,7 +364,7 @@ spec:
         # The other way this goes quiet: GitHub refusing the question, most
         # likely because the site's address has used its hourly allowance.
         - alert: ScheduledWorkflowsCannotBeRead
-          expr: last_over_time(up{job="scheduled-workflows"}[40m]) == 0
+          expr: last_over_time(up{job="scheduled-workflows"}[50m]) == 0
           for: 2h
           labels:
             severity: warning

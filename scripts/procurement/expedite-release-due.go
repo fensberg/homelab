@@ -8,7 +8,7 @@ import (
 
 	// The zone database, compiled in.
 	//
-	// A runner image without tzdata answers "America/Chicago" with an error,
+	// A runner image without tzdata answers a zone's name with an error,
 	// and the honest failure of a release gate is to refuse rather than to
 	// assume UTC - which would put the release six hours out and land it in the
 	// middle of the evening. Embedding it removes the question.
@@ -17,15 +17,15 @@ import (
 
 // Due reports whether now is the hour when a delivery may be taken.
 //
-// The estate releases at 4am local, because that is when a restart disturbs
-// nobody: production reconciles from the tag, the deployment's strategy is
+// The estate releases at 4am on the first site's clock (its timezone in
+// config/management.tpl.json, the first site by name), because that is when
+// a restart disturbs nobody: production reconciles from the tag, the deployment's strategy is
 // Recreate, and everyone connected is dropped when it lands.
 //
 // Local, not UTC, and that is the whole reason this is a function rather than a
 // cron expression. GitHub's scheduler speaks only UTC, so a fixed cron drifts
 // an hour twice a year: 09:00 UTC is 4am in summer and 3am in winter. The
-// workflow therefore asks at both 09:00 and 10:00 UTC and lets this say which
-// of the two is really 4am in Chicago today.
+// workflow therefore asks every hour and lets this say whether it is the one.
 func Due(now time.Time, zone string, hour int) (bool, error) {
 	loc, err := time.LoadLocation(zone)
 	if err != nil {
@@ -36,10 +36,16 @@ func Due(now time.Time, zone string, hour int) (bool, error) {
 
 func expediteReleaseDue(args []string) int {
 	fs := flag.NewFlagSet("expedite-release-due", flag.ContinueOnError)
-	zone := fs.String("zone", "America/Chicago", "the zone whose clock the estate keeps")
+	// No default: the zone is the first site's, declared in the config
+	// template, and one written here would be a second place to change.
+	zone := fs.String("zone", "", "the zone whose clock the release keeps: the first site's timezone")
 	hour := fs.Int("hour", 4, "the hour a delivery may be taken, in that zone")
 	at := fs.String("at", "", "the instant to judge, RFC 3339 (default: now)")
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *zone == "" {
+		fmt.Fprintln(os.Stderr, "procurement expedite-release-due: -zone is required: the first site's timezone, from config/management.tpl.json")
 		return 2
 	}
 

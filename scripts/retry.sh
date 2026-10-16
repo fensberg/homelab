@@ -105,7 +105,6 @@ readonly RETRYABLE=(
 	"npm ci"         # a registry install
 	"pnpm install"   # a registry install
 	"go mod download"
-	"ansible-galaxy"
 )
 
 is_retryable() {

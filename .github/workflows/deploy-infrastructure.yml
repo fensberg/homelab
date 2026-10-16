@@ -40,6 +40,13 @@ on:
       # converge here applies nothing of its own. It waits for Flux to
       # settle and takes the record, which is the point.
       - "clusters/**"
+  # The machine roll (management/roll), every hour. Each site keeps its own
+  # clock (its timezone in config/management.tpl.json) and the play decides
+  # whether that site's window is open; outside it the run is over in a
+  # minute. Under this workflow's own lock, so a roll and a converge never
+  # run at once.
+  schedule:
+    - cron: "23 * * * *"
 
 permissions:
   contents: read
@@ -118,6 +125,16 @@ jobs:
           PUSH_AFTER: ${{ github.sha }}
         run: |
           set -euo pipefail
+          # A timer is the machine roll's, and changes nothing. Without this
+          # it fell through to the diff below with no push to diff, compared
+          # the last commit with its parent, and converged every hour the
+          # last merge had touched management/.
+          if [ "${EVENT}" = "schedule" ]; then
+            echo "management=false" >> "$GITHUB_OUTPUT"
+            echo "workload=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           # THE WORKLOAD TIER HAS WORK ONLY WHEN ITS DIRECTORY EXISTS (#370).
           #
           # The apply job cds into environments/<env>/infrastructure/. No such
@@ -394,6 +411,293 @@ jobs:
           path: verdict/
           if-no-files-found: ignore
           retention-days: 7
+
+  # ---------------------------------------------------------------------
+  # THE MACHINE ROLL - every machine moved to the Talos the cluster says it
+  # should run, one at a time, in the night's window (management/roll).
+  #
+  # On the site's own runners, holding the converge's credential and its
+  # lock: the play reads the Talos client configuration the converge keeps in
+  # the site's vault, through op run, for as long as the run. Most runs find
+  # the window shut or nothing behind and are over in a minute.
+  # ---------------------------------------------------------------------
+  roll:
+    name: Roll ${{ matrix.site }}
+    needs: changes
+    if: github.event_name == 'schedule'
+    runs-on: homelab-${{ matrix.site }}
+    environment: management
+    permissions:
+      contents: read
+      # To start the integration tier against the site and read how it went,
+      # and to read which jobs passed on the canary.
+      actions: write
+    # Three machines, a soak and two runs of the integration tier, with room.
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        site: ${{ fromJSON(needs.changes.outputs.sites) }}
+    outputs:
+      handed_over: ${{ steps.roll.outputs.handed_over }}
+      touched: ${{ steps.roll.outputs.touched }}
+      machine: ${{ steps.roll.outputs.machine }}
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # audit, for the converge's reason: harden-runner does nothing on
+          # this runner. Owned by scripts/approved-suppliers.yml under
+          # `egress:`, which says which job may reach what.
+          egress-policy: audit
+          disable-sudo-and-containers: "false"
+
+      - name: Read pinned versions
+        uses: $/.github/actions/versions
+
+      # ansible-core, Ansible's collections and the Kubernetes client the
+      # collection's modules import, from the lock by hash.
+      - name: Take delivery of the roll's tools
+        run: scripts/take-delivery.sh ansible-core ansible kubernetes
+
+      - name: Roll
+        id: roll
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+          SITE: ${{ matrix.site }}
+        run: |
+          # The access lives in this directory for the length of the run and
+          # no longer; op run hands it to the play and masks it in the log.
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "$workdir"' EXIT
+          printf 'TALOS_ACCESS=op://%s/talos/talosconfig\n' "$SITE" > "$workdir/vault.env"
+          ROLL_WORKDIR="$workdir" op run --env-file "$workdir/vault.env" -- \
+            ansible-playbook management/roll/talos-upgrade.yml 2>&1 | tee roll.log
+
+      # The play's own words where it stopped, for the issue the aftermath
+      # opens. What the play prints is structure: machines, versions, checks.
+      - name: Record why it stopped
+        if: failure()
+        run: |
+          grep -m1 '^fatal:' roll.log | sed 's/^[^{]*//' | jq -r '.msg // "The roll stopped without saying why."' > roll-why.txt || echo "The roll stopped without saying why." > roll-why.txt
+
+      - name: Keep why it stopped
+        if: failure()
+        uses: $/.github/workflows/upload-artifact
+        with:
+          name: roll-why-${{ matrix.site }}
+          path: roll-why.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # The machine the first job ran on, which it cordoned rather than drain
+  # under itself. This job is placed elsewhere because that machine is
+  # cordoned, and finishes it.
+  roll-handover:
+    name: Roll ${{ matrix.site }}, its last machine
+    needs: [changes, roll]
+    if: needs.roll.outputs.handed_over == 'true'
+    runs-on: homelab-${{ matrix.site }}
+    environment: management
+    permissions:
+      contents: read
+      actions: write
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        site: ${{ fromJSON(needs.changes.outputs.sites) }}
+    outputs:
+      touched: ${{ steps.roll.outputs.touched }}
+      machine: ${{ steps.roll.outputs.machine }}
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # As the roll's, for its reason.
+          egress-policy: audit
+          disable-sudo-and-containers: "false"
+
+      - name: Read pinned versions
+        uses: $/.github/actions/versions
+
+      - name: Take delivery of the roll's tools
+        run: scripts/take-delivery.sh ansible-core ansible kubernetes
+
+      - name: Roll
+        id: roll
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+          SITE: ${{ matrix.site }}
+        run: |
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "$workdir"' EXIT
+          printf 'TALOS_ACCESS=op://%s/talos/talosconfig\n' "$SITE" > "$workdir/vault.env"
+          ROLL_WORKDIR="$workdir" op run --env-file "$workdir/vault.env" -- \
+            ansible-playbook management/roll/talos-upgrade.yml 2>&1 | tee roll.log
+
+      - name: Record why it stopped
+        if: failure()
+        run: |
+          grep -m1 '^fatal:' roll.log | sed 's/^[^{]*//' | jq -r '.msg // "The roll stopped without saying why."' > roll-why.txt || echo "The roll stopped without saying why." > roll-why.txt
+
+      - name: Keep why it stopped
+        if: failure()
+        uses: $/.github/workflows/upload-artifact
+        with:
+          name: roll-why-${{ matrix.site }}
+          path: roll-why.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------
+  # A ROLL THAT STOPPED - said where somebody will see it, and nothing
+  # retried. Like the converge's aftermath, on GitHub's runner, holding
+  # nothing that reaches the estate.
+  #
+  # A roll that refused before its first machine changed nothing: an issue
+  # says why, and the next night's run asks again. One that stopped part-way
+  # left that machine cordoned: an issue says which, and when the bump was a
+  # patch release a pull request reverting it is opened, for the operator to
+  # merge or not. Reverted, the next window rolls the moved machines back.
+  # Across a minor version there is no revert: Talos goes forward only.
+  # ---------------------------------------------------------------------
+  roll-aftermath:
+    name: Roll aftermath
+    needs: [roll, roll-handover]
+    if: always() && (needs.roll.result == 'failure' || needs.roll-handover.result == 'failure')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    timeout-minutes: 10
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
+          egress-policy: block
+          disable-sudo-and-containers: "true"
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            objects.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+          fetch-depth: 0
+
+      - name: Collect why it stopped
+        uses: $/.github/workflows/download-artifact
+        with:
+          pattern: roll-why-*
+          path: why
+          merge-multiple: true
+
+      - name: Decide what a revert would be
+        id: bump
+        env:
+          TOUCHED: ${{ needs.roll-handover.outputs.touched || needs.roll.outputs.touched }}
+        run: |
+          # The change that moved the machines: the last commit to touch the
+          # module that declares their version.
+          sha=$(git log -1 --format=%H -- modules/infrastructure/machine-image/)
+          version=$(sed -n 's/^ *talos_version *= *"\(v[0-9.]*\)".*/\1/p' modules/infrastructure/machine-image/machine-image.tf)
+          from=$(sed -n 's/^ *talos_upgrades_from *= *"\(v[0-9.]*\)".*/\1/p' modules/infrastructure/machine-image/machine-image.tf)
+          patch=false
+          [ "${version%.*}" = "$from" ] && patch=true
+          {
+            echo "sha=$sha"
+            echo "version=$version"
+            echo "revertible=$([ "$TOUCHED" = true ] && [ "$patch" = true ] && echo true || echo false)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Mint the revert token
+        id: revert-token
+        if: steps.bump.outputs.revertible == 'true'
+        uses: $/.github/workflows/app-token
+        with:
+          client-id: ${{ secrets.PROCUREMENT_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.PROCUREMENT_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+
+      # The module put back as it was before the bump, and nothing else: the
+      # tree is main's with that one directory swapped, signed by GitHub as
+      # the converge's revert is. A pull request, never merged here.
+      - name: Offer a revert of the bump
+        id: revert
+        if: steps.bump.outputs.revertible == 'true'
+        env:
+          GH_TOKEN: ${{ steps.revert-token.outputs.token }}
+          SHA: ${{ steps.bump.outputs.sha }}
+          VERSION: ${{ steps.bump.outputs.version }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          before=$(git rev-parse "$SHA^:modules/infrastructure/machine-image")
+          tree=$(gh api "repos/$REPO/git/trees" \
+            -f base_tree="$(git rev-parse "HEAD^{tree}")" \
+            -f "tree[][path]=modules/infrastructure/machine-image" \
+            -f "tree[][mode]=040000" \
+            -f "tree[][type]=tree" \
+            -f "tree[][sha]=$before" \
+            --jq .sha)
+          commit=$(gh api "repos/$REPO/git/commits" \
+            -f message="revert: the machines go back from Talos $VERSION" \
+            -f tree="$tree" \
+            -f "parents[]=$(git rev-parse HEAD)" \
+            --jq .sha)
+          branch="revert/roll-stopped-${SHA::8}"
+          gh api "repos/$REPO/git/refs" -f ref="refs/heads/$branch" -f sha="$commit" >/dev/null
+          url=$(gh pr create --draft --base main --head "$branch" \
+            --title "revert: the machine roll to Talos $VERSION stopped" \
+            --body "$(printf '%s\n' \
+              "The machine roll to Talos $VERSION stopped part-way. Merging this puts modules/infrastructure/machine-image back as it was before ${SHA::8}; the next window then rolls the machines already moved back to the version before, the same way they went forward. Talos moves between patch versions in either direction." \
+              "" \
+              "**Do not merge it if the failure is not the version's** - a runner, the cluster, a check of the roll's own. Read the issue the roll opened, and the run, first." \
+              "" \
+              "Run: $RUN_URL")")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Say the roll stopped
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TOUCHED: ${{ needs.roll-handover.outputs.touched || needs.roll.outputs.touched }}
+          MACHINE: ${{ needs.roll-handover.outputs.machine || needs.roll.outputs.machine }}
+          VERSION: ${{ steps.bump.outputs.version }}
+          REVERT: ${{ steps.revert.outputs.url }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          why="$(cat why/roll-why.txt 2>/dev/null || echo 'The roll left no account of why it stopped. Read the run.')"
+          if [ "$TOUCHED" = true ]; then
+            title="The machine roll to Talos $VERSION stopped on $MACHINE"
+            what="**$MACHINE is left cordoned**, deliberately: nothing is retried, and a machine that will not come back is replaced rather than repaired. The machines before it are on $VERSION."
+            if [ -n "$REVERT" ]; then
+              what="$what A revert of the bump is open, unmerged: $REVERT"
+            else
+              what="$what There is no revert: the bump crosses a minor version, and Talos goes forward only. Fix forward."
+            fi
+            labels="priority:P1,type:correctness,epoch:05"
+          else
+            title="The machine roll to Talos $VERSION has not started"
+            what="**Nothing was touched.** The roll refused before its first machine, and asks again in the next window."
+            labels="priority:P2,type:correctness,epoch:05"
+          fi
+          body="$(printf '%s\n' "$what" "" "The roll's own words, where it stopped:" "" '```' "$why" '```' "" "Run: $RUN_URL")"
+          # One issue for a roll that will not start, not one an hour: the
+          # same refusal tomorrow is a comment on today's.
+          existing=$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$title" --label "$labels" --body "$body"
+          fi
 
   # ---------------------------------------------------------------------
   # AFTERMATH - make main stop being wrong after a failed converge.

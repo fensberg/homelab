@@ -20,6 +20,8 @@
 #          with each named tool's own commands linked into ~/.local/bin and
 #          the environment's Python there as `delivered-python`
 #   fetch  ~/.local/bin/<name>; an archive gives up the one file named <name>
+#   library the same environment as pypi, for the tools in it to import; it
+#          puts no command on PATH, because it has none
 #
 # WHY AN ISOLATED ENVIRONMENT (#423). The first version installed into the
 # user site with --break-system-packages, and the first real workstation run
@@ -93,7 +95,7 @@ for name in "$@"; do
 	fi
 	h="$(header "$name")"
 	if [ -z "$h" ]; then
-		echo "$name is not in scripts/deliveries.lock. Declare how it is delivered (pypi: or fetch:) on its tools: entry in scripts/approved-suppliers.yml, pin its version in scripts/versions.env, and run: task order-deliveries" >&2
+		echo "$name is not in scripts/deliveries.lock. Declare how it is delivered (pypi:, library: or fetch:) on its tools: entry in scripts/approved-suppliers.yml, pin its version in scripts/versions.env, and run: task order-deliveries" >&2
 		exit 1
 	fi
 	if [ "$(printf '%s\n' "$h" | wc -l)" -ne 1 ]; then
@@ -115,7 +117,7 @@ for name in "$@"; do
 	fi
 	took+=("$name")
 	case "$h" in
-	"# [pypi: "*) pypi="${pypi}${lines}"$'\n' ;;
+	"# [pypi: "* | "# [library: "*) pypi="${pypi}${lines}"$'\n' ;;
 	"# [fetch: "*) fetches+=("$name") ;;
 	*)
 		echo "$name is a kind of delivery this script does not know how to take: $h" >&2
@@ -152,6 +154,7 @@ if [ -n "$pypi" ]; then
 	# on PATH that nobody asked for. Read from the files the package itself
 	# installed into bin/, because a command is not always an entry point -
 	# checkov ships a plain script and zizmor a compiled binary.
+	# A library has none, and says so by its kind.
 	for name in "${took[@]}"; do
 		case "$(header "$name")" in "# [pypi: "*) ;; *) continue ;; esac
 		commands="$("$venv/bin/python" -c 'import sys, os

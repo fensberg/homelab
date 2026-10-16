@@ -1,0 +1,9 @@
+guard: TestTheRollMovesEveryMachineInOrderAndHoldsTheSiteToItsHealth
+file: management/roll/talos-upgrade.yml
+find: "          {{ workers + planes + own }}"
+replace: "          {{ planes + workers + own }}"
+mentions: "the roll upgraded"
+why: >
+  Control planes go last because losing one costs the most, and the first
+  worker is the canary the rest wait on. Planes first puts quorum at risk
+  before anything has shown the new version works.

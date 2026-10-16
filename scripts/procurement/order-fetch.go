@@ -46,7 +46,7 @@ func fetchSections(deliveries []declaredDelivery, fetch fetchFunc) ([]lockSectio
 			return nil, fmt.Errorf("fetching %s for %s: %w", u, d.Name, err)
 		}
 		out = append(out, lockSection{
-			Kind: "fetch", Name: d.Name, VersionKey: d.VersionKey, Version: d.Version,
+			Kind: d.Kind, Name: d.Name, VersionKey: d.VersionKey, Version: d.Version,
 			Lines: []string{u + " --hash=sha256:" + sum},
 		})
 	}

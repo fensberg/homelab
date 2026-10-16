@@ -215,7 +215,10 @@ operator: "Let's bring all the untouched into the epoch"):
   trigger written there.
 - **26. Every alert says what to do.** Each one that reaches the channel
   names what it means and the first thing to try, and alerts a converge is
-  known to cause are quieted for as long as it runs and no longer.
+  known to cause are quieted for as long as it runs and no longer. The machine
+  roll does this for itself (epoch 05, 2026-10-15): each machine's alerts are
+  silenced while it is down and the silence lifted when it is back. A
+  converge does not yet.
 - **27. The machines agree what time it is**, and an alert says when one
   drifts: etcd does not survive a clock that wanders.
 - **28. The site says what it draws** (added 2026-10-09). Electricity is a
