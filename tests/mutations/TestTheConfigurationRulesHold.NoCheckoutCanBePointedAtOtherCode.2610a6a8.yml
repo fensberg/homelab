@@ -1,4 +1,4 @@
-guard: TestNoCheckoutCanBePointedAtOtherCode
+guard: TestTheConfigurationRulesHold
 file: .github/workflows/checkout/action.yml
 find: "persist-credentials: false"
 replace: "persist-credentials: false\n        repository: someone/else"

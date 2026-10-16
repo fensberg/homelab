@@ -52,3 +52,13 @@ removed:
     reason: moved with its guard to the configuration rules (policy/conftest/workflow_shape.rego), as TestTheConfigurationRulesHold.NoWorkflowStepReadsTMPDIR.d1ff8fbc.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestEveryAppTokenInputIsFedTheValueItsNameSays.837eaee1.yml
     reason: moved with its guard to the configuration rules (policy/conftest/workflow_shape.rego), as TestTheConfigurationRulesHold.EveryAppTokenInputIsFedTheValueItsNameSays.837eaee1.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestAWorkflowThatTakesInputsCanPublishNothing.90562b7d.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_trust.rego), as TestTheConfigurationRulesHold.AWorkflowThatTakesInputsCanPublishNothing.90562b7d.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestAWorkflowStartedByAnotherTakesNothingFromItButItsOutcome.1995c97b.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_trust.rego), as TestTheConfigurationRulesHold.AWorkflowStartedByAnotherTakesNothingFromItButItsOutcome.1995c97b.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNoCheckoutCanBePointedAtOtherCode.2610a6a8.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_trust.rego), as TestTheConfigurationRulesHold.NoCheckoutCanBePointedAtOtherCode.2610a6a8.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNoPrivilegedRunPutsAPullRequestInTheWorkspace.5871b2a6.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_trust.rego), as TestTheConfigurationRulesHold.NoPrivilegedRunPutsAPullRequestInTheWorkspace.5871b2a6.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNoPrivilegedRunPutsAPullRequestInTheWorkspace.e1d9211a.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_trust.rego), as TestTheConfigurationRulesHold.NoPrivilegedRunPutsAPullRequestInTheWorkspace.e1d9211a.yml, unchanged in what it breaks (2026-10-16)

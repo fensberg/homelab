@@ -1,4 +1,4 @@
-guard: TestNoPrivilegedRunPutsAPullRequestInTheWorkspace
+guard: TestTheConfigurationRulesHold
 file: .github/workflows/zz-privileged-fetch.yml
 create: |
   name: planted

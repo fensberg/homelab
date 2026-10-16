@@ -1,4 +1,4 @@
-guard: TestAWorkflowThatTakesInputsCanPublishNothing
+guard: TestTheConfigurationRulesHold
 file: .github/workflows/integration-tests.yml
 find: "permissions:\n  contents: read\n\n# One at a time."
 replace: "permissions:\n  contents: write\n\n# One at a time."

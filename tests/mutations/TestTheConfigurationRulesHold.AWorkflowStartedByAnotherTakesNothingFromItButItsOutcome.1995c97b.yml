@@ -1,4 +1,4 @@
-guard: TestAWorkflowStartedByAnotherTakesNothingFromItButItsOutcome
+guard: TestTheConfigurationRulesHold
 file: .github/workflows/planted-watcher.yml
 create: |
   name: Planted watcher
