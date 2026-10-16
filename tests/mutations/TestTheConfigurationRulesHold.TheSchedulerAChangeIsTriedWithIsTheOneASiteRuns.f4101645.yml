@@ -1,4 +1,4 @@
-guard: TestTheSchedulerAChangeIsTriedWithIsTheOneASiteRuns
+guard: TestTheConfigurationRulesHold
 file: scripts/versions.env
 find: "KUBERNETES_VERSION=1.36.3"
 replace: "KUBERNETES_VERSION=1.35.9"

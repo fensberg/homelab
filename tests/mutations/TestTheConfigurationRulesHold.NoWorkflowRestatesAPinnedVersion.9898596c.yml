@@ -1,4 +1,4 @@
-guard: TestNoWorkflowRestatesAPinnedVersion
+guard: TestTheConfigurationRulesHold
 file: .github/workflows/pr-validation.yml
 find: "node-version: ${{ env.NODE_VERSION }}"
 replace: 'node-version: "24.19.0"'
