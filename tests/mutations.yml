@@ -87,7 +87,7 @@
 # entry - which is also where the comment check's own decision is proved, in
 # TestSatisfiedByProseOnlyNamesAPassToFailFlip.
 
-owed_ceiling: 43
+owed_ceiling: 41
 
 unprovable:
   # --- cannot be proved by mutation ----------------------------------------
@@ -213,8 +213,6 @@ unprovable:
     reason: table
   - test: TestALayerIsHeldToWhatItsSecretsCarry
     reason: table
-  - test: TestAnAlertIsHeldToSayingAllThreeThings
-    reason: table
   - test: TestPathsIntoTheEstateNamesEachWayOneIsOpened
     reason: table
   # Removes each application from a copy of the repository and runs every
@@ -334,8 +332,6 @@ unprovable:
     owed: true
   - test: TestEveryVaultReferenceInTheTemplateIsWrapped
     owed: true
-  - test: TestFluxSyncsAnonymously
-    owed: true
   - test: TestGuardAndSignedpushAgreeOnTheScratchRef
     owed: true
   - test: TestIPv6IsDisabledAtTheStack
@@ -345,8 +341,6 @@ unprovable:
   - test: TestNoCompiledBinaryIsTracked
     owed: true
   - test: TestNoGitCredentialIsCreatedForFlux
-    owed: true
-  - test: TestNoSourceControlTokenInTheConfigTemplate
     owed: true
   - test: TestNoWorkflowDeclaresAVersionThatVersionsEnvOwns
     owed: true

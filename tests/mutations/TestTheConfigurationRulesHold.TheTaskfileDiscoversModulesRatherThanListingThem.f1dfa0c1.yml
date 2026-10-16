@@ -1,4 +1,4 @@
-guard: TestTheTaskfileDiscoversModulesRatherThanListingThem
+guard: TestTheConfigurationRulesHold
 file: taskfile.yml
 find: '          go test -C "$dir" ./...'
 replace: "          go test -C scripts/contractor ./..."

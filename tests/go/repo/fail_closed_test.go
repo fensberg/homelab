@@ -247,7 +247,6 @@ var droppedErrors = map[string]int{
 	"cni_test.go":                1,
 	"duplicates_test.go":         1,
 	"estate_surfaces_test.go":    2,
-	"gitops_test.go":             1,
 	"go_invocation_test.go":      4,
 	"mutation_ledger_test.go":    5,
 	"pinned_endpoints_test.go":   2,
@@ -258,7 +257,7 @@ var droppedErrors = map[string]int{
 }
 
 // The ceiling on the whole debt. It may only fall.
-const droppedErrorCeiling = 26
+const droppedErrorCeiling = 23
 
 func TestNoGuardDropsAnErrorFromItsOwnSubject(t *testing.T) {
 	dir := filepath.Join(repoRoot(t), "tests", "go", "repo")
