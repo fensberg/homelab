@@ -821,7 +821,6 @@ jobs:
             api.github.com:443
             dl.k8s.io:443
             files.pythonhosted.org:443
-            galaxy.ansible.com:443
             get.opentofu.org:443
             github.com:443
             go.dev:443
@@ -857,7 +856,7 @@ jobs:
       # of Kubernetes' own store and API server, and the workstation's play
       # against a stand-in hypervisor.
       - name: Take delivery of what the plays are run with
-        run: scripts/take-delivery.sh kwokctl etcd kube-apiserver kubectl ansible-core kubernetes kubernetes-core
+        run: scripts/take-delivery.sh kwokctl etcd kube-apiserver kubectl ansible-core ansible kubernetes
 
       # Untagged, so this compiles and runs only the hermetic tests in
       # tests/go: the repository-invariant checks and the state-encryption
@@ -901,7 +900,6 @@ jobs:
             api.github.com:443
             dl.k8s.io:443
             files.pythonhosted.org:443
-            galaxy.ansible.com:443
             get.opentofu.org:443
             github.com:443
             go.dev:443
@@ -935,7 +933,7 @@ jobs:
 
       # A proof runs its guard, and the plays' guards run the plays.
       - name: Take delivery of what the plays are run with
-        run: scripts/take-delivery.sh kwokctl etcd kube-apiserver kubectl ansible-core kubernetes kubernetes-core
+        run: scripts/take-delivery.sh kwokctl etcd kube-apiserver kubectl ansible-core ansible kubernetes
 
       # The two tests that prove the other tests: the mutation ledger breaks
       # each guarded file and checks its guard fails, and the comment test

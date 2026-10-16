@@ -112,17 +112,13 @@ on:
     # The doorbell, hourly. Off the hour because every other scheduler on the
     # platform fires on it, and GitHub drops scheduled runs under load.
     - cron: "7 * * * *"
-    # The authoritative pass, once a day at 08:00 UTC - 3am or 2am in Chicago,
-    # so a delivery it finds is built and checked before the release window an
-    # hour or two later. This is what catches a post the doorbell missed.
-    - cron: "0 8 * * *"
-    # The release window: 4am in Chicago is 09:00 UTC in summer and 10:00 UTC in
-    # winter. GitHub's scheduler speaks UTC only, so both are asked and
-    # `procurement expedite-release-due` says which one is really 4am today. Exactly one of
-    # them is, on every day of the year including the two the clocks change on,
-    # which that program's tests assert day by day.
-    - cron: "0 9 * * *"
-    - cron: "0 10 * * *"
+    # The release window, asked every hour: 4am on the first site's clock (its
+    # timezone in config/management.tpl.json, the first site by name).
+    # GitHub's scheduler speaks UTC only and a zone may move twice a year, so
+    # `procurement expedite-release-due` says whether this hour is the one.
+    # The doorbell's run at 3am on that clock is the authoritative pass, so a
+    # delivery it finds is built and checked before the window an hour later.
+    - cron: "0 * * * *"
   # A dispatch by hand runs the whole chain now, ignoring both the doorbell and
   # the hour: for when Valve has just published and everybody is locked out.
   # Deliberately no inputs - Checkov's CKV_GHA_7 refuses any, because an input
@@ -152,8 +148,7 @@ jobs:
     # is already waiting.
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      github.event.schedule == '7 * * * *' ||
-      github.event.schedule == '0 8 * * *'
+      github.event.schedule == '7 * * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -200,13 +195,23 @@ jobs:
           echo "upstreams=${upstreams}" >> "$GITHUB_OUTPUT"
           jq -r '.[] | "- \(.name): \(.pin) in \(.pins)"' <<<"$upstreams" >> "$GITHUB_STEP_SUMMARY"
 
+      # The doorbell's run at 3am on the first site's clock is the daily
+      # authoritative pass.
+      - name: Is it the authoritative pass
+        id: daily
+        run: |
+          set -euo pipefail
+          zone="$(jq -r '.sites | to_entries | sort_by(.key) | .[0].value.timezone // empty' config/management.tpl.json)"
+          verdict="$(go run -C scripts/procurement . expedite-release-due -zone "$zone" -hour 3)"
+          echo "due=$([ "$verdict" = due ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
       - name: Ask whether a supplier has published anything
         id: ask
         env:
           # The daily pass and a hand dispatch skip the doorbell entirely and go
           # straight to the authority, so a post nobody saw cannot strand a
           # server for longer than a day.
-          AUTHORITATIVE: ${{ github.event_name == 'workflow_dispatch' || github.event.schedule == '0 8 * * *' }}
+          AUTHORITATIVE: ${{ github.event_name == 'workflow_dispatch' || steps.daily.outputs.due == 'true' }}
           UPSTREAMS: ${{ steps.upstreams.outputs.upstreams }}
         run: |
           set -euo pipefail
@@ -428,7 +433,7 @@ jobs:
                 "" \
                 "## What happens next" \
                 "" \
-                "Nothing needs you. At 4am America/Chicago the expediter merges this under its standing order, which covers this one line and refuses anything more. The fabricator then builds the image and the release, procurement delivers it, and the same window merges that delivery if the supplier's build is all that changed. A release carrying anything else waits for a review." \
+                "Nothing needs you. At 4am on the first site's clock the expediter merges this under its standing order, which covers this one line and refuses anything more. The fabricator then builds the image and the release, procurement delivers it, and the same window merges that delivery if the supplier's build is all that changed. A release carrying anything else waits for a review." \
                 "" \
                 "Taken by expediting: ${RUN_URL}")")"
             echo "${name}: opened ${url##*/}" >> "$GITHUB_STEP_SUMMARY"
@@ -443,8 +448,7 @@ jobs:
     if: >-
       always() && !cancelled() &&
       (github.event_name == 'workflow_dispatch' ||
-       github.event.schedule == '0 9 * * *' ||
-       github.event.schedule == '0 10 * * *')
+       github.event.schedule == '0 * * * *')
     runs-on: ubuntu-latest
     # Long enough to merge the expediter's pull request, wait for the
     # fabricator to build and deliver the release, and take that too.
@@ -483,8 +487,8 @@ jobs:
       - name: Setup Go
         uses: $/.github/workflows/setup-go
 
-      # 4am in Chicago, decided by the program rather than by which cron fired,
-      # so the hour is right on both sides of the daylight-saving change.
+      # 4am on the first site's clock, decided by the program rather than by
+      # the timer, so the hour is right on both sides of a clock change.
       - name: Is it the hour
         id: window
         env:
@@ -496,7 +500,8 @@ jobs:
             echo "due=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          verdict="$(go run -C scripts/procurement . expedite-release-due)"
+          zone="$(jq -r '.sites | to_entries | sort_by(.key) | .[0].value.timezone // empty' config/management.tpl.json)"
+          verdict="$(go run -C scripts/procurement . expedite-release-due -zone "$zone")"
           echo "due=$([ "$verdict" = due ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
       - name: Mint the expedite token

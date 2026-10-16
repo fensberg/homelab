@@ -303,7 +303,7 @@ spec:
           expr: max by (instance) (last_over_time(scheduled_workflow_run_number[50m]))
         - alert: ScheduledWorkflowHasNotRunWhenDue
           expr: >-
-            changes(scheduled_workflow:latest_run_number{instance=~"expedite.yml|security-patrol.yml"}[12h:15m]) == 0
+            changes(scheduled_workflow:latest_run_number{instance=~"deploy-infrastructure.yml|expedite.yml|security-patrol.yml"}[12h:15m]) == 0
             and on (instance)
             count_over_time(scheduled_workflow:latest_run_number[12h:15m]) >= 40
           labels:
@@ -323,7 +323,7 @@ spec:
               the schedule but does the work it is behind on.
         - alert: ScheduledWorkflowHasNotRunWhenDue
           expr: >-
-            changes(scheduled_workflow:latest_run_number{instance=~"deploy-infrastructure.yml|integration-tests.yml|pr-validation.yml|site-sweep.yml"}[30h:15m]) == 0
+            changes(scheduled_workflow:latest_run_number{instance=~"integration-tests.yml|pr-validation.yml|site-sweep.yml"}[30h:15m]) == 0
             and on (instance)
             count_over_time(scheduled_workflow:latest_run_number[30h:15m]) >= 100
           labels:

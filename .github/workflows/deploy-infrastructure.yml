@@ -40,13 +40,13 @@ on:
       # converge here applies nothing of its own. It waits for Flux to
       # settle and takes the record, which is the point.
       - "clusters/**"
-  # The machine roll (management/roll): the hours from 07:23 to 11:23 UTC,
-  # which hold 02:00 to 06:00 in Chicago whichever side of daylight saving it
-  # is on. The play decides whether it is inside the window; this only keeps
-  # the timer to the hours that can be. Under this workflow's own lock, so a
-  # roll and a converge never run at once.
+  # The machine roll (management/roll), every hour. Each site keeps its own
+  # clock (its timezone in config/management.tpl.json) and the play decides
+  # whether that site's window is open; outside it the run is over in a
+  # minute. Under this workflow's own lock, so a roll and a converge never
+  # run at once.
   schedule:
-    - cron: "23 7-11 * * *"
+    - cron: "23 * * * *"
 
 permissions:
   contents: read
@@ -455,10 +455,10 @@ jobs:
       - name: Read pinned versions
         uses: $/.github/actions/versions
 
-      # ansible-core, the Kubernetes client its modules import, and
-      # kubernetes.core, from the lock by hash.
+      # ansible-core, Ansible's collections and the Kubernetes client the
+      # collection's modules import, from the lock by hash.
       - name: Take delivery of the roll's tools
-        run: scripts/take-delivery.sh ansible-core kubernetes kubernetes-core
+        run: scripts/take-delivery.sh ansible-core ansible kubernetes
 
       - name: Roll
         id: roll
@@ -523,7 +523,7 @@ jobs:
         uses: $/.github/actions/versions
 
       - name: Take delivery of the roll's tools
-        run: scripts/take-delivery.sh ansible-core kubernetes kubernetes-core
+        run: scripts/take-delivery.sh ansible-core ansible kubernetes
 
       - name: Roll
         id: roll

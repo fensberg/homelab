@@ -135,7 +135,6 @@ spec:
               - matchName: codeload.github.com
               - matchName: dl.k8s.io
               - matchName: files.pythonhosted.org
-              - matchName: galaxy.ansible.com
               - matchName: get.opentofu.org
               - matchName: ghcr.io
               - matchName: github.com
@@ -156,7 +155,6 @@ spec:
         - matchName: codeload.github.com
         - matchName: dl.k8s.io
         - matchName: files.pythonhosted.org
-        - matchName: galaxy.ansible.com
         - matchName: get.opentofu.org
         - matchName: ghcr.io
         - matchName: github.com

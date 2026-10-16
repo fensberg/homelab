@@ -506,14 +506,6 @@ endpoints:
       - pypi.org:443
       - files.pythonhosted.org:443
 
-  - group: ansible-collections
-    reason: >-
-      Ansible's collections, each fetched by take-delivery.sh from the file
-      the lock hashed and installed offline: kubernetes.core for the machine
-      roll, community.crypto and ansible.posix for the hypervisor's play.
-    hosts:
-      - galaxy.ansible.com:443
-
   - group: infrastructure-tooling
     reason: OpenTofu itself and its provider registry.
     hosts:
@@ -750,8 +742,8 @@ egress:
     reason: >-
       The machine roll, on the site's own runners: reaches 1Password, the
       Talos and Kubernetes APIs at addresses deliberately not in git, the
-      cluster's own Prometheus and Alertmanager, GitHub's API, and PyPI and
-      Galaxy for the roll's tools. Harden-runner does nothing on this runner,
+      cluster's own Prometheus and Alertmanager through its API, GitHub's API,
+      and PyPI for the roll's tools. Harden-runner does nothing on this runner,
       as the converge's entry says, so its egress is the cluster's network
       layer's to control (#411).
 
@@ -1101,7 +1093,6 @@ egress:
       - api.github.com:443
       - dl.k8s.io:443
       - files.pythonhosted.org:443
-      - galaxy.ansible.com:443
       - get.opentofu.org:443
       - github.com:443
       - go.dev:443
@@ -1120,7 +1111,6 @@ egress:
       - api.github.com:443
       - dl.k8s.io:443
       - files.pythonhosted.org:443
-      - galaxy.ansible.com:443
       - get.opentofu.org:443
       - github.com:443
       - go.dev:443
