@@ -1,4 +1,4 @@
-guard: TestEveryJobOnTheEstatesRunnersNamesItsSite
+guard: TestTheConfigurationRulesHold
 file: clusters/core/infrastructure/configs/runner-scale-set-batch.yaml
 find: "runnerScaleSetName: homelab-batch-${SITE}"
 replace: "runnerScaleSetName: homelab-spare-${SITE}"

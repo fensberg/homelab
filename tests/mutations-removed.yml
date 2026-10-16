@@ -160,3 +160,11 @@ removed:
     reason: moved with its guard to the configuration rules (policy/conftest/suppliers.rego), as TestTheConfigurationRulesHold.EveryCommitHookIsAnApprovedSupplier.20942047.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestEveryProviderIsADeclaredSupplier.e059c08e.yml
     reason: moved with its guard to the configuration rules (policy/conftest/suppliers.rego), as TestTheConfigurationRulesHold.EveryProviderIsADeclaredSupplier.e059c08e.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryJobOnTheEstatesRunnersNamesItsSite.1091538b.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/runners.rego), as TestTheConfigurationRulesHold.EveryJobOnTheEstatesRunnersNamesItsSite.1091538b.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryJobOnTheEstatesRunnersNamesItsSite.fb7de3e3.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/runners.rego), as TestTheConfigurationRulesHold.EveryJobOnTheEstatesRunnersNamesItsSite.fb7de3e3.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestRunnerPodsCannotScheduleOntoAControlPlane.14806872.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/runners.rego), as TestTheConfigurationRulesHold.RunnerPodsCannotScheduleOntoAControlPlane.14806872.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestRunnerPodsAreNotBestEffort.12f6e271.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/runners.rego), as TestTheConfigurationRulesHold.RunnerPodsAreNotBestEffort.12f6e271.yml, unchanged in what it breaks (2026-10-16)
