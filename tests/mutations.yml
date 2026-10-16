@@ -87,7 +87,7 @@
 # entry - which is also where the comment check's own decision is proved, in
 # TestSatisfiedByProseOnlyNamesAPassToFailFlip.
 
-owed_ceiling: 38
+owed_ceiling: 34
 
 unprovable:
   # --- cannot be proved by mutation ----------------------------------------
@@ -316,12 +316,6 @@ unprovable:
     owed: true
   - test: TestBreakGlassIdentityIsReadOnlyByTheRestorePath
     owed: true
-  - test: TestChartSourcesAreApproved
-    owed: true
-  - test: TestClusterImagesComeFromApprovedRegistriesAndArePinned
-    owed: true
-  - test: TestEveryCommitHookIsPinned
-    owed: true
   - test: TestEveryPhaseHasASourceFileNamedAfterIt
     owed: true
   - test: TestEverySensitivePathExists
@@ -377,8 +371,6 @@ unprovable:
   - test: TestTheWorkstationTagIsDocumentedInThePolicy
     owed: true
   - test: TestVersionsAreDeclaredOnceAndSharedByBoth
-    owed: true
-  - test: TestWorkflowEgressIsDeclaredInTheSuppliersList
     owed: true
 
   # --- the ledger cannot mutate Go source ------------------------------------

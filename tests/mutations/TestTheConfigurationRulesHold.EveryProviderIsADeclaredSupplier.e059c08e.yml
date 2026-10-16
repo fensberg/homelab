@@ -1,4 +1,4 @@
-guard: TestEveryProviderIsADeclaredSupplier
+guard: TestTheConfigurationRulesHold
 file: management/platform/versions.tf
 find: 'kubernetes = { source = "hashicorp/kubernetes"'
 replace: 'kubernetes = { source = "evilcorp/kubernetes"'

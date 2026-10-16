@@ -154,3 +154,9 @@ removed:
     reason: moved with its guard to the configuration rules (policy/conftest/versions.rego), as TestTheConfigurationRulesHold.NoPinIsReadAsConfigurationByTheToolItPins.420541e8.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestTheSchedulerAChangeIsTriedWithIsTheOneASiteRuns.f4101645.yml
     reason: moved with its guard to the configuration rules (policy/conftest/versions.rego), as TestTheConfigurationRulesHold.TheSchedulerAChangeIsTriedWithIsTheOneASiteRuns.f4101645.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEverySupplierGivesAReason.a73cbae5.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/suppliers.rego), as TestTheConfigurationRulesHold.EverySupplierGivesAReason.a73cbae5.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryCommitHookIsAnApprovedSupplier.20942047.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/suppliers.rego), as TestTheConfigurationRulesHold.EveryCommitHookIsAnApprovedSupplier.20942047.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryProviderIsADeclaredSupplier.e059c08e.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/suppliers.rego), as TestTheConfigurationRulesHold.EveryProviderIsADeclaredSupplier.e059c08e.yml, unchanged in what it breaks (2026-10-16)
