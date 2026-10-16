@@ -87,7 +87,7 @@
 # entry - which is also where the comment check's own decision is proved, in
 # TestSatisfiedByProseOnlyNamesAPassToFailFlip.
 
-owed_ceiling: 41
+owed_ceiling: 39
 
 unprovable:
   # --- cannot be proved by mutation ----------------------------------------
@@ -356,8 +356,6 @@ unprovable:
     owed: true
   - test: TestRunnerManifestsAgreeWithOpenTofu
     owed: true
-  - test: TestRunnerScaleSetPinsItsImageByDigest
-    owed: true
   - test: TestSensorAndParserAgreeOnEveryPath
     owed: true
   - test: TestSensorDoesNotMatchAPathPrefixedElsewhere
@@ -375,8 +373,6 @@ unprovable:
   - test: TestTheLabelMechanismIsGone
     owed: true
   - test: TestTheRoutingFixIsAppliedPerHostNotPerSite
-    owed: true
-  - test: TestTheToolshedIsIgnored
     owed: true
   - test: TestTheWorkstationDoesNotWearTheRouterTag
     owed: true

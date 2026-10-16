@@ -1,4 +1,4 @@
-guard: TestNothingIsBuiltOutsideTheToolshed
+guard: TestTheConfigurationRulesHold
 file: taskfile.yml
 find: "      - go build -C scripts/signedpush -o ../../toolshed/signedpush .\n      - ./toolshed/signedpush -token"
 replace: "      - go build -C scripts/signedpush -o signedpush .\n      - ./signedpush -token"

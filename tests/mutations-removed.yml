@@ -112,3 +112,9 @@ removed:
     reason: moved with its guard to the configuration rules (policy/conftest/taskfile_modules.rego), as TestTheConfigurationRulesHold.TheTaskfileDiscoversModulesRatherThanListingThem.f1dfa0c1.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestTheCoverageShimDiesWithTheWorkflowStepThatNeedsIt.97484d98.yml
     reason: moved with its guard to the configuration rules (policy/conftest/coverage_shim.rego), as TestTheConfigurationRulesHold.TheCoverageShimDiesWithTheWorkflowStepThatNeedsIt.97484d98.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNothingIsBuiltOutsideTheToolshed.8790f9ba.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/toolshed.rego), as TestTheConfigurationRulesHold.NothingIsBuiltOutsideTheToolshed.8790f9ba.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestOnlyTheExpediteDutyRunsUnderItsCredential.36b9af0b.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/expedite_duty.rego), as TestTheConfigurationRulesHold.OnlyTheExpediteDutyRunsUnderItsCredential.36b9af0b.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestOnlyTheExpediteDutyRunsUnderItsCredential.ab64ec83.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/expedite_duty.rego), as TestTheConfigurationRulesHold.OnlyTheExpediteDutyRunsUnderItsCredential.ab64ec83.yml, unchanged in what it breaks (2026-10-16)

@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+file: .gitignore
+find: "# One line cannot be forgotten for a program nobody thought about.\ntoolshed/\n"
+replace: "# One line cannot be forgotten for a program nobody thought about.\n"
+mentions: "toolshed/ is not ignored"
+why: >
+  Every program builds into toolshed/ so that one ignore rule covers them
+  all. Without it each build leaves a megabyte of compiled Go untracked, and
+  the next `git add -A` commits it to a history no push can take it back out
+  of.
