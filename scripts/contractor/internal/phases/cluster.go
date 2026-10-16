@@ -73,6 +73,13 @@ func applySteps(ctx *run.Context, phase string, has siteHas) error {
 		}
 		// The cluster root is finished and every node is ready: a new
 		// untrusted worker is given its clean snapshot and opened to work.
+		if st.Root == config.ClusterRoot && len(st.Targets) == 0 {
+			// The cluster is finished: what rolls its machines is given
+			// the access to do it, in the vault.
+			if err := keepTalosAccess(ctx, func() (string, error) { return run.TofuOutputRaw(ctx.In(ctx.Cluster), "talosconfig") }, keepInVault); err != nil {
+				return err
+			}
+		}
 		if has.zones && st.Root == config.ClusterRoot && len(st.Targets) == 0 {
 			if err := cleanNewUntrustedWorkers(ctx); err != nil {
 				return err

@@ -38,6 +38,9 @@ func TestMain(m *testing.M) {
 	// untrusted workers all have their clean snapshot, so the step that gives
 	// a new one its snapshot finds nothing to do; what it does when there is
 	// one is untrustedclean_test.go's.
+	// No test writes to a vault: a whole verb keeps the Talos access in
+	// nothing. What keeping it does is talosaccess_test.go's.
+	keepInVault = func(string, string, map[string]string) ([]string, error) { return nil, nil }
 	untrustedHypervisor = func(*run.Context) (untrustedGuests, []string, error) {
 		return everyWorkerSnapshotted{}, nil, nil
 	}
