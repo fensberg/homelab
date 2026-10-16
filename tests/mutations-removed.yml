@@ -124,3 +124,7 @@ removed:
     reason: moved with its guard to the configuration rules (policy/conftest/push_hooks.rego), as TestTheConfigurationRulesHold.PlainGitPushIsRefusedByAHook.f793a686.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestEveryTaskAHookInvokesIsInvokable.344325e0.yml
     reason: moved with its guard to the configuration rules (policy/conftest/push_hooks.rego), as TestTheConfigurationRulesHold.EveryTaskAHookInvokesIsInvokable.344325e0.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestPoolMembershipNamesTheFunctionInTheResourceName.46887006.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/pools.rego), as TestTheConfigurationRulesHold.PoolMembershipNamesTheFunctionInTheResourceName.46887006.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestPoolMembershipDependsOnTheMachineItPlaces.4b847ebd.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/pools.rego), as TestTheConfigurationRulesHold.PoolMembershipDependsOnTheMachineItPlaces.4b847ebd.yml, unchanged in what it breaks (2026-10-16)
