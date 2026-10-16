@@ -94,3 +94,5 @@ removed:
     reason: moved with its guard to the configuration rules (policy/conftest/heartbeat_cadence.rego), as TestTheConfigurationRulesHold.ASiteRingsTheWatchmanAsOftenAsItLooksRound.8a9fbda4.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestEveryHelmReleaseRetriesRatherThanStalling.7802eeb9.yml
     reason: moved with its guard to the configuration rules (policy/conftest/helmrelease_remediation.rego), as TestTheConfigurationRulesHold.EveryHelmReleaseRetriesRatherThanStalling.7802eeb9.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestFluxSourcesOnlyNameSecretsThisRepositoryCreates.ab3aac71.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/flux_source_secret.rego), as TestTheConfigurationRulesHold.FluxSourcesOnlyNameSecretsThisRepositoryCreates.ab3aac71.yml, unchanged in what it breaks (2026-10-16)
