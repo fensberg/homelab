@@ -1,0 +1,9 @@
+guard: TestTheRollRefusesASiteNotFitToBeRolledAndTouchesNothing
+file: management/roll/tasks/etcd.yml
+find: "      - etcd_rows | reject('equalto', 'false') | list | length == 0"
+replace: "      - true"
+mentions: "the roll went ahead"
+why: >
+  A learner does not vote. Counting it as a member makes a site that has
+  quorum only on paper look fit, and taking a control plane down then loses
+  it.

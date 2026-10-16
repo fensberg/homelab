@@ -1,0 +1,8 @@
+guard: TestTheRollHandsItsOwnMachineToTheNextJob
+file: management/roll/talos-upgrade.yml
+find: "      when: own"
+replace: "      when: false"
+mentions: "its own machine left to the next job"
+why: >
+  A job that drains the machine it runs on is evicted part-way through its
+  own roll, holding the converge's lock, with a machine down.

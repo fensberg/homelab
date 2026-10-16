@@ -18,8 +18,9 @@ resource "kubernetes_config_map" "machine_image" {
   }
 
   data = {
-    talos_version      = module.machine_image.talos_version
-    kubernetes_version = module.machine_image.kubernetes_version
-    installer_image    = module.machine_image.installer_image
+    talos_version       = module.machine_image.talos_version
+    talos_upgrades_from = module.machine_image.talos_upgrades_from
+    kubernetes_version  = module.machine_image.kubernetes_version
+    installer_image     = module.machine_image.installer_image
   }
 }

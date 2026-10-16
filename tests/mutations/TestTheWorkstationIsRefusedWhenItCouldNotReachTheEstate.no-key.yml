@@ -1,0 +1,9 @@
+guard: TestTheWorkstationIsRefusedWhenItCouldNotReachTheEstate
+file: workstation/provision.yml
+find: "          - overlay_auth_key | length > 0"
+replace: "          - true"
+mentions: "was not refused"
+why: >
+  `tailscale up --auth-key=''` exits zero having joined nothing, so a
+  workstation built with no key comes up looking healthy and cannot reach
+  the hypervisor it sits on.

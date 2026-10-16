@@ -1,0 +1,29 @@
+---
+# What every play of the roll reads, in one place.
+
+# Central time, as the operator keeps it. GitHub's timer speaks only UTC and
+# Chicago moves twice a year, so the workflow fires hourly and the roll
+# decides.
+roll_zone: America/Chicago
+roll_window_hours: [2, 3, 4, 5]
+
+# The first trusted worker's soak: rounds of the site's health, this far
+# apart. Fifteen minutes in all.
+soak_rounds: 3
+soak_round_minutes: 5
+
+# What the run is handed, by the workflow and by op run. Nothing here is a
+# secret; the access is written under the run's own directory, which the
+# workflow removes.
+workdir: "{{ lookup('ansible.builtin.env', 'ROLL_WORKDIR') }}"
+talosconfig: "{{ workdir }}/talosconfig"
+kubeconfig: "{{ workdir }}/kubeconfig"
+runner_node: "{{ lookup('ansible.builtin.env', 'RUNNER_NODE_NAME') }}"
+repository: "{{ lookup('ansible.builtin.env', 'GITHUB_REPOSITORY') }}"
+site: "{{ lookup('ansible.builtin.env', 'SITE') }}"
+
+# Where the roll asks. The cluster's own, by their service names; GitHub's
+# API, for the jobs that ran on the canary and the integration tier.
+github_api: https://api.github.com
+prometheus: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+alertmanager: http://kube-prometheus-stack-alertmanager.monitoring.svc:9093

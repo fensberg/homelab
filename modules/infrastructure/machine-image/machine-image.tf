@@ -28,6 +28,16 @@ locals {
   # (#97).
   talos_version = "v1.13.9"
 
+  # The minor version machines may be rolled up from. Talos moves between
+  # patch versions of one minor in either direction - which is what lets a
+  # reverted patch bump roll machines back - and up one minor at a time,
+  # forward only. A bump across a minor sets this to the minor it comes from
+  # (v1.13 for v1.14.0), so that crossing is declared in the same change;
+  # otherwise it is talos_version's own minor, and the roll refuses any
+  # machine on another (management/roll, which refuses a value that is
+  # neither).
+  talos_upgrades_from = "v1.13"
+
   # renovate: datasource=github-releases depName=kubernetes/kubernetes
   #
   # Was inline in talos.tf as a bare "1.31.1" with no comment, no annotation
@@ -118,6 +128,10 @@ locals {
 
 output "talos_version" {
   value = local.talos_version
+}
+
+output "talos_upgrades_from" {
+  value = local.talos_upgrades_from
 }
 
 output "kubernetes_version" {

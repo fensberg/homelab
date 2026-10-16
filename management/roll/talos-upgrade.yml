@@ -1,0 +1,630 @@
+---
+# =============================================================================
+# The machine roll: every machine moved to the Talos the cluster says it
+# should run, one at a time, between 02:00 and 06:00 in Chicago.
+#
+# Run by the deploy workflow on a timer, under the converge's own lock, with
+# the Talos client configuration from the site's vault:
+#
+#   op run --env-file=<file naming TALOS_ACCESS> -- \
+#     ansible-playbook management/roll/talos-upgrade.yml
+#
+# WHAT IT READS. kube-system/machine-image says what every machine should run;
+# OpenTofu writes it from modules/infrastructure/machine-image, which is also
+# what new machines are built from. A node whose osImage says otherwise is
+# behind, and is rolled. A run that finds none behind changes nothing, so the
+# timer can fire every hour.
+#
+# WHAT IT REFUSES, before touching anything (#626's refusals, and the canary):
+#   - outside the window;
+#   - a node not Ready;
+#   - an etcd member that is not a voting member, or one missing;
+#   - a database with fewer than two instances, or not every one ready;
+#   - a version Talos does not move between: a minor version skipped, a minor
+#     version moved without the bump saying so (talos_upgrades_from), or a
+#     minor version moved backwards;
+#   - a canary that is not well: the untrusted worker, which a version bump
+#     rebuilds at merge, must be Ready on the new version with no alert fired
+#     for it since, and a pull-request job must have passed on it since.
+#
+# HOW, for each machine (serial: 1): an event and a silence of its alerts;
+# drained through the eviction API, so disruption budgets hold; `talosctl
+# upgrade` to the installer image; back Ready on the new version with the
+# site's health held (tasks/health.yml); uncordoned; etcd defragmented after a
+# control plane; the silence lifted and an event to say so. The first trusted
+# worker is the second canary: fifteen minutes' soak with the integration tier
+# run against the site, which must pass, before anything else is touched.
+#
+# A FAILURE STOPS IT, and leaves the machine cordoned. Nothing is retried: the
+# workflow opens an issue and offers a revert, and a machine that will not
+# come back is replaced rather than repaired.
+#
+# ITS OWN MACHINE is never drained under it. The job cordons the machine it
+# runs on, last, and says it handed over; a second job, placed elsewhere
+# because that machine is cordoned, finishes it.
+# =============================================================================
+- name: Decide whether to roll, and refuse a site that is not fit to be rolled
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files: [settings.yml]
+
+  module_defaults:
+    group/kubernetes.core.k8s:
+      kubeconfig: "{{ kubeconfig }}"
+
+  tasks:
+    - name: Ask the clock what hour it is in Chicago
+      ansible.builtin.command: date +%H
+      environment:
+        TZ: "{{ roll_zone }}"
+      register: hour
+      changed_when: false
+
+    - name: Stop outside the window
+      ansible.builtin.meta: end_play
+      when: (hour.stdout | int) not in roll_window_hours
+
+    - name: Refuse to run without the access the run is handed
+      ansible.builtin.assert:
+        that:
+          - workdir | length > 0
+          - lookup('ansible.builtin.env', 'TALOS_ACCESS') | length > 0
+          - runner_node | length > 0
+          - repository | length > 0
+          - site | length > 0
+          - lookup('ansible.builtin.env', 'GITHUB_TOKEN') | length > 0
+        fail_msg: >-
+          ROLL_WORKDIR, TALOS_ACCESS, RUNNER_NODE_NAME, GITHUB_REPOSITORY,
+          SITE and GITHUB_TOKEN must all be set: the workflow sets them, and op run
+          supplies TALOS_ACCESS from the site's vault.
+        quiet: true
+
+    - name: Write the Talos client configuration for the length of the run
+      ansible.builtin.copy:
+        content: "{{ lookup('ansible.builtin.env', 'TALOS_ACCESS') | b64decode }}"
+        dest: "{{ talosconfig }}"
+        mode: "0600"
+      no_log: true
+
+    - name: Read which machine the Kubernetes API is reached through
+      ansible.builtin.set_fact:
+        api_endpoint: >-
+          {{ (lookup('ansible.builtin.file', talosconfig) | from_yaml).contexts
+             | dict2items | map(attribute='value.endpoints') | flatten | first }}
+      no_log: true
+
+    - name: Have Talos issue a cluster credential for the run
+      ansible.builtin.command:
+        argv:
+          - talosctl
+          - --talosconfig
+          - "{{ talosconfig }}"
+          - --nodes
+          - "{{ api_endpoint }}"
+          - kubeconfig
+          - --force
+          - "{{ kubeconfig }}"
+      changed_when: false
+      no_log: true
+
+    - name: Read what every machine should run
+      kubernetes.core.k8s_info:
+        kind: ConfigMap
+        namespace: kube-system
+        name: machine-image
+      register: machine_image
+
+    - name: Refuse a cluster that has not been told
+      ansible.builtin.assert:
+        that: machine_image.resources | length == 1
+        fail_msg: >-
+          kube-system/machine-image is missing. OpenTofu writes it
+          (modules/infrastructure/platform); a converge puts it back.
+        quiet: true
+
+    - name: Read the nodes
+      kubernetes.core.k8s_info:
+        kind: Node
+      register: node_list
+
+    - name: Work out each machine's version and part
+      ansible.builtin.set_fact:
+        want: "{{ machine_image.resources[0].data }}"
+        machines: >-
+          {%- set out = [] -%}
+          {%- for n in node_list.resources -%}
+          {%- set os = n.status.nodeInfo.osImage | regex_search('v[0-9]+\.[0-9]+\.[0-9]+[^) ]*') | default('', true) -%}
+          {%- set ready = n.status.conditions | selectattr('type', 'equalto', 'Ready') | map(attribute='status') | list -%}
+          {%- set labels = n.metadata.labels | default({}) -%}
+          {%- set _ = out.append({
+                'name': n.metadata.name,
+                'address': (n.status.addresses | selectattr('type', 'equalto', 'InternalIP') | map(attribute='address') | first),
+                'version': os,
+                'ready': ready == ['True'],
+                'control_plane': 'node-role.kubernetes.io/control-plane' in labels,
+                'untrusted': 'untrusted-zone' in labels,
+                'created': n.metadata.creationTimestamp,
+              }) -%}
+          {%- endfor -%}
+          {{ out }}
+
+    - name: Find the machines that are behind
+      ansible.builtin.set_fact:
+        behind: "{{ machines | rejectattr('version', 'equalto', want.talos_version) | list }}"
+
+    - name: Stop when nothing is behind
+      ansible.builtin.meta: end_play
+      when: behind | length == 0
+
+    - name: Refuse a node that is not Ready
+      ansible.builtin.assert:
+        that: machines | rejectattr('ready') | list | length == 0
+        fail_msg: >-
+          Not Ready: {{ machines | rejectattr('ready') | map(attribute='name') | join(', ') }}.
+          A roll takes machines down one at a time, which a site already short
+          of one cannot afford.
+        quiet: true
+
+    # Talos moves between patch versions of one minor in either direction,
+    # which is what makes a reverted patch bump roll back; and up one minor at
+    # a time, forward only. A bump across a minor says so, by naming the minor
+    # it comes from.
+    - name: Read the minor versions the bump moves between
+      ansible.builtin.set_fact:
+        to_minor: "{{ want.talos_version | regex_replace('^v([0-9]+)\\.([0-9]+)\\..*$', '\\1 \\2') | split(' ') | map('int') | list }}"
+        from_minor: "{{ want.talos_upgrades_from | default('') | regex_replace('^v([0-9]+)\\.([0-9]+)$', '\\1 \\2') | split(' ') | map('int', default=-1) | list }}"
+
+    - name: Refuse a bump that says it crosses more than one minor version
+      ansible.builtin.assert:
+        that: >-
+          from_minor == to_minor
+          or (from_minor | length == 2 and from_minor[0] == to_minor[0] and from_minor[1] == to_minor[1] - 1)
+        fail_msg: >-
+          talos_upgrades_from is {{ want.talos_upgrades_from | default('missing') }} for
+          {{ want.talos_version }}: it must be that version's own minor, or the one
+          below it. Talos moves up one minor version at a time.
+        quiet: true
+
+    - name: Work out which machines are at a version Talos will not move from
+      ansible.builtin.set_fact:
+        unmovable: >-
+          {%- set to = want.talos_version | regex_replace('^v([0-9]+\.[0-9]+)\..*$', '\1') -%}
+          {%- set from = want.talos_upgrades_from | regex_replace('^v', '') -%}
+          {{ behind | rejectattr('version', 'match', '^v(' ~ (to | regex_escape) ~ '|' ~ (from | regex_escape) ~ ')\.') | list }}
+
+    - name: Refuse a move Talos does not make
+      ansible.builtin.assert:
+        that: unmovable | length == 0
+        fail_msg: >-
+          Behind at a version Talos will not move from: machines may move
+          between patch versions of {{ want.talos_version | regex_replace('\.[0-9]+$', '') }},
+          or up from {{ want.talos_upgrades_from }}, which the bump declares
+          (talos_upgrades_from in modules/infrastructure/machine-image). Found
+          {{ unmovable | map(attribute='version') | unique | join(', ') }}.
+        quiet: true
+
+    - name: Refuse an etcd member that does not vote, or one missing
+      ansible.builtin.include_tasks: tasks/etcd.yml
+
+    - name: Read the databases
+      kubernetes.core.k8s_info:
+        api_version: postgresql.cnpg.io/v1
+        kind: Cluster
+      register: databases
+
+    - name: Refuse a database a drain would take down
+      ansible.builtin.assert:
+        that:
+          - item.spec.instances | int >= 2
+          - item.status.readyInstances | default(0) | int == item.spec.instances | int
+        fail_msg: >-
+          {{ item.metadata.namespace }}/{{ item.metadata.name }} has
+          {{ item.status.readyInstances | default(0) }} of {{ item.spec.instances }}
+          instances ready. With fewer than two, draining its machine stops it.
+        quiet: true
+      loop: "{{ databases.resources }}"
+      loop_control:
+        label: "{{ item.metadata.namespace }}/{{ item.metadata.name }}"
+
+    - name: Find the canary
+      ansible.builtin.set_fact:
+        canaries: "{{ machines | selectattr('untrusted') | list }}"
+
+    - name: Refuse a canary that is not on the new version
+      ansible.builtin.assert:
+        that:
+          - canaries | length > 0
+          - canaries | rejectattr('version', 'equalto', want.talos_version) | list | length == 0
+        fail_msg: >-
+          The untrusted worker is the first canary: a version bump rebuilds it
+          at merge, so it has run the new version before any trusted machine
+          does. {{ 'There is none.' if canaries | length == 0 else
+          (canaries | map(attribute='name') | join(', ')) ~ ' is not on ' ~ want.talos_version ~ '.' }}
+        quiet: true
+
+    - name: Ask what has alerted since the canary was built
+      ansible.builtin.uri:
+        url: "{{ prometheus }}/api/v1/query"
+        body_format: form-urlencoded
+        method: POST
+        body:
+          query: >-
+            max_over_time(ALERTS{alertstate="firing"}[{{ ((now(utc=true) - (item.created | to_datetime('%Y-%m-%dT%H:%M:%SZ'))).total_seconds() | int) + 60 }}s])
+      register: canary_alerts
+      loop: "{{ canaries }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    # An alert names a machine by its name or by its address, so either one
+    # among an alert's labels counts.
+    - name: Work out which canaries something has alerted about
+      ansible.builtin.set_fact:
+        alerted: >-
+          {%- set out = [] -%}
+          {%- for r in canary_alerts.results -%}
+          {%- set seen = r.json.data.result | map(attribute='metric') | map('dict2items') | flatten | map(attribute='value') | list -%}
+          {%- if r.item.name in seen or (seen | select('match', (r.item.address | regex_escape) ~ '(:|$)') | list | length > 0) -%}
+          {%- set _ = out.append(r.item.name) -%}
+          {%- endif -%}
+          {%- endfor -%}
+          {{ out }}
+
+    - name: Refuse a canary something has alerted about
+      ansible.builtin.assert:
+        that: alerted | length == 0
+        fail_msg: "An alert has fired for {{ alerted | join(', ') }} since it was built on the new version."
+        quiet: true
+
+    - name: Ask which runs have passed since the canary was built
+      ansible.builtin.uri:
+        url: "{{ github_api }}/repos/{{ repository }}/actions/runs?status=success&per_page=50&created=%3E%3D{{ canaries | map(attribute='created') | max }}"
+        headers:
+          Authorization: "Bearer {{ lookup('ansible.builtin.env', 'GITHUB_TOKEN') }}"
+          Accept: application/vnd.github+json
+      register: runs_since
+
+    - name: Ask which runners their jobs ran on
+      ansible.builtin.uri:
+        url: "{{ item.jobs_url }}?per_page=100"
+        headers:
+          Authorization: "Bearer {{ lookup('ansible.builtin.env', 'GITHUB_TOKEN') }}"
+          Accept: application/vnd.github+json
+      register: jobs_since
+      loop: "{{ runs_since.json.workflow_runs }}"
+      loop_control:
+        label: "{{ item.id }}"
+
+    # A pull request's jobs run on runners named for their pool, pr-<pool>-...,
+    # and those run on the untrusted worker and nowhere else.
+    - name: Count the pull-request jobs that have passed since
+      ansible.builtin.set_fact:
+        passed_on_canary: >-
+          {{ jobs_since.results | map(attribute='json.jobs') | flatten
+             | selectattr('conclusion', 'equalto', 'success')
+             | selectattr('runner_name', 'string')
+             | selectattr('runner_name', 'match', 'pr-') | list | length }}
+
+    - name: Refuse a canary no job has passed on
+      ansible.builtin.assert:
+        that: passed_on_canary | int > 0
+        fail_msg: >-
+          No pull-request job has passed on the untrusted worker since it was
+          built on {{ want.talos_version }}. The nightly checks run their heavy
+          lanes there; the roll waits for one to pass.
+        quiet: true
+
+    # Every application's declaration, wherever the applications are kept:
+    # one directory each, its declaration in it. Finding none is not a site
+    # with nothing to save but a read that has stopped matching, and is
+    # refused rather than rolled past.
+    - name: Find every application's declaration
+      ansible.builtin.find:
+        paths: "{{ playbook_dir }}/../../modules/applications"
+        patterns: application.json
+        recurse: true
+        depth: 2
+      register: declarations
+
+    - name: Refuse when no application's declaration could be found
+      ansible.builtin.assert:
+        that: declarations.matched > 0
+        fail_msg: >-
+          No application.json was found under modules/applications, so which
+          workloads must take a backup before the roll cannot be read.
+        quiet: true
+
+    - name: Read every workload's backup declaration
+      ansible.builtin.set_fact:
+        backups: >-
+          {%- set out = [] -%}
+          {%- for f in declarations.files | map(attribute='path') -%}
+          {%- set d = lookup('ansible.builtin.file', f) | from_json -%}
+          {%- if d.before_teardown is defined -%}
+          {%- set _ = out.append(d.before_teardown | combine({'namespace': f | dirname | basename})) -%}
+          {%- endif -%}
+          {%- endfor -%}
+          {{ out }}
+
+    - name: Find each workload's running pods
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: "{{ item.namespace }}"
+        label_selectors: ["{{ item.selector }}"]
+        field_selectors: [status.phase=Running]
+      register: backup_pods
+      loop: "{{ backups }}"
+      loop_control:
+        label: "{{ item.namespace }}"
+
+    # A workload's own words can name what it holds, and this log is public,
+    # so what the command prints is not kept.
+    - name: Have every workload take a backup before the first machine goes
+      kubernetes.core.k8s_exec:
+        namespace: "{{ item.0.item.namespace }}"
+        pod: "{{ item.1.metadata.name }}"
+        container: "{{ item.0.item.container }}"
+        command: "{{ item.0.item.command | map('quote') | join(' ') }}"
+      register: backed_up
+      no_log: true
+      loop: "{{ backup_pods.results | subelements('resources') }}"
+      loop_control:
+        label: "{{ item.0.item.namespace }}"
+
+    - name: Refuse to go on without them
+      ansible.builtin.assert:
+        # Each backup said it succeeded and exited zero. A result with no exit
+        # code at all is an exec that never ran, and counts as one that failed.
+        that:
+          - backed_up is succeeded
+          - backed_up.results | default([]) | selectattr('rc', 'defined') | selectattr('rc', 'equalto', 0) | list | length
+            == backed_up.results | default([]) | list | length
+        fail_msg: "A backup did not succeed, so nothing has been touched."
+        quiet: true
+
+    - name: Note how often every pod has restarted, to hold each machine to
+      kubernetes.core.k8s_info:
+        kind: Pod
+      register: pods_before
+
+    - name: Put the machines in the order they are rolled
+      ansible.builtin.set_fact:
+        roll_started: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+        restarts_before: >-
+          {%- set out = {} -%}
+          {%- for p in pods_before.resources -%}
+          {%- set _ = out.update({p.metadata.uid: (p.status.containerStatuses | default([]) | map(attribute='restartCount') | sum)}) -%}
+          {%- endfor -%}
+          {{ out }}
+        order: >-
+          {%- set others = behind | rejectattr('name', 'equalto', runner_node) | list -%}
+          {%- set workers = others | rejectattr('control_plane') | rejectattr('untrusted') | list -%}
+          {%- set planes = others | selectattr('control_plane') | list -%}
+          {%- set own = behind | selectattr('name', 'equalto', runner_node) | list -%}
+          {{ workers + planes + own }}
+
+    - name: Hand each machine to the roll, in that order
+      ansible.builtin.add_host:
+        name: "{{ item.name }}"
+        groups: [roll]
+        ansible_connection: local
+        # The Python ansible-playbook runs under, which is the one the
+        # Kubernetes client was delivered into; discovery would find the
+        # system's, which has none.
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
+        address: "{{ item.address }}"
+        control_plane: "{{ item.control_plane }}"
+        own: "{{ item.name == runner_node }}"
+        canary: "{{ index == 0 and not item.control_plane and item.name != runner_node }}"
+      loop: "{{ order }}"
+      loop_control:
+        index_var: index
+        label: "{{ item.name }}"
+
+- name: Roll each machine, one at a time
+  hosts: roll
+  connection: local
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  max_fail_percentage: 0
+
+  vars_files: [settings.yml]
+  vars:
+    want: "{{ hostvars['localhost'].want }}"
+
+  module_defaults:
+    group/kubernetes.core.k8s:
+      kubeconfig: "{{ kubeconfig }}"
+
+  tasks:
+    # Never drained under the job doing the draining. Cordoned, so the job
+    # that finishes it is placed somewhere else, and the run ends saying so.
+    - name: Hand the machine this job runs on to the next job
+      when: own
+      block:
+        - name: Cordon it
+          kubernetes.core.k8s_drain:
+            name: "{{ inventory_hostname }}"
+            state: cordon
+
+        - name: Say it was handed over
+          ansible.builtin.lineinfile:
+            path: "{{ lookup('ansible.builtin.env', 'GITHUB_OUTPUT') }}"
+            line: handed_over=true
+            create: true
+            mode: "0600"
+          when: lookup('ansible.builtin.env', 'GITHUB_OUTPUT') | length > 0
+
+        - name: Remember it for what follows
+          ansible.builtin.set_fact:
+            handed_over: true
+          delegate_to: localhost
+          delegate_facts: true
+
+        - name: Stop here
+          ansible.builtin.meta: end_play
+
+    # For the workflow, which answers a failure by what it touched: a roll
+    # that stopped before its first machine changed nothing, and one that
+    # stopped part-way left this machine cordoned.
+    - name: Say which machine the roll is on
+      ansible.builtin.lineinfile:
+        path: "{{ lookup('ansible.builtin.env', 'GITHUB_OUTPUT') }}"
+        line: "{{ item }}"
+        create: true
+        mode: "0600"
+      loop: [touched=true, "machine={{ inventory_hostname }}"]
+      when: lookup('ansible.builtin.env', 'GITHUB_OUTPUT') | length > 0
+
+    - name: Record that the machine's roll has begun
+      ansible.builtin.include_tasks: tasks/event.yml
+      vars:
+        reason: MachineRollStarted
+        message: "Moving to Talos {{ want.talos_version }}: drained, upgraded, and held to the site's health before the next."
+
+    # The alerts a machine raises while it is down are the roll's own doing.
+    # Silenced for this machine alone, by name and by address, and only for
+    # as long as one machine's roll can take; lifted when it is back.
+    - name: Silence this machine's alerts while it is down
+      ansible.builtin.uri:
+        url: "{{ alertmanager }}/api/v2/silences"
+        method: POST
+        body_format: json
+        body:
+          matchers: ["{{ item }}"]
+          startsAt: "{{ '%Y-%m-%dT%H:%M:%SZ' | strftime(utc=true) }}"
+          # Forty-five minutes: a drain, an upgrade and the health that
+          # follows, and no longer. A roll that dies part-way leaves nothing
+          # silenced for long.
+          endsAt: "{{ '%Y-%m-%dT%H:%M:%SZ' | strftime(second=(now(utc=true).timestamp() | int) + 2700, utc=true) }}"
+          createdBy: machine-roll
+          comment: "The machine roll is moving {{ inventory_hostname }} to Talos {{ want.talos_version }}."
+      register: silences
+      loop:
+        - name: node
+          value: "{{ inventory_hostname }}"
+          isRegex: false
+          isEqual: true
+        - name: instance
+          value: "{{ address | regex_escape }}(:.*)?"
+          isRegex: true
+          isEqual: true
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Drain it, through the eviction API so disruption budgets hold
+      kubernetes.core.k8s_drain:
+        name: "{{ inventory_hostname }}"
+        state: drain
+        delete_options:
+          ignore_daemonsets: true
+          delete_emptydir_data: true
+          wait_timeout: 900
+
+    - name: Upgrade it in place
+      ansible.builtin.command:
+        argv:
+          - talosctl
+          - --talosconfig
+          - "{{ talosconfig }}"
+          - --nodes
+          - "{{ address }}"
+          - upgrade
+          - --image
+          - "{{ want.installer_image }}"
+          - --wait
+          - --timeout
+          - 20m
+      changed_when: true
+
+    - name: Wait for it to come back Ready on the new version
+      kubernetes.core.k8s_info:
+        kind: Node
+        name: "{{ inventory_hostname }}"
+      register: back
+      until: >-
+        back.resources | length == 1
+        and want.talos_version in back.resources[0].status.nodeInfo.osImage
+        and (back.resources[0].status.conditions | selectattr('type', 'equalto', 'Ready') | map(attribute='status') | list) == ['True']
+      retries: 90
+      delay: 10
+
+    - name: Hold it to the site's health
+      ansible.builtin.include_tasks: tasks/health.yml
+      vars:
+        rolled: "{{ inventory_hostname }}"
+
+    - name: Give it its work back
+      kubernetes.core.k8s_drain:
+        name: "{{ inventory_hostname }}"
+        state: uncordon
+
+    - name: Defragment etcd on a control plane once it is back
+      ansible.builtin.command:
+        argv:
+          - talosctl
+          - --talosconfig
+          - "{{ talosconfig }}"
+          - --nodes
+          - "{{ address }}"
+          - etcd
+          - defrag
+      changed_when: true
+      when: control_plane
+
+    - name: Soak the first trusted worker before anything else is touched
+      when: canary
+      block:
+        - name: Run the integration tier against the site while it soaks
+          ansible.builtin.include_tasks: tasks/integration.yml
+          vars:
+            wait: false
+
+        - name: Hold the site's health through the soak
+          ansible.builtin.include_tasks: tasks/soak-round.yml
+          loop: "{{ range(soak_rounds | int) | list }}"
+          loop_control:
+            loop_var: round
+
+        - name: Wait for the integration tier to pass
+          ansible.builtin.include_tasks: tasks/integration.yml
+          vars:
+            wait: true
+
+    - name: Lift the silence
+      ansible.builtin.uri:
+        url: "{{ alertmanager }}/api/v2/silence/{{ item.json.silenceID }}"
+        method: DELETE
+      loop: "{{ silences.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    - name: Record that the machine's roll is done
+      ansible.builtin.include_tasks: tasks/event.yml
+      vars:
+        reason: MachineRollFinished
+        message: "On Talos {{ want.talos_version }}, and the site held its health."
+
+- name: Prove the site whole once every machine has moved
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files: [settings.yml]
+
+  tasks:
+    - name: Run the integration tier again, which plans the site and must find nothing to change
+      when:
+        - groups['roll'] | default([]) | length > 0
+        - not (handed_over | default(false))
+      block:
+        - name: Start it
+          ansible.builtin.include_tasks: tasks/integration.yml
+          vars:
+            wait: false
+
+        - name: Wait for it to pass
+          ansible.builtin.include_tasks: tasks/integration.yml
+          vars:
+            wait: true

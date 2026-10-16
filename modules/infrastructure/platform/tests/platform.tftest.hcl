@@ -222,6 +222,7 @@ run "the_cluster_is_told_what_its_machines_should_run" {
     condition = (
       kubernetes_config_map.machine_image.metadata[0].namespace == "kube-system" &&
       kubernetes_config_map.machine_image.data.talos_version == module.machine_image.talos_version &&
+      kubernetes_config_map.machine_image.data.talos_upgrades_from == module.machine_image.talos_upgrades_from &&
       kubernetes_config_map.machine_image.data.kubernetes_version == module.machine_image.kubernetes_version
     )
     error_message = "the cluster is not told the versions its machines should run, so the roll has nothing to roll them to"
