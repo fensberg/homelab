@@ -1,4 +1,4 @@
-guard: TestPlainGitPushIsRefusedByAHook
+guard: TestTheConfigurationRulesHold
 file: .pre-commit-config.yaml
 find: "        stages: [pre-push]\n        fail_fast: true"
 replace: "        stages: [pre-push]\n        fail_fast: false"

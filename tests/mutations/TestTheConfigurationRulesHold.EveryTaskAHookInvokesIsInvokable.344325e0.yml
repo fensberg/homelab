@@ -1,4 +1,4 @@
-guard: TestEveryTaskAHookInvokesIsInvokable
+guard: TestTheConfigurationRulesHold
 file: taskfile.yml
 find: "  delivery-guard:\n    desc:"
 replace: "  delivery-guard:\n    internal: true\n    desc:"

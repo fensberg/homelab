@@ -80,7 +80,8 @@ skip-path:
   # proved by TestAnExcludedPathHoldsNothingTheToolWasMeantToRead
   - \.unreleased
   # Flux's own install, committed as Flux published it.
-  # proved by TestAnExcludedPathHoldsNothingTheToolWasMeantToRead and TestEveryFluxControllerIsPinnedHere
+  # proved by TestAnExcludedPathHoldsNothingTheToolWasMeantToRead and TestTheConfigurationRulesHold
+  # (policy/conftest/flux_controllers.rego)
   - clusters/core/flux-system/gotk-components\.yaml
   # clusters/bootstrap/ is Cilium's own chart output, committed verbatim for
   # the same reason flux-system is: a version bump should be a reviewable diff

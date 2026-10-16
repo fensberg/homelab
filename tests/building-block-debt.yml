@@ -72,7 +72,6 @@ debt:
   - "TF_ENCRYPTION"
   - "ansible-playbook"
   - "does not exist"
-  - "enforce-push"
   - "expected an error"
   - "guard-egress"
   - 'json:"IsDir"'

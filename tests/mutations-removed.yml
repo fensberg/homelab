@@ -118,3 +118,9 @@ removed:
     reason: moved with its guard to the configuration rules (policy/conftest/expedite_duty.rego), as TestTheConfigurationRulesHold.OnlyTheExpediteDutyRunsUnderItsCredential.36b9af0b.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestOnlyTheExpediteDutyRunsUnderItsCredential.ab64ec83.yml
     reason: moved with its guard to the configuration rules (policy/conftest/expedite_duty.rego), as TestTheConfigurationRulesHold.OnlyTheExpediteDutyRunsUnderItsCredential.ab64ec83.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryFluxControllerIsPinnedHere.bb76d275.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/flux_controllers.rego), as TestTheConfigurationRulesHold.EveryFluxControllerIsPinnedHere.bb76d275.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestPlainGitPushIsRefusedByAHook.f793a686.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/push_hooks.rego), as TestTheConfigurationRulesHold.PlainGitPushIsRefusedByAHook.f793a686.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryTaskAHookInvokesIsInvokable.344325e0.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/push_hooks.rego), as TestTheConfigurationRulesHold.EveryTaskAHookInvokesIsInvokable.344325e0.yml, unchanged in what it breaks (2026-10-16)

@@ -1,4 +1,4 @@
-guard: TestEveryFluxControllerIsPinnedHere
+guard: TestTheConfigurationRulesHold
 file: clusters/core/flux-system/kustomization.yaml
 find: "  - name: ghcr.io/fluxcd/source-controller"
 replace: "  - name: ghcr.io/fluxcd/source-controller-was-here"
