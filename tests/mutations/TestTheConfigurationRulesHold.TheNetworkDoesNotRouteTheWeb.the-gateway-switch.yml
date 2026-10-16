@@ -1,4 +1,4 @@
-guard: TestTheNetworkDoesNotRouteTheWeb
+guard: TestTheConfigurationRulesHold
 file: clusters/bootstrap/cilium.yaml
 find: "  enable-l7-proxy: \"true\"\n"
 replace: "  enable-l7-proxy: \"true\"\n  enable-gateway-api: \"true\"\n"

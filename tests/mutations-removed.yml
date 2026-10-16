@@ -96,3 +96,13 @@ removed:
     reason: moved with its guard to the configuration rules (policy/conftest/helmrelease_remediation.rego), as TestTheConfigurationRulesHold.EveryHelmReleaseRetriesRatherThanStalling.7802eeb9.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestFluxSourcesOnlyNameSecretsThisRepositoryCreates.ab3aac71.yml
     reason: moved with its guard to the configuration rules (policy/conftest/flux_source_secret.rego), as TestTheConfigurationRulesHold.FluxSourcesOnlyNameSecretsThisRepositoryCreates.ab3aac71.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNothingADeviceReachesIsServedInTheClear.private-access.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/served_in_the_clear.rego), as TestTheConfigurationRulesHold.NothingADeviceReachesIsServedInTheClear.private-access.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryDashboardReachesGrafanaAndSaysWhatItIsFor.a-variable.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/dashboards.rego), as TestTheConfigurationRulesHold.EveryDashboardReachesGrafanaAndSaysWhatItIsFor.a-variable.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryDashboardReachesGrafanaAndSaysWhatItIsFor.not-listed.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/dashboards.rego), as TestTheConfigurationRulesHold.EveryDashboardReachesGrafanaAndSaysWhatItIsFor.not-listed.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheNetworkDoesNotRouteTheWeb.the-gateway-switch.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/one_owner_per_layer.rego), as TestTheConfigurationRulesHold.TheNetworkDoesNotRouteTheWeb.the-gateway-switch.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheFrontDoorGetsNoCertificates.a-resolver.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/one_owner_per_layer.rego), as TestTheConfigurationRulesHold.TheFrontDoorGetsNoCertificates.a-resolver.yml, unchanged in what it breaks (2026-10-16)

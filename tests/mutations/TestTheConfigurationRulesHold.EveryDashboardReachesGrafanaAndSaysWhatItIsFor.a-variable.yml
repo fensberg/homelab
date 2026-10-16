@@ -1,4 +1,4 @@
-guard: TestEveryDashboardReachesGrafanaAndSaysWhatItIsFor
+guard: TestTheConfigurationRulesHold
 file: clusters/core/infrastructure/configs/dashboards/where-the-time-goes.json
 find: "rate(node_pressure_io_waiting_seconds_total[5m])"
 replace: "rate(node_pressure_io_waiting_seconds_total[$__rate_interval])"

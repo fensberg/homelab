@@ -1,4 +1,4 @@
-guard: TestNothingADeviceReachesIsServedInTheClear
+guard: TestTheConfigurationRulesHold
 file: clusters/core/infrastructure/configs/private-access.yaml
 find: "    - name: https\n"
 replace: "    - name: http\n"

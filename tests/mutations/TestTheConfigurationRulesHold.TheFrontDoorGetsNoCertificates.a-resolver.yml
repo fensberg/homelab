@@ -1,4 +1,4 @@
-guard: TestTheFrontDoorGetsNoCertificates
+guard: TestTheConfigurationRulesHold
 file: clusters/core/infrastructure/controllers/traefik.yaml
 find: "    certificatesResolvers: {}\n"
 replace: "    certificatesResolvers:\n      own:\n        acme: {}\n"

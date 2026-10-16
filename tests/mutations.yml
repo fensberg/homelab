@@ -211,10 +211,6 @@ unprovable:
     reason: table
   - test: TestRouteProblemsNamesEachWayARouteAndItsServiceDisagree
     reason: table
-  - test: TestInTheClearRefusesEveryPortThatIsNotHTTPSAndNamesWhatIsOutsideIt
-    reason: table
-  - test: TestEachToolHeldToItsLayerIsCaughtDoingANeighboursJob
-    reason: table
   - test: TestALayerIsHeldToWhatItsSecretsCarry
     reason: table
   - test: TestAnAlertIsHeldToSayingAllThreeThings
