@@ -231,6 +231,13 @@ Each is a piece of its own, not a debt of this one.
   would still take delivery, and find everything already there as the lock
   orders it. The cost is a larger image, and a version move that needs the
   image rebuilt and its pin moved (#751).
+- **A warm Python for Ansible**, for further research. Each of the roll's
+  tasks starts a Python of its own and imports the Kubernetes client again,
+  about half a second each, which is most of a roll's time in its tests and
+  much of it on a site. Mitogen is the standard answer: one interpreter per
+  host, imported once, and it supports Ansible 14. It plugs in as a strategy
+  plugin, which Ansible deprecated for third parties in Ansible 12, so a
+  later ansible-core may refuse it; and it is a new supplier.
 - **The workstation's build half** is not run by its test, which stops
   before the cloud image is fetched.
 - **Dashboards and alerts** for the roll, deliberately: the events and the

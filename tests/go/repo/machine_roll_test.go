@@ -158,15 +158,30 @@ var rollKinds = []struct{ group, version, kind string }{
 
 func resourceOf(group, kind string) string { return strings.ToLower(kind) + "s." + group }
 
+// rollSlots is how many of the roll's tests run at once, each with a
+// cluster of its own. Side by side, because each spends most of its time in
+// Ansible starting one task after another; no more than this, because each
+// holds a store and an API server, and a runner has a few cores.
+var rollSlots = make(chan struct{}, 3)
+
+var rollStarting sync.Mutex
+
 func startRollSite(t *testing.T) *rollSite {
 	t.Helper()
 	heavy(t, "starts a cluster and runs ansible-playbook against it")
+	t.Parallel()
+	rollSlots <- struct{}{}
+	t.Cleanup(func() { <-rollSlots })
 	for _, program := range []string{capacity.TrialStarter, capacity.TrialStore, capacity.APIServer, rollAsker, "ansible-playbook"} {
 		if _, err := exec.LookPath(program); err != nil {
 			t.Fatalf("%s is not on PATH; take delivery of it with scripts/take-delivery.sh", program)
 		}
 	}
+	// One cluster made at a time: the starter picks each program's port as
+	// it makes the cluster, and two made at once can pick the same one.
+	rollStarting.Lock()
 	trial, err := capacity.StartTrial(capacity.APIServer)
+	rollStarting.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
