@@ -120,7 +120,7 @@ func pypiSections(tools []declaredDelivery, resolve resolveFunc, hashes hashFunc
 
 	var sections []lockSection
 	for _, t := range tools {
-		s := lockSection{Kind: "pypi", Name: t.Name, VersionKey: t.VersionKey, Version: t.Version}
+		s := lockSection{Kind: t.Kind, Name: t.Name, VersionKey: t.VersionKey, Version: t.Version}
 		for _, n := range closures[t.Name] {
 			p := set[n]
 			line := normalizeName(p.Name) + "==" + p.Version

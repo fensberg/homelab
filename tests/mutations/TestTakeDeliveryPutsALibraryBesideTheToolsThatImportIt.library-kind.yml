@@ -1,0 +1,9 @@
+guard: TestTakeDeliveryPutsALibraryBesideTheToolsThatImportIt
+file: scripts/take-delivery.sh
+find: '"# [pypi: "* | "# [library: "*) pypi="${pypi}${lines}"$''\n'' ;;'
+replace: '"# [pypi: "*) pypi="${pypi}${lines}"$''\n'' ;;'
+mentions: "take-delivery.sh failed"
+why: >
+  A library the script does not know as a kind is refused as one it cannot
+  take, so the roll's runner comes up without the Python client the
+  kubernetes.core modules import, and the play fails on its first task.

@@ -371,3 +371,72 @@ func TestTakeDeliveryRefusesWhatTheLockDoesNotDecide(t *testing.T) {
 		}
 	})
 }
+
+// A library goes into the same environment as the tools that import it, by
+// hash like them, and puts nothing on PATH: it has no command, and the
+// refusal of a tool that installed none must not be what it meets.
+func TestTakeDeliveryPutsALibraryBesideTheToolsThatImportIt(t *testing.T) {
+	lock := "# [pypi: alpha ALPHA_VERSION=1]\n" +
+		"alpha==1 --hash=sha256:" + strings.Repeat("a", 64) + "\n# [end]\n" +
+		"# [library: lib LIB_VERSION=4]\n" +
+		"lib==4 --hash=sha256:" + strings.Repeat("d", 64) + "\n# [end]\n"
+	f := newDeliveryFixture(t, lock)
+	if out, err := f.run(t, "alpha", "lib"); err != nil {
+		t.Fatalf("take-delivery.sh failed: %v\n%s", err, out)
+	}
+	asked, err := os.ReadFile(f.pipArgs)
+	if err != nil {
+		t.Fatal("pip was never run")
+	}
+	if strings.Count(string(asked), "--require-hashes") != 1 || !strings.Contains(string(asked), "lib==4 --hash=sha256:") {
+		t.Errorf("the library was not installed by hash in the one pip run with its tool:\n%s", asked)
+	}
+	if body, _ := f.installed(t, "lib-cmd"); body != nil {
+		t.Error("a library was given a command on PATH")
+	}
+	if body, _ := f.installed(t, "alpha-cmd"); body == nil {
+		t.Error("the tool beside the library lost its command")
+	}
+}
+
+// A collection is handed to ansible-galaxy as the file the lock hashed, with
+// nothing fetched to go with it; a file that is not that one never reaches it.
+func TestTakeDeliveryInstallsACollectionFromTheFileItCheckedAndNothingElse(t *testing.T) {
+	archive := tarGz(t, map[string]string{"MANIFEST.json": "{}"})
+	lock := "# [collection: some-coll SOME_COLL_VERSION=6.6.0]\n" +
+		"https://example.com/artifacts/some-coll-6.6.0.tar.gz --hash=sha256:" + sha256Hex(archive) + "\n# [end]\n"
+	f := newDeliveryFixture(t, lock)
+	galaxy := filepath.Join(filepath.Dir(f.pipArgs), "galaxy-args")
+	stub := "#!/usr/bin/env bash\necho \"$*\" >>" + galaxy + "\nfor a; do case \"$a\" in *.tar.gz) sha256sum \"$a\" >>" + galaxy + " ;; esac; done\n"
+	bin := strings.TrimPrefix(strings.SplitN(f.env[0], string(os.PathListSeparator), 2)[0], "PATH=")
+	if err := os.WriteFile(filepath.Join(bin, "ansible-galaxy"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	f.serveFile(t, "some-coll-6.6.0.tar.gz", append([]byte(nil), archive[:len(archive)-1]...))
+	if out, err := f.run(t, "some-coll"); err == nil {
+		t.Fatalf("a collection that is not the file ordered was taken:\n%s", out)
+	}
+	if _, err := os.Stat(galaxy); err == nil {
+		t.Fatal("ansible-galaxy was handed a file whose hash the lock does not list")
+	}
+
+	f.serveFile(t, "some-coll-6.6.0.tar.gz", archive)
+	if out, err := f.run(t, "some-coll"); err != nil {
+		t.Fatalf("take-delivery.sh could not take the collection: %v\n%s", err, out)
+	}
+	asked, err := os.ReadFile(galaxy)
+	if err != nil {
+		t.Fatal("ansible-galaxy was never run")
+	}
+	got := string(asked)
+	if !strings.HasPrefix(got, "collection install --offline --force ") {
+		t.Errorf("ansible-galaxy was not told to install offline, so it may complete the collection from Galaxy unhashed:\n%s", got)
+	}
+	if !strings.Contains(got, sha256Hex(archive)) {
+		t.Errorf("ansible-galaxy was not handed the file the lock hashed:\n%s", got)
+	}
+	if body, _ := f.installed(t, "some-coll"); body != nil {
+		t.Error("a collection was installed as a command")
+	}
+}

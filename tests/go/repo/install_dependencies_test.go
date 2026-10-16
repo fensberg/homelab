@@ -90,10 +90,6 @@ func newSetupFixture(t *testing.T, ghBehaviour string) *setupFixture {
 		[]byte("#!/usr/bin/env bash\necho \"$*\" >>\"$(dirname \"$0\")/deliveries-taken\"\n"), 0o755); wErr != nil {
 		t.Fatal(wErr)
 	}
-	if wErr := os.WriteFile(filepath.Join(repo, "management", "hypervisor", "requirements.yml"),
-		[]byte("collections: []\n"), 0o644); wErr != nil {
-		t.Fatal(wErr)
-	}
 
 	// A stub that answers any version query and otherwise succeeds quietly.
 	stub := "#!/usr/bin/env bash\ncase \"$1\" in\n  --version|-version|version) echo \"stub 0.0.0\" ;;\nesac\nexit 0\n"
@@ -216,19 +212,22 @@ readable reason.`, want.key, got, want.value)
 		t.Error("no signing key was configured, so commits from this checkout are unsigned")
 	}
 
-	// Every Python tool in the lock reaches the workstation, on a machine where
-	// each is already present. Presence is not the locked version, and
-	// .pre-commit-config.yaml runs pre-commit-hooks as local hooks from this
-	// install - a machine that skipped it fails every commit (#416).
+	// Every Python tool, library and Ansible collection in the lock reaches
+	// the workstation, on a machine where each is already present. Presence
+	// is not the locked version, and .pre-commit-config.yaml runs
+	// pre-commit-hooks as local hooks from this install - a machine that
+	// skipped it fails every commit (#416). The plays run from here too, so a
+	// collection they use that the workstation never took is a play that
+	// fails on its first task.
 	taken, _ := os.ReadFile(filepath.Join(f.repo, "scripts", "deliveries-taken"))
 	asked := map[string]bool{}
 	for _, name := range strings.Fields(string(taken)) {
 		asked[name] = true
 	}
 	lock := readFile(t, filepath.Join(repoRoot(t), "scripts", "deliveries.lock"))
-	pypi := regexp.MustCompile(`(?m)^# \[pypi: (\S+) `).FindAllStringSubmatch(lock, -1)
+	pypi := regexp.MustCompile(`(?m)^# \[(?:pypi|library|collection): (\S+) `).FindAllStringSubmatch(lock, -1)
 	if len(pypi) == 0 {
-		t.Fatal("scripts/deliveries.lock has no pypi: section, so this cannot tell whether the workstation takes delivery of them")
+		t.Fatal("scripts/deliveries.lock has no pypi:, library: or collection: section, so this cannot tell whether the workstation takes delivery of them")
 	}
 	for _, m := range pypi {
 		if !asked[m[1]] {

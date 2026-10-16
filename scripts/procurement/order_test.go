@@ -314,3 +314,50 @@ func TestABinaryNamedUnlikeItsRepositoryIsDeliveredByThatName(t *testing.T) {
 		t.Fatalf("want one delivery named flux, got %+v", got)
 	}
 }
+
+// A library is resolved in the one resolution with the tools that import it,
+// and a collection is hashed as a fetched file is; each section keeps its own
+// kind, which is what tells take-delivery.sh how to install it.
+func TestALibraryAndACollectionAreOrderedByTheResolverTheyShare(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	suppliers := "tools:\n" +
+		"  - source: ansible/ansible\n    version: ANSIBLE_CORE_VERSION\n    pypi: ansible-core\n" +
+		"  - source: kubernetes-client/python\n    version: LIB_VERSION\n    library: kubernetes\n" +
+		"  - source: ansible-collections/kubernetes.core\n    version: COLL_VERSION\n" +
+		"    collection: https://galaxy.example/kubernetes-core-{version}.tar.gz\n"
+	for p, body := range map[string]string{suppliersPath: suppliers, versionsPath: "ANSIBLE_CORE_VERSION=2.21.3\nLIB_VERSION=36.0.3\nCOLL_VERSION=6.6.0\n"} {
+		if err := os.WriteFile(filepath.Join(root, p), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var asked []string
+	resolve := func(py string, reqs []string) (map[string]resolvedPackage, error) {
+		asked = append(asked, strings.Join(reqs, " "))
+		return set(
+			resolvedPackage{"ansible-core", "2.21.3", []string{"PyYAML"}},
+			resolvedPackage{"kubernetes", "36.0.3", []string{"PyYAML"}},
+			resolvedPackage{"PyYAML", "6.0.3", nil},
+		), nil
+	}
+	hashes := func(name, _ string) ([]string, error) { return []string{"h-" + normalizeName(name)}, nil }
+	fetch := func(string) (string, error) { return "f-hash", nil }
+	got, err := renderDeliveriesLock(root, resolve, hashes, fetch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(asked) != len(lockedPythons) || !strings.Contains(asked[0], "kubernetes==36.0.3") || !strings.Contains(asked[0], "ansible-core==2.21.3") {
+		t.Errorf("the library was not resolved in one resolution with the tool: %v", asked)
+	}
+	for _, want := range []string{
+		"# [library: kubernetes LIB_VERSION=36.0.3]\nkubernetes==36.0.3 --hash=sha256:h-kubernetes\npyyaml==6.0.3 --hash=sha256:h-pyyaml\n# [end]\n",
+		"# [collection: kubernetes-core COLL_VERSION=6.6.0]\nhttps://galaxy.example/kubernetes-core-6.6.0.tar.gz --hash=sha256:f-hash\n# [end]\n",
+		"# [pypi: ansible-core ANSIBLE_CORE_VERSION=2.21.3]\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("lock is missing:\n%s\n\ngot:\n%s", want, got)
+		}
+	}
+}

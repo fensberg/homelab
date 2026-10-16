@@ -183,3 +183,39 @@ func TestABinaryFieldNamesTheSectionSecurityExpects(t *testing.T) {
 		t.Fatalf("a section named for the repository rather than the binary should be refused, got %v %v", findings, err)
 	}
 }
+
+// A library is held to what a PyPI tool is held to, and a collection to what
+// a fetched file is: each kind's section must pin the thing itself, by hash,
+// at the declared version and from the declared address.
+func TestALibraryAndACollectionAreCheckedLikeTheKindsTheyShareAResolverWith(t *testing.T) {
+	suppliers := "tools:\n" +
+		"  - source: kubernetes-client/python\n    version: LIB_VERSION\n    library: kubernetes\n" +
+		"  - source: ansible-collections/kubernetes.core\n    version: COLL_VERSION\n" +
+		"    collection: https://galaxy.example/kubernetes-core-{version}.tar.gz\n"
+	versions := "LIB_VERSION=36.0.3\nCOLL_VERSION=6.6.0\n"
+	lock := "# [collection: kubernetes-core COLL_VERSION=6.6.0]\n" +
+		"https://galaxy.example/kubernetes-core-6.6.0.tar.gz --hash=sha256:" + hashD + "\n# [end]\n" +
+		"# [library: kubernetes LIB_VERSION=36.0.3]\n" +
+		"kubernetes==36.0.3 --hash=sha256:" + hashA + "\n# [end]\n"
+	if findings, err := checkDeliveriesLock(writeLockFixture(t, suppliers, versions, lock)); err != nil || len(findings) != 0 {
+		t.Fatalf("want a clean lock, got %v %v", findings, err)
+	}
+	for name, tc := range map[string]struct{ lock, want string }{
+		"a library missing itself": {
+			strings.Replace(lock, "kubernetes==36.0.3", "urllib3==2.5.0", 1), "does not pin kubernetes itself"},
+		"a collection from another address": {
+			strings.Replace(lock, "galaxy.example", "elsewhere.example", 1), "must be exactly one line fetching"},
+		"a collection taken as a fetch": {
+			strings.Replace(lock, "# [collection: ", "# [fetch: ", 1), "kubernetes-core is declared as a collection delivery and has no section"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			findings, err := checkDeliveriesLock(writeLockFixture(t, suppliers, versions, tc.lock))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(strings.Join(findings, "\n"), tc.want) {
+				t.Fatalf("want a finding containing %q, got %v", tc.want, findings)
+			}
+		})
+	}
+}

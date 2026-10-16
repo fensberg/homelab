@@ -1295,6 +1295,14 @@ egress:
 #   binary: <name>    with fetch:, the file an archive gives up when it is not
 #                     named for the repository - fluxcd/flux2 ships `flux`.
 #                     It is also the name take-delivery.sh is asked for.
+#   library: <package> a Python package with no command, which a pypi: tool
+#                     imports - kubernetes, for ansible-core's kubernetes.core
+#                     modules. Resolved and locked with the pypi: tools, and
+#                     installed beside them; nothing is put on PATH.
+#   collection: <url> an Ansible collection's file on Galaxy, locked by its
+#                     SHA256 as a fetch: is, and handed to ansible-galaxy
+#                     offline. Asked for by Galaxy's own name for the file:
+#                     kubernetes-core for kubernetes.core.
 #
 # scripts/take-delivery.sh installs from the lock and nowhere else, refusing a
 # file whose hash the lock does not list, and `security guard-deliveries`
@@ -1433,6 +1441,34 @@ tools:
       Runs management/hypervisor/hypervisor-prep.yml, the only thing that
       configures a hypervisor. Already installed by
       scripts/install-dependencies.sh and never written down here.
+  - source: kubernetes-client/python
+    version: PYTHON_KUBERNETES_VERSION
+    library: kubernetes
+    reason: >-
+      The Kubernetes client the kubernetes.core collection's modules import,
+      in the delivered Python beside ansible-core. The machine roll
+      (management/roll) drains and reads the cluster through those modules.
+  - source: ansible-collections/kubernetes.core
+    version: KUBERNETES_CORE_VERSION
+    collection: https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/artifacts/kubernetes-core-{version}.tar.gz
+    reason: >-
+      Ansible's own modules for Kubernetes: k8s_drain, which evicts through
+      the API so disruption budgets hold, and k8s_info and k8s for reading
+      and recording. The machine roll (management/roll) is built on them.
+  - source: ansible-collections/community.crypto
+    version: COMMUNITY_CRYPTO_VERSION
+    collection: https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/artifacts/community-crypto-{version}.tar.gz
+    reason: >-
+      hypervisor-prep.yml's certificate tasks. Installed from Galaxy on a
+      version range with nothing checking what arrived until the machine
+      roll brought collections under the lock.
+  - source: ansible-collections/ansible.posix
+    version: ANSIBLE_POSIX_VERSION
+    collection: https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/artifacts/ansible-posix-{version}.tar.gz
+    reason: >-
+      hypervisor-prep.yml's sysctl and mount tasks. Installed from Galaxy on a
+      version range with nothing checking what arrived until the machine
+      roll brought collections under the lock.
   - source: trufflesecurity/trufflehog
     version: TRUFFLEHOG_VERSION
     fetch: https://github.com/trufflesecurity/trufflehog/releases/download/v{version}/trufflehog_{version}_linux_amd64.tar.gz

@@ -1,0 +1,8 @@
+guard: TestTakeDeliveryInstallsACollectionFromTheFileItCheckedAndNothingElse
+file: scripts/take-delivery.sh
+find: 'ansible-galaxy collection install --offline --force "$file"'
+replace: 'ansible-galaxy collection install --force "$file"'
+mentions: "not told to install offline"
+why: >
+  Without --offline ansible-galaxy completes a collection's dependencies from
+  Galaxy, unhashed, so the lock pins the one file and lets the rest float.
