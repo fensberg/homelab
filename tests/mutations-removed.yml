@@ -138,3 +138,9 @@ removed:
     reason: moved with its guard to the configuration rules (policy/conftest/cni.rego), as TestTheConfigurationRulesHold.CiliumTakesItsPodAddressesFromKubernetes.aefcc495.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestAResourceOutsideAModuleIsDeclared.2053de0c.yml
     reason: moved with its guard to the configuration rules (policy/conftest/custom_blocks.rego), as TestTheConfigurationRulesHold.AResourceOutsideAModuleIsDeclared.2053de0c.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheFormatLaneRefusesASupplierBeforeInstallingAnything.535f3647.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/format_lane.rego), as TestTheConfigurationRulesHold.TheFormatLaneRefusesASupplierBeforeInstallingAnything.535f3647.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheFormatLaneRefusesASupplierBeforeInstallingAnything.7f819d4f.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/format_lane.rego), as TestTheConfigurationRulesHold.TheFormatLaneRefusesASupplierBeforeInstallingAnything.7f819d4f.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryPinnedVersionCanActuallyBeExported.4fccfd88.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/version_pins.rego), as TestTheConfigurationRulesHold.EveryPinnedVersionCanActuallyBeExported.4fccfd88.yml, unchanged in what it breaks (2026-10-16)

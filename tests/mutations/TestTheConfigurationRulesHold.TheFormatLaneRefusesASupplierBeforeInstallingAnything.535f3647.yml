@@ -1,4 +1,4 @@
-guard: TestTheFormatLaneRefusesASupplierBeforeInstallingAnything
+guard: TestTheConfigurationRulesHold
 file: .github/workflows/pr-validation.yml
 find: "guard-deliveries -before-install"
 replace: "guard-deliveries"
