@@ -44,3 +44,11 @@ removed:
     reason: moved with its guard to the configuration rules (policy/conftest/bypass_merge.rego), as TestTheConfigurationRulesHold.EveryBypassMergeIsJudgedWhereItMerges.68ad61ef.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestEveryBypassMergeIsJudgedWhereItMerges.e9a2af9d.yml
     reason: moved with its guard to the configuration rules (policy/conftest/bypass_merge.rego), as TestTheConfigurationRulesHold.EveryBypassMergeIsJudgedWhereItMerges.e9a2af9d.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryConcurrencyGroupNamesWhatSupersedesIt.17b7079f.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_shape.rego), as TestTheConfigurationRulesHold.EveryConcurrencyGroupNamesWhatSupersedesIt.17b7079f.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestAStepThatRunsTheContractorHandsItTheTokenItFetchesAReleaseWith.b28759d6.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_shape.rego), as TestTheConfigurationRulesHold.AStepThatRunsTheContractorHandsItTheTokenItFetchesAReleaseWith.b28759d6.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNoWorkflowStepReadsTMPDIR.d1ff8fbc.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_shape.rego), as TestTheConfigurationRulesHold.NoWorkflowStepReadsTMPDIR.d1ff8fbc.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryAppTokenInputIsFedTheValueItsNameSays.837eaee1.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_shape.rego), as TestTheConfigurationRulesHold.EveryAppTokenInputIsFedTheValueItsNameSays.837eaee1.yml, unchanged in what it breaks (2026-10-16)

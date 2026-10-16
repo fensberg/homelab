@@ -1,4 +1,4 @@
-guard: TestEveryAppTokenInputIsFedTheValueItsNameSays
+guard: TestTheConfigurationRulesHold
 file: .github/workflows/token-fed-the-wrong-kind-of-id.yml
 create: |
   name: "Token fed the wrong kind of id"

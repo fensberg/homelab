@@ -1,4 +1,4 @@
-guard: TestNoWorkflowStepReadsTMPDIR
+guard: TestTheConfigurationRulesHold
 file: .github/workflows/pr-validation.yml
 find: "run: go test ./..."
 replace: 'run: go test ./... > "$TMPDIR/test.out"'

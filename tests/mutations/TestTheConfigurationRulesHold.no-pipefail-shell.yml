@@ -1,0 +1,16 @@
+guard: TestTheConfigurationRulesHold
+file: .github/workflows/zz-no-pipefail-shell.yml
+create: |
+  name: planted
+  on: push
+  jobs:
+    planted:
+      runs-on: ubuntu-latest
+      timeout-minutes: 1
+      steps:
+        - uses: $/.github/workflows/mobilize
+mentions: "does not set a pipefail shell"
+why: >
+  GitHub's default run shell is `bash -e {0}`, with no pipefail: a failing
+  command feeding a working one is a green step, which once posted an empty
+  plan comment and passed a check that verified nothing.

@@ -87,7 +87,7 @@
 # entry - which is also where the comment check's own decision is proved, in
 # TestSatisfiedByProseOnlyNamesAPassToFailFlip.
 
-owed_ceiling: 48
+owed_ceiling: 47
 
 unprovable:
   # --- cannot be proved by mutation ----------------------------------------
@@ -256,8 +256,6 @@ unprovable:
     reason: table
   # The reader behind TestEveryConcurrencyGroupNamesWhatSupersedesIt, which
   # its own ledger entry proves. Its table holds each way to share a group.
-  - test: TestAuditConcurrencyCatchesEachWayToShareAGroup
-    reason: table
   - test: TestAPoolsPolicyIsHeldToItsListAndItsRunnersToNothingOfTheClusters
     reason: table
   - test: TestARequiredCheckIsReadAndAJobIsKnownByItsNameOrItsKey
@@ -345,8 +343,6 @@ unprovable:
   - test: TestEverySensitivePathExplainsItself
     owed: true
   - test: TestEveryVaultReferenceInTheTemplateIsWrapped
-    owed: true
-  - test: TestEveryWorkflowDefaultsToAPipefailShell
     owed: true
   - test: TestFluxSyncsAnonymously
     owed: true

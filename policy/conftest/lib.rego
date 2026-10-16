@@ -71,3 +71,32 @@ uses contains [file, where, ref] if {
 	where[count(where) - 1] == "uses"
 	is_string(ref)
 }
+
+# triggers is the events a workflow runs on. YAML 1.1 reads the bare key `on`
+# as the boolean true, which is how Conftest's reader hands it over, so both
+# spellings are read; a list, a mapping or one name are all forms GitHub takes.
+triggers(doc) := names if {
+	on := object.get(doc, "on", object.get(doc, "true", null))
+	names := trigger_names(on)
+}
+
+trigger_names(on) := {on} if is_string(on)
+
+trigger_names(on) := {e | some e in on} if is_array(on)
+
+trigger_names(on) := {e | some e, _ in on} if is_object(on)
+
+trigger_names(null) := set()
+
+# steps_with_env is every step of a runnable file with the environment it
+# runs in: [file, where, step, environments], the step's own last.
+steps_with_env contains [file, sprintf(", job %s", [name]), step, [object.get(doc, "env", {}), object.get(job, "env", {}), object.get(step, "env", {})]] if {
+	some file, doc in runnable
+	some name, job in object.get(doc, "jobs", {})
+	some step in object.get(job, "steps", [])
+}
+
+steps_with_env contains [file, "", step, [object.get(doc, "env", {}), object.get(step, "env", {})]] if {
+	some file, doc in runnable
+	some step in object.get(object.get(doc, "runs", {}), "steps", [])
+}
