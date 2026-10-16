@@ -1,4 +1,4 @@
-guard: TestEveryBypassMergeIsJudgedWhereItMerges
+guard: TestTheConfigurationRulesHold
 file: .github/workflows/bypass-merge-rides-along.yml
 create: |
   name: "Bypass merge rides along"

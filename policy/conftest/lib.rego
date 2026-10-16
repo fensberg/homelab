@@ -50,3 +50,24 @@ steps_of(dir) := steps if {
 	actions[dir].runs.using == "composite"
 	steps := actions[dir].runs.steps
 }
+
+# runnable is every file whose uses GitHub executes, by its path: a workflow,
+# or the metadata of a composite action anywhere.
+runnable[path] := doc if {
+	some path, doc in workflows
+}
+
+runnable[f.path] := f.contents if {
+	some f in input
+	parts := split(f.path, "/")
+	parts[count(parts) - 1] in {"action.yml", "action.yaml"}
+}
+
+# uses is every action a runnable file names, wherever in it: [file, where, ref].
+uses contains [file, where, ref] if {
+	some file, doc in runnable
+	walk(doc, [where, ref])
+	count(where) > 0
+	where[count(where) - 1] == "uses"
+	is_string(ref)
+}

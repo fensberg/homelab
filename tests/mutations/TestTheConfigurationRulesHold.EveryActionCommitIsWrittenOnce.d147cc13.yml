@@ -1,4 +1,4 @@
-guard: TestEveryActionCommitIsWrittenOnce
+guard: TestTheConfigurationRulesHold
 file: .github/workflows/zz-second-codeql-commit.yml
 create: |
   name: planted

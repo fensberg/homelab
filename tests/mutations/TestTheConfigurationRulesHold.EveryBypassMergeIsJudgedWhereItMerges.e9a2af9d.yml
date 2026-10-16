@@ -1,4 +1,4 @@
-guard: TestEveryBypassMergeIsJudgedWhereItMerges
+guard: TestTheConfigurationRulesHold
 file: .github/workflows/bypass-merge-unjudged.yml
 create: |
   name: "Bypass merge unjudged"

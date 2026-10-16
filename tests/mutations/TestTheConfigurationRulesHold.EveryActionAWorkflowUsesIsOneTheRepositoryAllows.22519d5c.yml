@@ -1,4 +1,4 @@
-guard: TestEveryActionAWorkflowUsesIsOneTheRepositoryAllows
+guard: TestTheConfigurationRulesHold
 file: management/estate/repository/workflows.tf
 find: '"pnpm/action-setup@*",'
 replace: '"pnpm/action-set-up@*",'

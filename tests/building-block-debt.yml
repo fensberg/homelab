@@ -73,7 +73,6 @@ debt:
   - "ansible-playbook"
   - "does not exist"
   - "enforce-push"
-  - "enforce-standing-order"
   - "expected an error"
   - "guard-egress"
   - 'json:"IsDir"'

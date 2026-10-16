@@ -30,3 +30,17 @@ removed:
     reason: moved with its guard to the configuration rules (policy/conftest/workflow_jobs.rego), as TestTheConfigurationRulesHold.EveryCheckoutRefusesToPersistCredentials.43fec9b5.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestEveryCheckoutRefusesToPersistCredentials.4e3c94c3.yml
     reason: moved with its guard to the configuration rules (policy/conftest/workflow_jobs.rego), as TestTheConfigurationRulesHold.EveryCheckoutRefusesToPersistCredentials.4e3c94c3.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryActionCommitIsWrittenOnce.62931efe.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/action_commits.rego), as TestTheConfigurationRulesHold.EveryActionCommitIsWrittenOnce.62931efe.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryActionCommitIsWrittenOnce.d147cc13.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/action_commits.rego), as TestTheConfigurationRulesHold.EveryActionCommitIsWrittenOnce.d147cc13.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryActionAWorkflowUsesIsOneTheRepositoryAllows.22519d5c.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/allowed_actions.rego), as TestTheConfigurationRulesHold.EveryActionAWorkflowUsesIsOneTheRepositoryAllows.22519d5c.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryActionAWorkflowUsesIsOneTheRepositoryAllows.a8df3df7.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/allowed_actions.rego), as TestTheConfigurationRulesHold.EveryActionAWorkflowUsesIsOneTheRepositoryAllows.a8df3df7.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryAppKeyAWorkflowHoldsIsProvedByThePatrol.53d8e20e.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/app_keys.rego), as TestTheConfigurationRulesHold.EveryAppKeyAWorkflowHoldsIsProvedByThePatrol.53d8e20e.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryBypassMergeIsJudgedWhereItMerges.68ad61ef.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/bypass_merge.rego), as TestTheConfigurationRulesHold.EveryBypassMergeIsJudgedWhereItMerges.68ad61ef.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryBypassMergeIsJudgedWhereItMerges.e9a2af9d.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/bypass_merge.rego), as TestTheConfigurationRulesHold.EveryBypassMergeIsJudgedWhereItMerges.e9a2af9d.yml, unchanged in what it breaks (2026-10-16)

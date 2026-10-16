@@ -1,4 +1,4 @@
-guard: TestEveryAppKeyAWorkflowHoldsIsProvedByThePatrol
+guard: TestTheConfigurationRulesHold
 file: .github/workflows/security-patrol.yml
 find: "          CLERK_BOT_PRIVATE_KEY: ${{ secrets.CLERK_BOT_PRIVATE_KEY }}"
 replace: '          CLERK_BOT_PRIVATE_KEY: ""'

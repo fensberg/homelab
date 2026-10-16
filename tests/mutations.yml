@@ -236,8 +236,6 @@ unprovable:
     reason: table
   - test: TestOwnerOutsideItsAddressFindsTheNameAndNotTheAddress
     reason: table
-  - test: TestUnprovedKeysFindsAKeyThePatrolDoesNotProve
-    reason: table
   - test: TestLockFaultsFindsEachWayALockDoesNotHold
     reason: table
   - test: TestUnversionedSitesWantsALineForEverySiteAndNoOther
@@ -259,8 +257,6 @@ unprovable:
   # The reader behind TestEveryConcurrencyGroupNamesWhatSupersedesIt, which
   # its own ledger entry proves. Its table holds each way to share a group.
   - test: TestAuditConcurrencyCatchesEachWayToShareAGroup
-    reason: table
-  - test: TestASettingIsAWallOnlyWhileItHoldsWorkflowsToAListAtACommit
     reason: table
   - test: TestAPoolsPolicyIsHeldToItsListAndItsRunnersToNothingOfTheClusters
     reason: table
