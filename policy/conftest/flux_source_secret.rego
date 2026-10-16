@@ -22,7 +22,7 @@
 # Flux is installed here by OpenTofu applying the manifests directly, which
 # creates no such secret. An assumption about another tool's side effects,
 # written as a reference.
-package flux_source_secret
+package rules.flux_source_secret
 
 import rego.v1
 

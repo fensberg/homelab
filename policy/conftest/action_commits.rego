@@ -11,7 +11,7 @@
 # repository may each appear once, but must name the same commit.
 #
 # Whether a reference is pinned at all is zizmor's (unpinned-uses).
-package action_commits
+package rules.action_commits
 
 import data.lib
 import rego.v1

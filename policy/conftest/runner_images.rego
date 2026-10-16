@@ -5,7 +5,7 @@
 # a tag can be moved by anyone who can push to the registry, so the estate
 # would be converged by whatever that tag resolves to on the day - a change
 # nothing in this repository would record or review.
-package runner_images
+package rules.runner_images
 
 import rego.v1
 

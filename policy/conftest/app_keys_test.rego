@@ -1,6 +1,6 @@
-package app_keys_test
+package rules.app_keys_test
 
-import data.app_keys
+import data.rules.app_keys
 import rego.v1
 
 patrol(steps) := {"path": ".github/workflows/security-patrol.yml", "contents": {"jobs": {"keys": {"permissions": {"contents": "read"}, "steps": steps}}}}

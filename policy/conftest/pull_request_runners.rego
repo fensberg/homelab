@@ -21,7 +21,7 @@
 # Anything else is refused, the management pool by name and any runner this
 # cannot identify by default, because a label nobody declared is a runner
 # nobody vetted.
-package pull_request_runners
+package rules.pull_request_runners
 
 import data.lib
 import rego.v1

@@ -10,7 +10,7 @@
 # Scope, stated because a guard nobody understands the edges of is worse than
 # none: this catches what is COMMITTED. It cannot see a command pasted into a
 # terminal, and it is not admission control. See scripts/approved-suppliers.yml.
-package suppliers
+package rules.suppliers
 
 import data.lib
 import rego.v1

@@ -10,7 +10,7 @@
 # This is the half that fails when it is not: a controller added upstream, or
 # one renamed, goes from pinned to mutable with the manifest still building and
 # every other check still green.
-package flux_controllers
+package rules.flux_controllers
 
 import rego.v1
 

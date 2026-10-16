@@ -1,6 +1,6 @@
-package one_owner_per_layer_test
+package rules.one_owner_per_layer_test
 
-import data.one_owner_per_layer
+import data.rules.one_owner_per_layer
 import rego.v1
 
 test_a_network_that_does_not_route_the_web_is_not_read_as_doing_so if {

@@ -16,7 +16,7 @@
 # RetryOnFailure retries on a fixed interval and applies no remediation. An
 # ordering problem heals itself; a release that is really broken retries
 # quietly and shows as a sustained Ready=False, which monitoring can see.
-package helmrelease_remediation
+package rules.helmrelease_remediation
 
 import rego.v1
 

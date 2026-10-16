@@ -11,7 +11,7 @@
 #
 # So a Worker is found by what it is, wherever it is declared, and must be
 # named in the map the sum is made from.
-package free_plan
+package rules.free_plan
 
 import rego.v1
 

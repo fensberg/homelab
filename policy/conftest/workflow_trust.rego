@@ -1,5 +1,5 @@
 # What a workflow may do with code nobody here reviewed.
-package workflow_trust
+package rules.workflow_trust
 
 import data.lib
 import rego.v1

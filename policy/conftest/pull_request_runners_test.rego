@@ -1,6 +1,6 @@
-package pull_request_runners_test
+package rules.pull_request_runners_test
 
-import data.pull_request_runners
+import data.rules.pull_request_runners
 import rego.v1
 
 pool := "homelab-alpha"

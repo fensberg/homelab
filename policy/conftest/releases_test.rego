@@ -1,6 +1,6 @@
-package releases_test
+package rules.releases_test
 
-import data.releases
+import data.rules.releases
 import rego.v1
 
 digest := concat("", ["sha256:", concat("", ["a" | some _ in numbers.range(1, 64)])])

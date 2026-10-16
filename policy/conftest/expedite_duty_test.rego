@@ -1,6 +1,6 @@
-package expedite_duty_test
+package rules.expedite_duty_test
 
-import data.expedite_duty
+import data.rules.expedite_duty
 import rego.v1
 
 wf(name, key, runs) := {"path": sprintf(".github/workflows/%s.yml", [name]), "contents": {"jobs": {"j": {"steps": array.concat([{"env": {"KEY": key}}], [{"run": r} | some r in runs])}}}}

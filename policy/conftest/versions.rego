@@ -7,7 +7,7 @@
 # This is another gotcha turned into a rule: it was found by reading
 # install-dependencies.sh while writing a rotation runbook, not by anything
 # failing, which is precisely why it deserves a check rather than a note.
-package versions
+package rules.versions
 
 import data.lib
 import rego.v1

@@ -13,7 +13,7 @@
 # differ between two builds of one Dockerfile is the distribution's own
 # updates to packages named here, on top of contents that cannot move - and
 # not a base that was swapped under a tag.
-package image_bases
+package rules.image_bases
 
 import rego.v1
 

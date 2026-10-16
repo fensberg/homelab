@@ -1,6 +1,6 @@
-package image_bases_test
+package rules.image_bases_test
 
-import data.image_bases
+import data.rules.image_bases
 import rego.v1
 
 dockerfile(from) := {"path": "x/Dockerfile", "contents": [

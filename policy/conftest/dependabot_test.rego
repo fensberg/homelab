@@ -1,6 +1,6 @@
-package dependabot_test
+package rules.dependabot_test
 
-import data.dependabot
+import data.rules.dependabot
 import rego.v1
 
 group := {"applies-to": "version-updates", "patterns": ["*"], "update-types": ["minor", "patch"]}

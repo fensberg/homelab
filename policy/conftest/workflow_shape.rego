@@ -1,5 +1,5 @@
 # What every workflow says about how its steps run, and what they read.
-package workflow_shape
+package rules.workflow_shape
 
 import data.lib
 import rego.v1

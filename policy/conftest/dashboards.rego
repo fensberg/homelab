@@ -13,7 +13,7 @@
 # is written and never handed over: a file nothing lists is a dashboard that
 # is not there. And it is a picture with no account of itself, which is how
 # monitoring becomes decoration - this epoch's own words for it.
-package dashboards
+package rules.dashboards
 
 import rego.v1
 

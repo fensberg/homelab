@@ -1,6 +1,6 @@
-package fabricator_describing_test
+package rules.fabricator_describing_test
 
-import data.fabricator_describing
+import data.rules.fabricator_describing
 import rego.v1
 
 wf(describe) := [{"path": ".github/workflows/fabricator.yml", "contents": {"jobs": {"package": {"steps": [

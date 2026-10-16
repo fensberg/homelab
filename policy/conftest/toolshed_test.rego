@@ -1,6 +1,6 @@
-package toolshed_test
+package rules.toolshed_test
 
-import data.toolshed
+import data.rules.toolshed
 import rego.v1
 
 taskfile(cmds) := {"path": "taskfile.yml", "contents": {"tasks": {"t": {"cmds": cmds}}}}

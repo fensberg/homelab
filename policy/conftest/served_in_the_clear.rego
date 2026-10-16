@@ -14,7 +14,7 @@
 # What the cluster's own parts say to each other is not a device reaching
 # anything, and is the network's to encrypt
 # (docs/epochs/11-black-box-white-glove.md).
-package served_in_the_clear
+package rules.served_in_the_clear
 
 import rego.v1
 

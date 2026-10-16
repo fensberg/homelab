@@ -2,7 +2,7 @@
 # none. The plan builds and runs the branch's contractor, so it only reads;
 # the comment is another job's, which runs only the scripts beside the
 # github-script action and takes the plan as an artifact.
-package plan_writer
+package rules.plan_writer
 
 import data.lib
 import rego.v1

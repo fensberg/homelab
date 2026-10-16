@@ -1,6 +1,6 @@
-package push_hooks_test
+package rules.push_hooks_test
 
-import data.push_hooks
+import data.rules.push_hooks
 import rego.v1
 
 config(hooks) := {"path": ".pre-commit-config.yaml", "contents": {"repos": [{"repo": "local", "hooks": hooks}]}}

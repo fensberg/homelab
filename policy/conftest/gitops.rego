@@ -18,7 +18,7 @@
 # inert, which is exactly why neither would be caught by a run failing.
 # about. Decoding into a struct rather than grepping means a secretRef
 # indented into some other block cannot pass by not matching a regexp.
-package gitops
+package rules.gitops
 
 import rego.v1
 

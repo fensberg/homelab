@@ -1,6 +1,6 @@
-package plan_writer_test
+package rules.plan_writer_test
 
-import data.plan_writer
+import data.rules.plan_writer
 import rego.v1
 
 plan := {"permissions": {"contents": "read"}, "steps": [{"uses": "$/.github/workflows/mobilize"}, {"run": "go build -C scripts/contractor ."}]}

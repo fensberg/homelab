@@ -12,7 +12,7 @@
 # The lane now runs the same program first, with -before-install. Ordering is
 # the entire property - a gate after the delivery is a receipt - and ordering
 # is exactly what a test asserting "the step exists" would not notice.
-package format_lane
+package rules.format_lane
 
 import data.lib
 import rego.v1

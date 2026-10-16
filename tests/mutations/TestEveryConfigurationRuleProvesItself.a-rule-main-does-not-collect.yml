@@ -1,0 +1,9 @@
+guard: TestEveryConfigurationRuleProvesItself
+file: policy/conftest/workflow_jobs.rego
+find: "package rules.workflow_jobs\n"
+replace: "package workflow_jobs\n"
+mentions: "a rule anywhere else never runs and says nothing"
+why: >
+  Conftest asks one namespace, main, and main collects the packages under
+  rules. A rule written in any other package is loaded, compiles, and is
+  never asked anything, so every refusal it would make is silently a pass.

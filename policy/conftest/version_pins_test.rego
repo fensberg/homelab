@@ -1,6 +1,6 @@
-package version_pins_test
+package rules.version_pins_test
 
-import data.version_pins
+import data.rules.version_pins
 import rego.v1
 
 env(pins) := {"path": "scripts/versions.env", "contents": pins}

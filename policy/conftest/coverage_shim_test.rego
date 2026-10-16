@@ -1,6 +1,6 @@
-package coverage_shim_test
+package rules.coverage_shim_test
 
-import data.coverage_shim
+import data.rules.coverage_shim
 import rego.v1
 
 files(run, baselines) := [

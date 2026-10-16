@@ -1,6 +1,6 @@
-package cni_test
+package rules.cni_test
 
-import data.cni
+import data.rules.cni
 import rego.v1
 
 gate(deps) := {"path": "modules/c/talos.tf", "contents": {"data": {"talos_cluster_health": {"this": [{"depends_on": deps}]}}}}

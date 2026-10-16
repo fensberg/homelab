@@ -5,7 +5,7 @@
 # Each setting is held to being that wall, and every action a workflow or
 # shared action uses is held to getting through it - so a new action is a
 # change to the settings, reviewed, before a workflow can run it.
-package allowed_actions
+package rules.allowed_actions
 
 import data.lib
 import rego.v1

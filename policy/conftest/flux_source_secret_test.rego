@@ -1,6 +1,6 @@
-package flux_source_secret_test
+package rules.flux_source_secret_test
 
-import data.flux_source_secret
+import data.rules.flux_source_secret
 import rego.v1
 
 secret(name) := {"path": "modules/p/secrets.tf", "contents": {"resource": {"kubernetes_secret": {"s": [{"metadata": [{"name": name, "namespace": "flux-system"}]}]}}}}

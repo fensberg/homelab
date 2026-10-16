@@ -4,7 +4,7 @@
 # other over the lockfile. A group takes everything, for minor and patch, and
 # version updates only: a security update arrives alone and unblocked, and a
 # major is read on its own rather than bundled with patch bumps.
-package dependabot
+package rules.dependabot
 
 import rego.v1
 

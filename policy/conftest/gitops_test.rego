@@ -1,6 +1,6 @@
-package gitops_test
+package rules.gitops_test
 
-import data.gitops
+import data.rules.gitops
 import rego.v1
 
 sync(spec) := {"path": "clusters/core/flux-system/gotk-sync.yaml", "contents": {"kind": "GitRepository", "spec": spec}}

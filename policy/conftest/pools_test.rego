@@ -1,6 +1,6 @@
-package pools_test
+package rules.pools_test
 
-import data.pools
+import data.rules.pools
 import rego.v1
 
 compute := {"path": "modules/c/compute.tf", "contents": {"resource": {"proxmox_virtual_environment_vm": {

@@ -1,6 +1,6 @@
-package custom_blocks_test
+package rules.custom_blocks_test
 
-import data.custom_blocks
+import data.rules.custom_blocks
 import rego.v1
 
 tf(path, contents) := {"path": path, "contents": contents}

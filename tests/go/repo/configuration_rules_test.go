@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -105,6 +106,7 @@ func TestTheConfigurationRulesHold(t *testing.T) {
 // Every rule is held to what it claims by tests of its own: Conftest's
 // verify runs each *_test.rego beside the rules.
 func TestEveryConfigurationRuleProvesItself(t *testing.T) {
+	collectedPackages(t)
 	out, ok := runConftest(t, "verify")
 	if !ok {
 		t.Errorf("a configuration rule's own tests fail:\n\n%s", out)
@@ -113,3 +115,34 @@ func TestEveryConfigurationRuleProvesItself(t *testing.T) {
 		t.Errorf("conftest verify ran no tests, so no rule has shown it refuses anything:\n\n%s", out)
 	}
 }
+
+// rulePackage is a rule's package as policy/conftest/main.rego collects it,
+// or one of the packages beside the rules.
+var rulePackage = regexp.MustCompile(`^(rules\.[a-z0-9_]+|lib|main|main_test)$`)
+
+// collectedPackages refuses a policy file whose package main does not
+// collect: Conftest asks main alone, so a rule in any other package would
+// never run, and say nothing.
+func collectedPackages(t *testing.T) {
+	t.Helper()
+	files := 0
+	for _, rel := range trackedFiles(t) {
+		if !strings.HasPrefix(rel, conftestRules+"/") || !strings.HasSuffix(rel, ".rego") {
+			continue
+		}
+		files++
+		m := packageClause.FindStringSubmatch(readRepoFile(t, rel))
+		if m == nil {
+			t.Errorf("%s declares no package, so nothing can say whether its rules run", rel)
+			continue
+		}
+		if !rulePackage.MatchString(m[1]) {
+			t.Errorf("%s is package %s. Conftest asks main alone, and main collects the packages under rules; a rule anywhere else never runs and says nothing. Make it package rules.%s.", rel, m[1], m[1])
+		}
+	}
+	if files == 0 {
+		t.Fatalf("no policy file was found under %s, so no package was checked", conftestRules)
+	}
+}
+
+var packageClause = regexp.MustCompile(`(?m)^package\s+([A-Za-z0-9_.]+)\s*$`)

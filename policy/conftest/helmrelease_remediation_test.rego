@@ -1,6 +1,6 @@
-package helmrelease_remediation_test
+package rules.helmrelease_remediation_test
 
-import data.helmrelease_remediation
+import data.rules.helmrelease_remediation
 import rego.v1
 
 release(spec) := [{"path": "clusters/r.yaml", "contents": {"kind": "HelmRelease", "metadata": {"name": "r"}, "spec": spec}}]

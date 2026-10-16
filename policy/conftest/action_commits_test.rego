@@ -1,6 +1,6 @@
-package action_commits_test
+package rules.action_commits_test
 
-import data.action_commits
+import data.rules.action_commits
 import rego.v1
 
 sha(c) := concat("", [c, "0123456789abcdef0123456789abcdef012345"])

@@ -1,6 +1,6 @@
-package flux_controllers_test
+package rules.flux_controllers_test
 
-import data.flux_controllers
+import data.rules.flux_controllers
 import rego.v1
 
 names := ["helm-controller", "kustomize-controller", "notification-controller", "source-controller"]

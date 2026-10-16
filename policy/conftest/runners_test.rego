@@ -1,6 +1,6 @@
-package runners_test
+package rules.runners_test
 
-import data.runners
+import data.rules.runners
 import rego.v1
 
 keep_off := [{"matchExpressions": [{"key": "node-role.kubernetes.io/control-plane", "operator": "DoesNotExist"}]}]

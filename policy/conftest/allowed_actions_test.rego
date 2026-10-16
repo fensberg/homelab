@@ -1,6 +1,6 @@
-package allowed_actions_test
+package rules.allowed_actions_test
 
-import data.allowed_actions
+import data.rules.allowed_actions
 import rego.v1
 
 sha := "0123456789012345678901234567890123456789"

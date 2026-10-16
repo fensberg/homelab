@@ -1,6 +1,6 @@
-package served_in_the_clear_test
+package rules.served_in_the_clear_test
 
-import data.served_in_the_clear
+import data.rules.served_in_the_clear
 import rego.v1
 
 service(name, spec) := {"path": "f.yaml", "contents": {"kind": "Service", "metadata": {"name": name}, "spec": spec}}

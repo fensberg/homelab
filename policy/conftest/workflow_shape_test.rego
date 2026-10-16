@@ -1,6 +1,6 @@
-package workflow_shape_test
+package rules.workflow_shape_test
 
-import data.workflow_shape
+import data.rules.workflow_shape
 import rego.v1
 
 base := {"defaults": {"run": {"shell": "bash"}}, "concurrency": {"group": "g-${{ github.ref }}"}, "jobs": {

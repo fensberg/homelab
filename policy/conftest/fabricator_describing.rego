@@ -6,7 +6,7 @@
 # The step's script is run as shipped by the fabricator's own tests; this is
 # how the job hands it what it runs with, which no run of the script alone can
 # see.
-package fabricator_describing
+package rules.fabricator_describing
 
 import data.lib
 import rego.v1

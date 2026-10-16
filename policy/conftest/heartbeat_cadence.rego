@@ -13,7 +13,7 @@
 # repeat_interval has passed. So the ring goes out on the first look at or
 # after the repeat - and a repeat that is exactly some number of looks is
 # refused, because a look landing a moment early waits a whole look more.
-package heartbeat_cadence
+package rules.heartbeat_cadence
 
 import rego.v1
 

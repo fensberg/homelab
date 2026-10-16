@@ -1,6 +1,6 @@
-package required_checks_test
+package rules.required_checks_test
 
-import data.required_checks
+import data.rules.required_checks
 import rego.v1
 
 tf(locals) := {"path": "management/estate/x.tf", "contents": {"locals": locals}}

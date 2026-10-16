@@ -1,6 +1,6 @@
-package heartbeat_cadence_test
+package rules.heartbeat_cadence_test
 
-import data.heartbeat_cadence
+import data.rules.heartbeat_cadence
 import rego.v1
 
 stack(route) := {"path": "clusters/k.yaml", "contents": {"kind": "HelmRelease", "metadata": {"name": "kube-prometheus-stack"}, "spec": {"values": {"alertmanager": {"config": {"route": {"receiver": "null", "routes": [{"receiver": "other"}, route]}}}}}}}

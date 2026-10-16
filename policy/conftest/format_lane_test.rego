@@ -1,6 +1,6 @@
-package format_lane_test
+package rules.format_lane_test
 
-import data.format_lane
+import data.rules.format_lane
 import rego.v1
 
 setup_go := {"path": ".github/workflows/setup-go/action.yml", "contents": {"runs": {"using": "composite", "steps": [{"uses": "actions/setup-go@0123", "with": {"go-version": "${{ env.GO_VERSION }}"}}]}}}

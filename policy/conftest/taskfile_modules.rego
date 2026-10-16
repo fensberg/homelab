@@ -7,7 +7,7 @@
 # there. Building a specific tool in order to run it is fine and common -
 # `task clear-branches` does it - so only the verbs that ought to sweep every
 # module are refused.
-package taskfile_modules
+package rules.taskfile_modules
 
 import rego.v1
 

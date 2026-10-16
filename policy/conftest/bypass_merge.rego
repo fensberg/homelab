@@ -4,7 +4,7 @@
 # judged must be the commit merged (--match-head-commit), and the job that
 # merges must judge the standing order itself: the Sensitive Paths check
 # cannot bound a merge the bypass skips.
-package bypass_merge
+package rules.bypass_merge
 
 import data.lib
 import rego.v1

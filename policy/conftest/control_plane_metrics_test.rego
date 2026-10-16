@@ -1,6 +1,6 @@
-package control_plane_metrics_test
+package rules.control_plane_metrics_test
 
-import data.control_plane_metrics
+import data.rules.control_plane_metrics
 import rego.v1
 
 chart(on) := {"path": "clusters/m.yaml", "contents": {"kind": "HelmRelease", "metadata": {"name": "kube-prometheus-stack"}, "spec": {"values": {c: {"enabled": c in on} | some c in ["kubeScheduler", "kubeControllerManager", "kubeEtcd"]}}}}

@@ -22,7 +22,7 @@
 # is asked for, and a workflow named under the wrong one is either never
 # late or always late. One that is named under none has no deadline at all,
 # which is how it was for all of them.
-package scheduled_workflows
+package rules.scheduled_workflows
 
 import data.lib
 import rego.v1

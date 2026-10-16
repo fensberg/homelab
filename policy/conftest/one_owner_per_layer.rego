@@ -10,7 +10,7 @@
 # reading what each tool is told. The third is the estate's, and is held
 # where the estate is tested: a tunnel that serves a public name is refused
 # by management/estate's own suite.
-package one_owner_per_layer
+package rules.one_owner_per_layer
 
 import rego.v1
 

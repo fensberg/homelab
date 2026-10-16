@@ -1,6 +1,6 @@
-package workflow_jobs_test
+package rules.workflow_jobs_test
 
-import data.workflow_jobs
+import data.rules.workflow_jobs
 import rego.v1
 
 harden := {"uses": "step-security/harden-runner@0123456789abcdef0123456789abcdef01234567"}

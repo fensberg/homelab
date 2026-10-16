@@ -11,7 +11,7 @@
 # This is the single edge holding the sequence together: bootstrap, apply the
 # CNI, nodes go Ready, gate passes. It is one line, and deleting it is the kind
 # of tidy-up that looks harmless in a diff.
-package cni
+package rules.cni
 
 import rego.v1
 

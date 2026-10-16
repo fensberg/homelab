@@ -4,7 +4,7 @@
 # That every machine class is placed, and that a pool's id carries its site,
 # are about what the cluster module produces. They stay Go guards until they
 # move down to the module's own tests.
-package pools
+package rules.pools
 
 import rego.v1
 

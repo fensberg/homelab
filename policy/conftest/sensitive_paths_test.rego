@@ -1,6 +1,6 @@
-package sensitive_paths_test
+package rules.sensitive_paths_test
 
-import data.sensitive_paths
+import data.rules.sensitive_paths
 import rego.v1
 
 sensor := {"id": "sensor", "run": "git diff --name-only \"$BASE...$HEAD\" | .github/scripts/sensitive-paths.sh >>\"$GITHUB_OUTPUT\""}

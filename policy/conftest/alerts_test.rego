@@ -1,6 +1,6 @@
-package alerts_test
+package rules.alerts_test
 
-import data.alerts
+import data.rules.alerts
 import rego.v1
 
 rule(rules) := {"path": "f.yaml", "contents": {"kind": "PrometheusRule", "spec": {"groups": [{"rules": rules}]}}}

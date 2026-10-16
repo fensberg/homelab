@@ -1,6 +1,6 @@
-package free_plan_test
+package rules.free_plan_test
 
-import data.free_plan
+import data.rules.free_plan
 import rego.v1
 
 worker(name) := {"path": "management/estate/w/w.tf", "contents": {"resource": {"cloudflare_workers_script": {name: [{}]}}}}

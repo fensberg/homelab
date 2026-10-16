@@ -23,7 +23,7 @@
 # The cost of a narrow pattern is that a key outside it is skipped in
 # silence, and the job then runs with an empty version rather than failing.
 # So every key here must be one the action can actually export.
-package version_pins
+package rules.version_pins
 
 import data.lib
 import rego.v1

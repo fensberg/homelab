@@ -1,5 +1,5 @@
 # The laws every job is held to, wherever it runs.
-package workflow_jobs
+package rules.workflow_jobs
 
 import data.lib
 import rego.v1

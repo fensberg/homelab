@@ -13,7 +13,7 @@
 # root is - a directory holding a provider block - so the next one is held to
 # this without being listed. (The Kubernetes and Go halves of the same rule
 # are guards in tests/go/repo.)
-package custom_blocks
+package rules.custom_blocks
 
 import rego.v1
 

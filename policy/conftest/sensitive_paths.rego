@@ -1,7 +1,7 @@
 # The sensitive-path gate: a change to a sensitive path, or a key handed
 # out, is asked about in a conversation somebody other than its author has to
 # resolve, keyed to the content it asks about.
-package sensitive_paths
+package rules.sensitive_paths
 
 import data.lib
 import rego.v1

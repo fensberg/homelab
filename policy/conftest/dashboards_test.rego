@@ -1,6 +1,6 @@
-package dashboards_test
+package rules.dashboards_test
 
-import data.dashboards
+import data.rules.dashboards
 import rego.v1
 
 panel := {"title": "Pressure", "description": "What waits on the disk.", "targets": [{"expr": "rate(x[5m])"}]}

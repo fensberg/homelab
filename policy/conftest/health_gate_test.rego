@@ -1,6 +1,6 @@
-package health_gate_test
+package rules.health_gate_test
 
-import data.health_gate
+import data.rules.health_gate
 import rego.v1
 
 gate(deps) := [{"path": "modules/x/talos.tf", "contents": {"data": {"talos_cluster_health": {"this": [{"control_plane_nodes": "${local.node_ips}", "depends_on": deps}]}}}}]

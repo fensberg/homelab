@@ -24,7 +24,7 @@
 # case appeared. `internal: true` is the specific failure - task refuses to
 # run those from the CLI, so the hook fails with a task error rather than a
 # verdict, which is a guard broken in the direction of noise.
-package push_hooks
+package rules.push_hooks
 
 import rego.v1
 

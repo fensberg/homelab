@@ -1,6 +1,6 @@
-package suppliers_test
+package rules.suppliers_test
 
-import data.suppliers
+import data.rules.suppliers
 import rego.v1
 
 list(over) := {"path": "scripts/approved-suppliers.yml", "contents": object.union({

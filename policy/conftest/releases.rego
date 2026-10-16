@@ -10,7 +10,7 @@
 # Found by what it is, so a source added anywhere Flux reads is held to it
 # without this rule being told. Flux's own CRDs are vendored verbatim and
 # describe the kind rather than being one.
-package releases
+package rules.releases
 
 import rego.v1
 

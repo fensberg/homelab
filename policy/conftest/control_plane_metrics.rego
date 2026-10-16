@@ -15,7 +15,7 @@
 #
 # The estate ran the first half of that for a while: the stack shipped with
 # these switched off and a comment promising the machine configuration later.
-package control_plane_metrics
+package rules.control_plane_metrics
 
 import rego.v1
 

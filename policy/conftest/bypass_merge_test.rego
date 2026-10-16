@@ -1,6 +1,6 @@
-package bypass_merge_test
+package rules.bypass_merge_test
 
-import data.bypass_merge
+import data.rules.bypass_merge
 import rego.v1
 
 wf(steps) := {"path": ".github/workflows/w.yml", "contents": {"jobs": {"release": {"steps": steps}}}}

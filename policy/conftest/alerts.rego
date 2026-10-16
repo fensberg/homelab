@@ -16,7 +16,7 @@
 # The alerts the monitoring stack brings with it are not the estate's and
 # are not held here. They carry a page of their project's, which the
 # channel is shown in place of a first step.
-package alerts
+package rules.alerts
 
 import rego.v1
 

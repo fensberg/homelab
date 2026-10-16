@@ -4,7 +4,7 @@
 # stopped working is found on the day it is needed. The patrol's keys job
 # mints a token with each and throws it away - which holds only for the keys
 # it is handed. And it watches; it changes nothing.
-package app_keys
+package rules.app_keys
 
 import data.lib
 import rego.v1

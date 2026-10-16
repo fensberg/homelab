@@ -1,6 +1,6 @@
-package versions_test
+package rules.versions_test
 
-import data.versions
+import data.rules.versions
 import rego.v1
 
 env(over) := {"path": "scripts/versions.env", "contents": object.union({"TALOSCTL_VERSION": "v1.13.8", "KUBECTL_VERSION": "v1.36.4", "KUBERNETES_VERSION": "1.36.3", "RCLONE_DEB_VERSION": "1.75.0"}, over)}

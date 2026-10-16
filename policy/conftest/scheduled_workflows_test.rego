@@ -1,6 +1,6 @@
-package scheduled_workflows_test
+package rules.scheduled_workflows_test
 
-import data.scheduled_workflows
+import data.rules.scheduled_workflows
 import rego.v1
 
 target(file) := sprintf("https://api.github.com/repos/o/r/actions/workflows/%s/runs?event=schedule&status=completed&per_page=1", [file])

@@ -11,7 +11,7 @@
 # ten points below the measured figure for long enough that nobody remembered
 # setting it. So the two are tied together here rather than left to whoever
 # applies the patch to notice.
-package coverage_shim
+package rules.coverage_shim
 
 import rego.v1
 

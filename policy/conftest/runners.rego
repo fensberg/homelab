@@ -23,7 +23,7 @@
 # agent that writes these files deliberately holds no `workflows` permission,
 # so it cannot edit that file. Literals plus this test reach the same place
 # without needing a permission the boundary is built to withhold.
-package runners
+package rules.runners
 
 import data.lib
 import rego.v1

@@ -1,6 +1,6 @@
-package taskfile_modules_test
+package rules.taskfile_modules_test
 
-import data.taskfile_modules
+import data.rules.taskfile_modules
 import rego.v1
 
 taskfile(cmds) := [{"path": "taskfile.yml", "contents": {"tasks": {"test": {"cmds": cmds}}}}]

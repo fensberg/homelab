@@ -8,7 +8,7 @@
 #
 # FOUND BY WHAT IT IS. The list is whatever is declared as the checks
 # required, wherever it is, and the names are every job of every workflow.
-package required_checks
+package rules.required_checks
 
 import data.lib
 import rego.v1

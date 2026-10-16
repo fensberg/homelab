@@ -17,7 +17,7 @@
 # The workflows holding the credential are FOUND, by the secret they read,
 # rather than named here, so renaming the workflow or adding a second one
 # cannot step outside this.
-package expedite_duty
+package rules.expedite_duty
 
 import data.lib
 import rego.v1

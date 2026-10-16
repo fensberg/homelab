@@ -1,6 +1,6 @@
-package runner_images_test
+package rules.runner_images_test
 
-import data.runner_images
+import data.rules.runner_images
 import rego.v1
 
 set(name, image) := {"path": "clusters/r.yaml", "contents": {"kind": "HelmRelease", "metadata": {"name": name}, "spec": {"chart": {"spec": {"chart": "gha-runner-scale-set"}}, "values": {"template": {"spec": {"containers": [{"name": "runner", "image": image}]}}}}}}

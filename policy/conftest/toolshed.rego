@@ -11,7 +11,7 @@
 # One directory cannot be forgotten for a program nobody thought about. These
 # assert the arrangement holds rather than trusting that the next person
 # follows it.
-package toolshed
+package rules.toolshed
 
 import rego.v1
 

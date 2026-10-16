@@ -1,6 +1,6 @@
-package workflow_trust_test
+package rules.workflow_trust_test
 
-import data.workflow_trust
+import data.rules.workflow_trust
 import rego.v1
 
 checkout := "actions/checkout@0123456789abcdef0123456789abcdef01234567"

@@ -12,7 +12,7 @@
 # rather than an obstruction. Removing that dependency silently reintroduces
 # both failures, and neither is visible until somebody changes the node count
 # or tears an estate down - which is to say, at the two worst moments.
-package health_gate
+package rules.health_gate
 
 import rego.v1
 
