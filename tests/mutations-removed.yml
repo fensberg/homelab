@@ -88,3 +88,9 @@ removed:
     reason: moved with its guard to the configuration rules (policy/conftest/image_bases.rego), as TestTheConfigurationRulesHold.AnImageThatInstallsUnpinnedPackagesStartsFromAPinnedBase.5f5516a0.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestScrapingTheControlPlaneChangesBothHalvesTogether.9f23028d.yml
     reason: moved with its guard to the configuration rules (policy/conftest/control_plane_metrics.rego), as TestTheConfigurationRulesHold.ScrapingTheControlPlaneChangesBothHalvesTogether.9f23028d.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestASiteRingsTheWatchmanAsOftenAsItLooksRound.10a9421b.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/heartbeat_cadence.rego), as TestTheConfigurationRulesHold.ASiteRingsTheWatchmanAsOftenAsItLooksRound.10a9421b.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestASiteRingsTheWatchmanAsOftenAsItLooksRound.8a9fbda4.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/heartbeat_cadence.rego), as TestTheConfigurationRulesHold.ASiteRingsTheWatchmanAsOftenAsItLooksRound.8a9fbda4.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryHelmReleaseRetriesRatherThanStalling.7802eeb9.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/helmrelease_remediation.rego), as TestTheConfigurationRulesHold.EveryHelmReleaseRetriesRatherThanStalling.7802eeb9.yml, unchanged in what it breaks (2026-10-16)

@@ -1,4 +1,4 @@
-guard: TestASiteRingsTheWatchmanAsOftenAsItLooksRound
+guard: TestTheConfigurationRulesHold
 file: clusters/core/infrastructure/controllers/kube-prometheus-stack.yaml
 find: "              group_interval: 5m\n              repeat_interval: 9m"
 replace: "              group_interval: 5m\n              repeat_interval: 10m"
