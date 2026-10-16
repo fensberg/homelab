@@ -1,4 +1,4 @@
-guard: TestTheDescribingStepRunsWhetherOrNotThisRunPublished
+guard: TestTheConfigurationRulesHold
 file: .github/workflows/fabricator.yml
 find: "          VERSION: ${{ steps.number.outputs.version || steps.reuse.outputs.version }}"
 replace: "          VERSION: ${{ steps.number.outputs.version }}"
