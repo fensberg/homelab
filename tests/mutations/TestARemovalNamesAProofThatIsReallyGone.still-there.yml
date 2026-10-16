@@ -1,7 +1,7 @@
 guard: TestARemovalNamesAProofThatIsReallyGone
 file: tests/mutations-removed.yml
 find: "removed:\n"
-replace: "removed:\n  - proof: TestTheSchedulerAChangeIsTriedWithIsTheOneASiteRuns.f4101645.yml\n    reason: to be removed later\n"
+replace: "removed:\n  - proof: TestTheConfigurationRulesHold.unbounded-job.yml\n    reason: to be removed later\n"
 mentions: "it is still there"
 why: >
   Naming a proof here is what lets it be deleted. A line added ahead of
