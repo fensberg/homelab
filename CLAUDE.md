@@ -104,7 +104,7 @@ environment runs from `main` or on a schedule, never from a pull request: a
 pull request's plan runs on GitHub's runner against the as-built record and
 holds no credential (#554). So the only thing that reaches the estate is a
 merge, and the pull request's approval is the only gate.
-`tests/go/repo/selfhosted_test.go` refuses any pull-request job on the
+`policy/conftest/pull_request_runners.rego` refuses any pull-request job on the
 estate's runner.
 
 ## Invariants
