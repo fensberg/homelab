@@ -176,3 +176,7 @@ removed:
     reason: moved with its guard to the code rules (policy/semgrep/deliveries.yml), as TestTheCodeRulesHold.TheInstallerDoesNotOverrideAPinnedVersion.b7ade3eb.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestAConnectionStringInTheCodeCarriesNoCredentialOfItsOwn.34fdeae1.yml
     reason: moved with its guard to the code rules (policy/semgrep/credentials.yml), as TestTheCodeRulesHold.AConnectionStringInTheCodeCarriesNoCredentialOfItsOwn.34fdeae1.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNoWorkflowReachesALocalActionByARelativePath.9412ba8a.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_shape.rego), as TestTheConfigurationRulesHold.NoWorkflowReachesALocalActionByARelativePath.9412ba8a.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNoTestReadsThePatchesDirectory.c8fc52e7.yml
+    reason: moved with its guard to the code rules (policy/semgrep/pending-patches.yml), as TestTheCodeRulesHold.NoTestReadsThePatchesDirectory.c8fc52e7.yml, unchanged in what it breaks (2026-10-16)

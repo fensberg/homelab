@@ -1,4 +1,4 @@
-guard: TestNoTestReadsThePatchesDirectory
+guard: TestTheCodeRulesHold
 file: tests/go/repo/heavy_test.go
 find: "package repo\n"
 replace: "package repo\n\nvar _ = \".github/patches\"\n"

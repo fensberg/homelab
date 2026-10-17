@@ -87,7 +87,7 @@
 # entry - which is also where the comment check's own decision is proved, in
 # TestSatisfiedByProseOnlyNamesAPassToFailFlip.
 
-owed_ceiling: 25
+owed_ceiling: 24
 
 unprovable:
   # --- cannot be proved by mutation ----------------------------------------
@@ -179,6 +179,10 @@ unprovable:
     reason: table
   # The readers behind the two custom-block guards, which their own ledger
   # entries prove. Their tables hold each case they must find and must leave.
+  - test: TestDanglingInFindsWhatIsGoneAndLeavesWhatIsThere
+    reason: table
+  - test: TestTheOwedCeilingFitsTheDebtExactly
+    reason: table
   - test: TestDuplicateFunctionsFindsCopiesAcrossPackagesOnly
     reason: table
   - test: TestApplicationShapeProblemsRefusesWhatIsNotTheShape
@@ -315,8 +319,6 @@ unprovable:
   - test: TestEverySensitivePathExists
     owed: true
   - test: TestEverySensitivePathExplainsItself
-    owed: true
-  - test: TestEveryVaultReferenceInTheTemplateIsWrapped
     owed: true
   - test: TestGuardAndSignedpushAgreeOnTheScratchRef
     owed: true

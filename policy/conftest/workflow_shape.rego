@@ -136,3 +136,19 @@ deny contains msg if {
 	not contains(group, ref)
 	msg := sprintf("%s: the concurrency group %q does not use %s, %s", [where, group, ref, why])
 }
+
+# No workflow reaches one of this repository's own actions by a relative path.
+#
+# `uses: ./.github/...` resolves against whatever the workspace holds when the
+# step runs: it needs a checkout to have happened, and it reads the checkout's
+# copy of the action and not the one at the commit being run. `$/` is GitHub's
+# reference to the repository itself and has neither property, which is why
+# zizmor's self-repository audit asks for it. zizmor owns the finding; this
+# says the same thing in seconds on a machine without zizmor, and names the
+# file.
+
+deny contains msg if {
+	some [file, _, ref] in lib.uses
+	startswith(ref, "./")
+	msg := sprintf("%s reaches a local action with a relative `uses: %s`. Write it as `uses: $/%s`: it resolves at the commit being run, with no checkout, and cannot be redirected by whatever a workspace holds.", [file, ref, trim_prefix(ref, "./")])
+}

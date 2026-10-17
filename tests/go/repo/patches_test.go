@@ -5,7 +5,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -73,51 +72,4 @@ func repoFileText(t *testing.T, rel string) string {
 		t.Fatalf("reading %s: %v", rel, err)
 	}
 	return string(body)
-}
-
-// No test reads .github/patches.
-//
-// A patch exists for the seconds between the agent handing it over and the
-// operator applying it, and everything that changes with it travels inside
-// it. So there is nothing about the pending state worth testing, and tests
-// that tried - reading workflows through pending patches, applying them to
-// the ledger's scratch tree, checking a patch still applies - cost hours and
-// guarded a window nobody runs in. The operator's words: "A test whose only
-// purpose is to test a patch that won't exist in 5 seconds is a stupid test."
-//
-// This refuses the first step back towards that machinery.
-func TestNoTestReadsThePatchesDirectory(t *testing.T) {
-	root := repoRoot(t)
-	self := filepath.Join("tests", "go", "repo", "patches_test.go")
-	checked := 0
-	for _, rel := range trackedMatching(t, func(p string) bool {
-		return strings.HasPrefix(p, "tests/") && strings.HasSuffix(p, "_test.go")
-	}) {
-		if rel == self {
-			continue
-		}
-		checked++
-		body, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatalf("reading %s: %v", rel, err)
-		}
-		// Code only. A comment explaining why patches are absent is not a
-		// test reading them.
-		var code []string
-		for _, line := range strings.Split(string(body), "\n") {
-			if !strings.HasPrefix(strings.TrimSpace(line), "//") {
-				code = append(code, line)
-			}
-		}
-		src := strings.Join(code, "\n")
-		if strings.Contains(src, `".github", "patches"`) || strings.Contains(src, ".github/patches") {
-			t.Errorf("%s reads .github/patches.\n\n"+
-				"A patch lives for the seconds between hand-over and apply, and carries "+
-				"every change that goes with it. Test the tree as it is; there is no "+
-				"pending state worth a test.", rel)
-		}
-	}
-	if checked == 0 {
-		t.Fatal("found no test files under tests/, so nothing was checked")
-	}
 }
