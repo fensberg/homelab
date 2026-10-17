@@ -1,0 +1,46 @@
+# A phase that gives up says what went wrong, not only what to do about it.
+#
+# The teardown discarded the error from `tofu destroy` and printed only advice
+# - "check Proxmox manually" - so a real demolish failed on five VMs and told
+# the operator nothing about why. The diagnostics tofu produced were collected
+# and thrown away one line above where they were needed.
+#
+# Read as code: a handler that deals with a failure in place - it warns - and
+# neither warns with the error it is handling nor returns it. Held to the
+# handlers written `if err := f(); err != nil`, as the guard this replaces was;
+# the plain form has handlers that warn without the cause, filed to fix and
+# then hold (#777).
+rules:
+  - id: no-phase-swallows-an-error-it-handles
+    languages: [go]
+    severity: ERROR
+    message: >-
+      handles an error with run.Warn and never reports it. Advice with no
+      cause reads as helpful and leaves the reader no better off than silence.
+      Print err, wrap it, or return it.
+    patterns:
+      - pattern-inside: |
+          if $ERR := $CALL; $ERR != nil {
+            ...
+          }
+      - pattern: run.Warn(...)
+      - pattern-not: run.Warn(..., <... $ERR ...>, ...)
+      - pattern-not-inside: |
+          if $ERR := $CALL; $ERR != nil {
+            ...
+            run.Warn(..., <... $ERR ...>, ...)
+            ...
+          }
+      - pattern-not-inside: |
+          if $ERR := $CALL; $ERR != nil {
+            ...
+            return ..., <... $ERR ...>
+          }
+      - pattern-not-inside: |
+          if $ERR := $CALL; $ERR != nil {
+            ...
+            return <... $ERR ...>
+          }
+    paths:
+      include: [/scripts/contractor/internal/phases/]
+      exclude: ["*_test.go"]
