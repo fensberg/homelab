@@ -1,4 +1,4 @@
-guard: TestNothingResolvesTheStateBackupsByHand
+guard: TestTheCodeRulesHold
 file: scripts/contractor/internal/phases/teardown.go
 reads_source: true
 find: '	database, err := config.BucketByKey("database")'

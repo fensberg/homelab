@@ -1,4 +1,4 @@
-guard: TestBackupAndRestoreReachTheStateBackupsThroughOneResolver
+guard: TestTheCodeRulesHold
 file: scripts/contractor/internal/phases/restore.go
 reads_source: true
 find: "		backups, err := config.StateBackupLocation(cfg, ctx.Site, root.Name)"
