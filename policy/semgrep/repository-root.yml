@@ -1,0 +1,20 @@
+# Nothing finds the repository root by counting directories.
+#
+# A fixed-depth climb is correct until the file holding it moves, and then it
+# is wrong without a word. Nine copies of that answer existed across three
+# modules, in two spellings - a chain of ".." and nested filepath.Dir - and
+# the first version of this check knew only the first. Both are refused, in
+# any Go file, test or not.
+rules:
+  - id: nothing-finds-the-repository-by-counting-directories
+    languages: [go]
+    severity: ERROR
+    message: >-
+      climbs to the repository root a fixed number of directories - a
+      fixed-depth climb, correct only until the file moves. Use repopath.Root
+      or repopath.Join from homelab/details/repopath.
+    pattern-either:
+      - pattern: $F(..., "..", "..", ...)
+      - pattern: '[]string{..., "..", "..", ...}'
+      - pattern: filepath.Dir(filepath.Dir(...))
+      - pattern: path.Dir(path.Dir(...))

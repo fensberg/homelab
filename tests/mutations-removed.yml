@@ -200,3 +200,7 @@ removed:
     reason: moved with its guard to the code rules (policy/semgrep/site-names-text.yml), as TestTheCodeRulesHold.NoCodePicksASiteByName.3a01162f.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestTerratestNeverPrintsEstateOutputs.023fc30e.yml
     reason: moved with its guard to the code rules (policy/semgrep/terratest.yml), as TestTheCodeRulesHold.TerratestNeverPrintsEstateOutputs.023fc30e.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNothingFindsTheRepositoryByCountingDirectories.4b861936.yml
+    reason: moved with its guard to the code rules (policy/semgrep/repository-root.yml), as TestTheCodeRulesHold.NothingFindsTheRepositoryByCountingDirectories.4b861936.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNothingFindsTheRepositoryByCountingDirectories.8c1cef0d.yml
+    reason: moved with its guard to the code rules (policy/semgrep/repository-root.yml), as TestTheCodeRulesHold.NothingFindsTheRepositoryByCountingDirectories.8c1cef0d.yml, unchanged in what it breaks (2026-10-16)

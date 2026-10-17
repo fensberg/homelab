@@ -1,4 +1,4 @@
-guard: TestNothingFindsTheRepositoryByCountingDirectories
+guard: TestTheCodeRulesHold
 file: tests/go/harness/scrape.go
 reads_source: true
 find: "	return failures, total, nil"
