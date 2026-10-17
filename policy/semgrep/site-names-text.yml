@@ -15,9 +15,7 @@ rules:
     pattern-regex: (?m)^(?![ \t]*(?:#|//)).*\bsite0\b
     paths:
       include:
-        [
-          "/.github/workflows/*.yml",
-          "/.github/workflows/*.yaml",
-          "/.github/workflows/**/*.js",
-          /taskfile.yml,
-        ]
+        - "/.github/workflows/**/*.yml"
+        - "/.github/workflows/**/*.yaml"
+        - "/.github/workflows/**/*.js"
+        - /taskfile.yml
