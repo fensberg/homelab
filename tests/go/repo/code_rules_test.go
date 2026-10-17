@@ -400,7 +400,7 @@ func TestSemgrepPathsAreReadAsGitignoreLines(t *testing.T) {
 		{"/scripts/contractor/", "scripts/contractor", false},
 		{"/tests/mutations/", "tests/mutations/a.yml", true},
 		{"/tests/mutations.yml", "tests/mutations/a.yml", false},
-		{"*.md", "docs/epochs/01.md", true},
+		{"*.md", "docs/a/b.md", true},
 		{"scripts/contractor/", "a/scripts/contractor/b.go", false},
 		{"[", "[", false},
 	} {

@@ -65,6 +65,7 @@ func verbs() []verb {
 	return []verb{
 		{"guard-deliveries", "refuse a delivery from an unapproved supplier, or one the lock does not pin by hash", guardDeliveries},
 		{"guard-egress", "refuse a job whose outbound reach is not what the suppliers list declares", guardEgress},
+		{"guard-secrets", "refuse a secret in the commits between two points, before a push and on a pull request", guardSecrets},
 		{"challenge-keys", "ask about a job or a step that holds a key it did not hold before", challengeKeys},
 		{"patrol", "check from outside that the estate is still answering", patrol},
 	}

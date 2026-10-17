@@ -482,6 +482,12 @@ info "taking delivery of conftest ${CONFTEST_VERSION}"
 "$(dirname "$0")/take-delivery.sh" conftest
 ok "conftest installed into ~/.local/bin"
 
+# TruffleHog, which the push hook runs over the commits a push would publish
+# (security guard-secrets), so a workstation without it cannot push.
+info "taking delivery of trufflehog ${TRUFFLEHOG_VERSION}"
+"$(dirname "$0")/take-delivery.sh" trufflehog
+ok "trufflehog installed into ~/.local/bin"
+
 step "commit signing"
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 

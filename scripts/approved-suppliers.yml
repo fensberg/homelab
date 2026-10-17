@@ -1462,9 +1462,9 @@ tools:
     version: TRUFFLEHOG_VERSION
     fetch: https://github.com/trufflesecurity/trufflehog/releases/download/v{version}/trufflehog_{version}_linux_amd64.tar.gz
     reason: >-
-      Secret scanning, in the Secrets lane - the one lane that runs audit rather
-      than block, because verifying a leaked key means calling whichever vendor
-      issued it. Taken from the release archive rather than the marketplace
+      Secret scanning, before every push and in the Secrets lane, both by
+      security guard-secrets - the one lane that runs audit rather than block,
+      because verifying a leaked key means calling whichever vendor issued it. Taken from the release archive rather than the marketplace
       action, which runs a container at `latest`. Already in use and never
       written down here.
   - source: kubernetes-sigs/kustomize
