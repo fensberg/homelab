@@ -1,0 +1,248 @@
+diff --git a/.github/pull-request-runner-image/Dockerfile b/.github/pull-request-runner-image/Dockerfile
+index f712662..b30d01e 100644
+--- a/.github/pull-request-runner-image/Dockerfile
++++ b/.github/pull-request-runner-image/Dockerfile
+@@ -124,10 +124,10 @@ ENV PATH=/home/runner/.local/bin:/opt/hostedtoolcache/go/${GO_VERSION}/x64/bin:/
+ RUN --mount=type=bind,from=reads,target=/reads \
+     bash /reads/scripts/take-delivery.sh \
+         checkov codespell conftest etcd hadolint kube-apiserver kube-scheduler kubeconform kubectl kustomize \
+-        kwokctl opentofu pre-commit pre-commit-hooks shellcheck zizmor
++        kwokctl opentofu pre-commit pre-commit-hooks semgrep shellcheck zizmor
+ 
+ # Each one runs, as the account a job runs as, before the image is published.
+ RUN for b in go node git envsubst tofu checkov codespell conftest etcd hadolint kube-apiserver kube-scheduler \
+-        kubeconform kubectl kustomize kwokctl pre-commit shellcheck zizmor; do \
++        kubeconform kubectl kustomize kwokctl pre-commit semgrep shellcheck zizmor; do \
+         command -v "$b" >/dev/null || { echo "missing: $b"; exit 1; }; \
+     done
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index b0b46b3..78f1e0e 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -817,11 +817,13 @@ jobs:
+           disable-sudo-and-containers: "true"
+           allowed-endpoints: >
+             api.github.com:443
++            files.pythonhosted.org:443
+             get.opentofu.org:443
+             github.com:443
+             go.dev:443
+             objects.githubusercontent.com:443
+             proxy.golang.org:443
++            pypi.org:443
+             registry.opentofu.org:443
+             release-assets.githubusercontent.com:443
+             storage.googleapis.com:443
+@@ -840,14 +842,15 @@ jobs:
+           # scripts/contractor has none, so there is no go.sum of its own to key on.
+           cache-dependency-path: tests/go/go.sum
+ 
+-      - name: Install OpenTofu, kustomize and Conftest
++      - name: Install OpenTofu, kustomize, Conftest and Semgrep
+         # The installer script from scripts/deliveries.lock by hash, run into
+         # directories the runner account owns - this job runs with sudo
+         # removed (#410). Until #416 the script was fetched and executed with
+         # nothing checking what arrived.
+-        # Conftest runs the configuration rules in policy/conftest, which the
+-        # guards here prove like any other (TestTheConfigurationRulesHold).
+-        run: scripts/take-delivery.sh opentofu kustomize conftest
++        # Conftest and Semgrep run the configuration and code rules in
++        # policy/, which the guards here prove like any other
++        # (TestTheConfigurationRulesHold, TestTheCodeRulesHold).
++        run: scripts/take-delivery.sh opentofu kustomize conftest semgrep
+ 
+       # Untagged, so this compiles and runs only the hermetic tests in
+       # tests/go: the repository-invariant checks and the state-encryption
+@@ -887,11 +890,13 @@ jobs:
+           disable-sudo-and-containers: "true"
+           allowed-endpoints: >
+             api.github.com:443
++            files.pythonhosted.org:443
+             get.opentofu.org:443
+             github.com:443
+             go.dev:443
+             objects.githubusercontent.com:443
+             proxy.golang.org:443
++            pypi.org:443
+             registry.opentofu.org:443
+             release-assets.githubusercontent.com:443
+             storage.googleapis.com:443
+@@ -910,14 +915,15 @@ jobs:
+           # scripts/contractor has none, so there is no go.sum of its own to key on.
+           cache-dependency-path: tests/go/go.sum
+ 
+-      - name: Install OpenTofu, kustomize and Conftest
++      - name: Install OpenTofu, kustomize, Conftest and Semgrep
+         # The installer script from scripts/deliveries.lock by hash, run into
+         # directories the runner account owns - this job runs with sudo
+         # removed (#410). Until #416 the script was fetched and executed with
+         # nothing checking what arrived.
+-        # Conftest runs the configuration rules in policy/conftest, which the
+-        # guards here prove like any other (TestTheConfigurationRulesHold).
+-        run: scripts/take-delivery.sh opentofu kustomize conftest
++        # Conftest and Semgrep run the configuration and code rules in
++        # policy/, which the guards here prove like any other
++        # (TestTheConfigurationRulesHold, TestTheCodeRulesHold).
++        run: scripts/take-delivery.sh opentofu kustomize conftest semgrep
+ 
+       # The two tests that prove the other tests: the mutation ledger breaks
+       # each guarded file and checks its guard fails, and the comment test
+@@ -1242,13 +1248,11 @@ jobs:
+     timeout-minutes: 15
+     permissions:
+       contents: read
+-    container:
+-      # Pinned by digest for Scorecard's Pinned-Dependencies check. Nothing
+-      # bumps this automatically - Dependabot's docker ecosystem covers
+-      # Dockerfiles/compose files, not an image reference embedded in a
+-      # workflow's container: block - so this needs a manual version+digest
+-      # refresh occasionally.
+-      image: semgrep/semgrep:1.172.0@sha256:65dcd4408adda7c183a6b4550cb1e9b19f7f627a6fbb7e0559bd466bedc44d7b
++    # Semgrep is taken the way every Python tool here is - pinned in
++    # scripts/versions.env, its closure hashed in scripts/deliveries.lock -
++    # so this lane, the code rules' harness and a workstation run the one
++    # version. It ran in a container whose tag was a second copy of that
++    # version, refreshed by hand.
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+@@ -1265,8 +1269,12 @@ jobs:
+           # The copy lives here because harden-runner reads its policy in a
+           # pre-step, before any step of this job can run.
+           egress-policy: audit
+-          disable-sudo-and-containers: "false"
++          disable-sudo-and-containers: "true"
+           fetch-depth: 0
++      - name: Read pinned versions
++        uses: $/.github/actions/versions
++      - name: Take delivery of Semgrep
++        run: scripts/take-delivery.sh semgrep
+       - name: Run Semgrep CI
+         # clusters/bootstrap/ is Cilium's chart output, committed verbatim so a
+         # version bump is a reviewable diff rather than a one-line pin change.
+diff --git a/.github/workflows/sensitive-paths.yml b/.github/workflows/sensitive-paths.yml
+index ef91afc..9d09e1e 100644
+--- a/.github/workflows/sensitive-paths.yml
++++ b/.github/workflows/sensitive-paths.yml
+@@ -159,9 +159,9 @@ jobs:
+       # only as YAML inside a workflow is a convention somebody remembered to
+       # write, and a convention fails.
+       #
+-      # tests/go/repo/tripwire_ack_test.go asserts this step exists, that the
+-      # invocation is one that can actually run, and that nothing here has
+-      # gone back to labels.
++      # policy/conftest/sensitive_paths.rego asserts this step exists, that
++      # the invocation is one that can actually run, and that nothing here
++      # has gone back to labels.
+       #
+       # `go run -C <dir> .` rather than `go run ./scripts/attestation`: this
+       # repository has no module at its root, deliberately - each program is
+diff --git a/clusters/core/infrastructure/configs/pull-requests-builds.yaml b/clusters/core/infrastructure/configs/pull-requests-builds.yaml
+index 75467eb..57d80b8 100644
+--- a/clusters/core/infrastructure/configs/pull-requests-builds.yaml
++++ b/clusters/core/infrastructure/configs/pull-requests-builds.yaml
+@@ -134,6 +134,7 @@ spec:
+               - matchName: api.github.com
+               - matchName: codeload.github.com
+               - matchName: dl.k8s.io
++              - matchName: files.pythonhosted.org
+               - matchName: get.opentofu.org
+               - matchName: ghcr.io
+               - matchName: github.com
+@@ -141,6 +142,7 @@ spec:
+               - matchName: objects.githubusercontent.com
+               - matchName: pkg-containers.githubusercontent.com
+               - matchName: proxy.golang.org
++              - matchName: pypi.org
+               - matchName: raw.githubusercontent.com
+               - matchName: registry.opentofu.org
+               - matchName: release-assets.githubusercontent.com
+@@ -152,6 +154,7 @@ spec:
+         - matchName: api.github.com
+         - matchName: codeload.github.com
+         - matchName: dl.k8s.io
++        - matchName: files.pythonhosted.org
+         - matchName: get.opentofu.org
+         - matchName: ghcr.io
+         - matchName: github.com
+@@ -159,6 +162,7 @@ spec:
+         - matchName: objects.githubusercontent.com
+         - matchName: pkg-containers.githubusercontent.com
+         - matchName: proxy.golang.org
++        - matchName: pypi.org
+         - matchName: raw.githubusercontent.com
+         - matchName: registry.opentofu.org
+         - matchName: release-assets.githubusercontent.com
+diff --git a/scripts/approved-suppliers.yml b/scripts/approved-suppliers.yml
+index 1768f56..a198700 100644
+--- a/scripts/approved-suppliers.yml
++++ b/scripts/approved-suppliers.yml
+@@ -1067,11 +1067,13 @@ egress:
+     policy: block
+     hosts:
+       - api.github.com:443
++      - files.pythonhosted.org:443
+       - get.opentofu.org:443
+       - github.com:443
+       - go.dev:443
+       - objects.githubusercontent.com:443
+       - proxy.golang.org:443
++      - pypi.org:443
+       - registry.opentofu.org:443
+       - release-assets.githubusercontent.com:443
+       - storage.googleapis.com:443
+@@ -1082,11 +1084,13 @@ egress:
+     policy: block
+     hosts:
+       - api.github.com:443
++      - files.pythonhosted.org:443
+       - get.opentofu.org:443
+       - github.com:443
+       - go.dev:443
+       - objects.githubusercontent.com:443
+       - proxy.golang.org:443
++      - pypi.org:443
+       - registry.opentofu.org:443
+       - release-assets.githubusercontent.com:443
+       - storage.googleapis.com:443
+diff --git a/tests/mutations/TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake.a-tool-left-out.yml b/tests/mutations/TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake.a-tool-left-out.yml
+index 78b3ed1..f47ab3f 100644
+--- a/tests/mutations/TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake.a-tool-left-out.yml
++++ b/tests/mutations/TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake.a-tool-left-out.yml
+@@ -1,7 +1,7 @@
+ guard: TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake
+ file: .github/pull-request-runner-image/Dockerfile
+-find: "kwokctl opentofu pre-commit pre-commit-hooks shellcheck zizmor"
+-replace: "kwokctl opentofu pre-commit pre-commit-hooks shellcheck"
++find: "kwokctl opentofu pre-commit pre-commit-hooks semgrep shellcheck zizmor"
++replace: "kwokctl opentofu pre-commit pre-commit-hooks semgrep shellcheck"
+ mentions: "take delivery of zizmor"
+ why: >
+   An image that falls behind its jobs fails nothing. The job installs what
+diff --git a/tests/mutations/TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake.a-tool-nobody-takes.yml b/tests/mutations/TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake.a-tool-nobody-takes.yml
+index 2148f32..09f9636 100644
+--- a/tests/mutations/TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake.a-tool-nobody-takes.yml
++++ b/tests/mutations/TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake.a-tool-nobody-takes.yml
+@@ -1,7 +1,7 @@
+ guard: TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake
+ file: .github/pull-request-runner-image/Dockerfile
+-find: "kwokctl opentofu pre-commit pre-commit-hooks shellcheck zizmor"
+-replace: "kwokctl opentofu pre-commit pre-commit-hooks shellcheck trufflehog zizmor"
++find: "kwokctl opentofu pre-commit pre-commit-hooks semgrep shellcheck zizmor"
++replace: "kwokctl opentofu pre-commit pre-commit-hooks semgrep shellcheck trufflehog zizmor"
+ mentions: "carries trufflehog, which no job of a pool takes delivery of"
+ why: >
+   A tool added because a job might want it one day is weight every runner
+diff --git a/tests/silencers.yml b/tests/silencers.yml
+index e450719..7fda768 100644
+--- a/tests/silencers.yml
++++ b/tests/silencers.yml
+@@ -33,7 +33,7 @@ tools:
+         lists: [skip-check, skip-path]
+ 
+   semgrep:
+-    arrives_as: [semgrep/semgrep, SEMGREP_VERSION]
++    arrives_as: [SEMGREP_VERSION]
+     marks: ["nosemgrep"]
+ 
+   conftest:
