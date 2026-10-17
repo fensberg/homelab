@@ -1,5 +1,5 @@
 # --- deliveries: one lock, one installer, and ordering holds no bypass ----
-guard: TestNothingInstallsFromPyPIOutsideTakeDelivery
+guard: TestTheCodeRulesHold
 file: scripts/install-dependencies.sh
 find: '"$(dirname "$0")/take-delivery.sh" ansible-core pre-commit pre-commit-hooks checkov zizmor codespell'
 replace: 'python3 -m pip install --user --break-system-packages "checkov==${CHECKOV_VERSION}"'

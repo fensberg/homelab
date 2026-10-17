@@ -46,32 +46,37 @@ governed:
       each kind parsed_by names it (TestTheConfigurationRulesHold), and runs
       each rule's own tests (TestEveryConfigurationRuleProvesItself).
   - kind: ".go"
+    parsed_by: [semgrep]
     read_by: >-
       go vet and go build over every module (task validate), gofmt via
       pre-commit, go test with a per-module floor in
       tests/coverage-baseline.json, and the mutation ledger for anything under
       tests/go/repo.
   - kind: ".tf"
-    parsed_by: [conftest]
+    parsed_by: [conftest, semgrep]
     read_by: >-
       tofu validate against the placeholder config and tofu fmt via pre-commit
       (task validate), plus checkov in the slow lane.
   - kind: ".hcl"
-    parsed_by: [conftest]
+    parsed_by: [conftest, semgrep]
     read_by: >-
       Two different files, both read: registry.tftest.hcl by tofu test (task
       test:tofu), and .terraform.lock.hcl by tofu init and by the guard that
       requires every provider to be pinned.
   - kind: ".sh"
+    parsed_by: [semgrep]
     read_by: >-
       shellcheck and shfmt via pre-commit and the Shell Lint lane, with each
       unit required to be executed by a test
       (TestEveryShellUnitIsCovered).
   - kind: ".ts"
+    parsed_by: [semgrep]
     read_by: "pnpm typecheck (tsc) and vitest, with a coverage floor under the js key."
   - kind: ".mts"
+    parsed_by: [semgrep]
     read_by: "pnpm typecheck; vitest's own config, loaded on every run."
   - kind: ".js"
+    parsed_by: [semgrep]
     read_by: >-
       commitlint loads commitlint.config.js on every commit - a broken one fails
       the commit-msg hook. The scripts beside .github/workflows/github-script
@@ -80,23 +85,24 @@ governed:
       and read by the guards requiring each to be named and to replace its
       comment rather than append.
   - kind: ".mjs"
+    parsed_by: [semgrep]
     read_by: >-
       vitest, which runs tests/js/unit against the one there is: the Worker
       the estate runs at its object-storage vendor. Semgrep scans it, and the
       estate root's tests plan the resource that uploads it.
   - kind: ".yaml"
-    parsed_by: [conftest]
+    parsed_by: [conftest, semgrep]
     read_by: >-
       prettier and check-yaml via pre-commit, kubectl kustomize and kubeconform
       for manifests (task validate), checkov for policy, and
       TestRepositoryHasNoDuplicateKeys.
   - kind: ".yml"
-    parsed_by: [conftest]
+    parsed_by: [conftest, semgrep]
     read_by: >-
       As .yaml, plus actionlint and zizmor over .github/workflows and the
       egress guard over every job.
   - kind: ".json"
-    parsed_by: [conftest]
+    parsed_by: [conftest, semgrep]
     read_by: >-
       prettier via pre-commit and TestRepositoryHasNoDuplicateKeys; the config
       template is additionally parsed by the Render phase.
@@ -115,18 +121,19 @@ governed:
       The Go toolchain verifies every dependency against it on build. Machine
       written, never edited by hand.
   - kind: ".env"
-    parsed_by: [conftest]
+    parsed_by: [conftest, semgrep]
     read_by: >-
       scripts/versions.env is sourced by the provisioning script, the runner
       image build and the composite action, and
       TestEveryPinnedVersionIsUsed reads it.
   - kind: ".toml"
-    parsed_by: [conftest]
+    parsed_by: [conftest, semgrep]
     read_by: "gitleaks, which loads .gitleaks.toml on every pre-commit run."
   - kind: ".cfg"
+    parsed_by: [semgrep]
     read_by: "ansible, which loads ansible.cfg when the hypervisor play runs."
   - kind: "Dockerfile"
-    parsed_by: [conftest]
+    parsed_by: [conftest, semgrep]
     read_by: >-
       hadolint over every Dockerfile the estate builds (task lint, discovered
       with git ls-files), and docker build in the image lanes.

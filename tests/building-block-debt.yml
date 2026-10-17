@@ -104,7 +104,6 @@ debt:
   - "nothing at all"
   - "set -euo pipefail"
   - "source_control.repo_url"
-  - "source_control.token"
   - "state_conn_str"
   - "tag:homelab-router"
   - "terraform.tfstate"

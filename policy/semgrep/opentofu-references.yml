@@ -1,0 +1,43 @@
+# What OpenTofu may not reference.
+#
+# Anything OpenTofu reads is a value OpenTofu writes to state, and some
+# readings undo a fix. Each rule here is a reference that must not be written,
+# found as a reference in the code - a comment explaining why is not one.
+rules:
+  - id: nothing-reads-a-value-from-the-health-gate
+    # Its only job is the depends_on edges pointing at it, on the machines
+    # among them (policy/conftest/health_gate.rego). An attribute reference
+    # would make it load bearing at plan time again, which is the condition
+    # that made a plan time out.
+    languages: [hcl]
+    severity: ERROR
+    message: >-
+      reads $ATTR from the health gate. That makes it load bearing at plan
+      time again, which is the condition that made a plan time out. Use
+      depends_on instead.
+    pattern-either:
+      - pattern: data.talos_cluster_health.this.$ATTR
+      - pattern: data.talos_cluster_health.this[$I].$ATTR
+
+  - id: no-git-credential-is-created-for-flux
+    # Flux syncs a public repository, so it needs no credential at all
+    # (policy/conftest/gitops.rego holds the sync and the template). A secret
+    # nothing references is still a secret in state, so the OpenTofu side is
+    # held too.
+    languages: [hcl]
+    severity: ERROR
+    message: >-
+      references a source-control credential. Anything OpenTofu reads is a
+      value OpenTofu writes to state. A source-control token there is a live
+      credential recoverable from a leaked state file, and Flux does not need
+      one to clone a public repository over https.
+    pattern-either:
+      - pattern: $X.source_control.token
+      - pattern: $TYPE.flux_system_git_auth
+      - pattern: |
+          resource $TYPE "flux_system_git_auth" { ... }
+      - patterns:
+          - pattern: '"$PATH"'
+          - metavariable-regex:
+              metavariable: $PATH
+              regex: .*source[_-]control/token

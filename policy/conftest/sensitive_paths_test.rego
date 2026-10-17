@@ -87,3 +87,13 @@ test_an_ask_not_keyed_to_what_was_found_is_refused if {
 test_the_same_topic_is_refused if {
 	denies(replaced(4, object.union(ask, {"run": "go run -C scripts/attestation . \\\n  -topic sensitive \\\n  -digest \"$DIGEST\"\n"})), "under the same topic")
 }
+
+test_a_label_read_or_written_is_refused if {
+	denies(array.concat(good, [{"run": "gh pr view \"$PR\" --json labels"}]), `reads labels ("--json labels")`)
+}
+
+test_a_labelled_trigger_is_refused if {
+	i := [{"path": ".github/workflows/sensitive-paths.yml", "contents": {"true": {"pull_request": {"types": ["opened", "labeled"]}}, "jobs": {"tripwire": {"steps": good}}}}]
+	some msg in sensitive_paths.deny with input as i
+	contains(msg, `("labeled")`)
+}
