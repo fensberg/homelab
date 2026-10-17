@@ -159,9 +159,9 @@ jobs:
       # only as YAML inside a workflow is a convention somebody remembered to
       # write, and a convention fails.
       #
-      # tests/go/repo/tripwire_ack_test.go asserts this step exists, that the
-      # invocation is one that can actually run, and that nothing here has
-      # gone back to labels.
+      # policy/conftest/sensitive_paths.rego asserts this step exists, that
+      # the invocation is one that can actually run, and that nothing here
+      # has gone back to labels.
       #
       # `go run -C <dir> .` rather than `go run ./scripts/attestation`: this
       # repository has no module at its root, deliberately - each program is

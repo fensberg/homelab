@@ -173,6 +173,8 @@ unprovable:
   # ledger entry proves.
   # The readers behind the two custom-block guards, which their own ledger
   # entries prove. Their tables hold each case they must find and must leave.
+  - test: TestDanglingInFindsWhatIsGoneAndLeavesWhatIsThere
+    reason: table
   - test: TestTheOwedCeilingFitsTheDebtExactly
     reason: table
   - test: TestDuplicateFunctionsFindsCopiesAcrossPackagesOnly

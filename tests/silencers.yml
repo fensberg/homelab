@@ -33,7 +33,7 @@ tools:
         lists: [skip-check, skip-path]
 
   semgrep:
-    arrives_as: [semgrep/semgrep, SEMGREP_VERSION]
+    arrives_as: [SEMGREP_VERSION]
     marks: ["nosemgrep"]
 
   conftest:
