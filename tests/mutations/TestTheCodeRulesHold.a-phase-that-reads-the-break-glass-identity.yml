@@ -1,0 +1,9 @@
+guard: TestTheCodeRulesHold
+file: scripts/contractor/internal/phases/hardware.go
+reads_source: true
+find: "	authority, err := onepassword.Read(hypervisorapi.AuthorityRef(ctx.Site))"
+replace: "	authority, err := onepassword.Read(BackupIdentityRef)"
+mentions: "reads the break-glass identity. Only the restore path may"
+why: >
+  A phase of the ignition sequence that holds the private half could decrypt
+  the backups it is writing. Only a restore, run by a person, may read it.

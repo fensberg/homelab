@@ -87,7 +87,7 @@
 # entry - which is also where the comment check's own decision is proved, in
 # TestSatisfiedByProseOnlyNamesAPassToFailFlip.
 
-owed_ceiling: 28
+owed_ceiling: 25
 
 unprovable:
   # --- cannot be proved by mutation ----------------------------------------
@@ -309,12 +309,6 @@ unprovable:
   # Tracked as an epoch 06 issue; burning it down is a sitting, not a
   # sprint, and doing it badly would produce entries that prove nothing.
   - test: TestAWorkstationWithNoOverlayKeyIsRefused
-    owed: true
-  - test: TestBreakGlassIdentityIsNeverReferencedByOpenTofu
-    owed: true
-  - test: TestBreakGlassIdentityIsNotInTheConfigTemplate
-    owed: true
-  - test: TestBreakGlassIdentityIsReadOnlyByTheRestorePath
     owed: true
   - test: TestEveryPhaseHasASourceFileNamedAfterIt
     owed: true
