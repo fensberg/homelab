@@ -173,8 +173,6 @@ unprovable:
     reason: table
   # The reader behind TestAFileReachesOutsideItsDirectoryFromTheTop, which its own
   # ledger entry proves.
-  - test: TestClimbsWrongFindsEveryOtherWayUp
-    reason: table
   # The readers behind the two custom-block guards, which their own ledger
   # entries prove. Their tables hold each case they must find and must leave.
   - test: TestDanglingInFindsWhatIsGoneAndLeavesWhatIsThere
