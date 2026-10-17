@@ -1,4 +1,4 @@
-guard: TestNoCodePicksASiteByName
+guard: TestTheCodeRulesHold
 file: .github/workflows/integration-tests.yml
 find: "          SITE: ${{ matrix.site }}\n        run: ./toolshed/contractor record-as-built"
 replace: "          SITE: ${{ matrix.site || 'site0' }}\n        run: ./toolshed/contractor record-as-built"

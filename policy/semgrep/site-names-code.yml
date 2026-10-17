@@ -1,0 +1,32 @@
+# No code picks a site by name when it should have been told one.
+#
+# "site0" written as a value - a fallback in a workflow expression, a flag's
+# default, a harness's answer when nobody said - quietly aims whatever did not
+# name a site at the first one. That was true of the nightly, the contractor's
+# -site, the taskfile and the test harness at once, and nothing showed it: with
+# one site, the default and the only answer are the same. The day a second site
+# exists, every one of them would have kept testing, recording and planning the
+# first while reporting under names that did not say which.
+#
+# The sites come from the config template instead: the deploy and nightly
+# matrices read its keys, and config.ResolveSite answers for a command that
+# names none - the only site, or a refusal once there are two. Values only: a
+# comment or a usage example naming a site is documentation. Go is held here,
+# by its string literals; the workflows and the taskfile in
+# site-names-text.yml.
+rules:
+  - id: no-program-picks-a-site-by-name
+    languages: [go]
+    severity: ERROR
+    message: >-
+      names a site as a value. Take the site from the config template instead -
+      a program from config.ResolveSite, which gives the only site or refuses
+      once there are two. A default that names one site is the setting that
+      goes on being right for exactly one site.
+    patterns:
+      - pattern: '"$VALUE"'
+      - metavariable-regex:
+          metavariable: $VALUE
+          regex: .*\bsite0\b
+    paths:
+      exclude: ["*_test.go"]

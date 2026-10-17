@@ -1,0 +1,11 @@
+guard: TestTheCodeRulesHold
+file: scripts/details/onepassword/probe.go
+reads_source: true
+find: "func Probe(ref string) Status {"
+replace: "func Probe(ref string) (Status, string) {"
+mentions: "onepassword.Probe no longer has the signature"
+why: >
+  op cannot say a reference exists without returning its value, so the probe
+  reads the secret. That it returns one Status, which cannot carry a string,
+  is the only thing keeping the value in. A second return value - "just for an
+  error message" - lets it out.

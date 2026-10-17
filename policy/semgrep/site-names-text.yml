@@ -1,0 +1,23 @@
+# No workflow or task picks a site by name when it should have been told one.
+#
+# The half of site-names-code.yml that is not Go: a workflow takes its sites
+# from the config template's sites keys, as the deploy and nightly matrices
+# do. Read as text, by the lines that are not comments.
+rules:
+  - id: no-workflow-or-task-picks-a-site-by-name
+    languages: [generic]
+    severity: ERROR
+    message: >-
+      names a site as a value. Take the site from the config template instead -
+      a workflow from its sites keys, as the deploy and nightly matrices do. A
+      default that names one site is the setting that goes on being right for
+      exactly one site.
+    pattern-regex: (?m)^(?![ \t]*(?:#|//)).*\bsite0\b
+    paths:
+      include:
+        [
+          "/.github/workflows/*.yml",
+          "/.github/workflows/*.yaml",
+          "/.github/workflows/**/*.js",
+          /taskfile.yml,
+        ]
