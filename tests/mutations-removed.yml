@@ -188,3 +188,7 @@ removed:
     reason: moved with its guard to the code rules (policy/semgrep/state-backups.yml), as TestTheCodeRulesHold.BackupAndRestoreReachTheStateBackupsThroughOneResolver.75ee8272.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestNothingResolvesTheStateBackupsByHand.3f815e2a.yml
     reason: moved with its guard to the code rules (policy/semgrep/state-backups.yml), as TestTheCodeRulesHold.NothingResolvesTheStateBackupsByHand.3f815e2a.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheDNSResolversAreDeclaredInOnePlace.7507caea.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/dns_resolvers.rego), as TestTheConfigurationRulesHold.TheDNSResolversAreDeclaredInOnePlace.7507caea.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheDNSResolversAreDeclaredInOnePlace.7d479442.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/dns_resolvers.rego), as TestTheConfigurationRulesHold.TheDNSResolversAreDeclaredInOnePlace.7d479442.yml, unchanged in what it breaks (2026-10-16)

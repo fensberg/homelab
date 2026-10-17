@@ -1,4 +1,4 @@
-guard: TestTheDNSResolversAreDeclaredInOnePlace
+guard: TestTheConfigurationRulesHold
 file: modules/infrastructure/cluster/variables.tf
 find: '  dns_resolvers = ["1.1.1.1", "1.0.0.1"]'
 replace: "  dns_resolvers        = [\"1.1.1.1\", \"1.0.0.1\"]\n  fallback_dns_servers = [\"9.9.9.9\"]"
