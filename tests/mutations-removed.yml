@@ -180,3 +180,11 @@ removed:
     reason: moved with its guard to the configuration rules (policy/conftest/workflow_shape.rego), as TestTheConfigurationRulesHold.NoWorkflowReachesALocalActionByARelativePath.9412ba8a.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestNoTestReadsThePatchesDirectory.c8fc52e7.yml
     reason: moved with its guard to the code rules (policy/semgrep/pending-patches.yml), as TestTheCodeRulesHold.NoTestReadsThePatchesDirectory.c8fc52e7.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheContractorWritesAResourceAddressInOnePlace.b4e1b18d.yml
+    reason: moved with its guard to the code rules (policy/semgrep/contractor-addresses.yml), as TestTheCodeRulesHold.TheContractorWritesAResourceAddressInOnePlace.b4e1b18d.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheTeardownResolvesTheBucketItEmptiesFromTheTable.42b43594.yml
+    reason: moved with its guard to the code rules (policy/semgrep/state-backups.yml), as TestTheCodeRulesHold.TheTeardownResolvesTheBucketItEmptiesFromTheTable.42b43594.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestBackupAndRestoreReachTheStateBackupsThroughOneResolver.75ee8272.yml
+    reason: moved with its guard to the code rules (policy/semgrep/state-backups.yml), as TestTheCodeRulesHold.BackupAndRestoreReachTheStateBackupsThroughOneResolver.75ee8272.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNothingResolvesTheStateBackupsByHand.3f815e2a.yml
+    reason: moved with its guard to the code rules (policy/semgrep/state-backups.yml), as TestTheCodeRulesHold.NothingResolvesTheStateBackupsByHand.3f815e2a.yml, unchanged in what it breaks (2026-10-16)

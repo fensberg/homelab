@@ -154,8 +154,6 @@ unprovable:
     reason: table
   # The reader behind TestTheContractorWritesAResourceAddressInOnePlace, which
   # its own ledger entry proves.
-  - test: TestAddressLiteralsAreFoundAndProseIsNot
-    reason: table
   # The transcript shapes. A pattern that stops matching reports nothing and
   # looks exactly like a repository with no transcripts in it, so the shapes
   # are held to a table of their own - nineteen rows, each a line that must or

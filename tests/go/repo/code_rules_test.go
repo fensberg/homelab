@@ -82,7 +82,9 @@ func runSemgrep(t *testing.T, args ...string) ([]byte, bool) {
 	if _, err := exec.LookPath(semgrepProgram); err != nil {
 		t.Fatal("semgrep is not on PATH; take delivery of it: scripts/take-delivery.sh semgrep")
 	}
-	args = append([]string{"scan", "--metrics=off", "--disable-version-check", "--quiet", "--json"}, args...)
+	// One job: the ledger runs this once for each proof, side by side, and a
+	// scanner that takes every core per run is that many times every core.
+	args = append([]string{"scan", "--metrics=off", "--disable-version-check", "--quiet", "--json", "--jobs", "1"}, args...)
 	cmd := exec.Command(semgrepProgram, args...)
 	cmd.Dir = repoRoot(t)
 	cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "SEMGREP_ENABLE_VERSION_CHECK=0", "SEMGREP_SEND_METRICS=off", "NO_COLOR=1")

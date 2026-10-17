@@ -1,0 +1,27 @@
+# The contractor writes a resource address in one place:
+# scripts/contractor/steps (#497).
+#
+# Eight addresses were string literals spread through the phases, so the
+# converge's sequence was hand-written in two files and the plan's was
+# something else again. Now the steps are declared once and every other
+# address is a constant beside them - which is also what makes turning the
+# cluster root into a module one edit, when every address gains a prefix. A
+# literal written anywhere else is the drift coming back. String literals
+# only: a comment naming a resource is documentation.
+rules:
+  - id: the-contractor-writes-a-resource-address-in-one-place
+    languages: [go]
+    severity: ERROR
+    message: >-
+      writes a resource address. Name it in scripts/contractor/steps: as a
+      step, if the converge applies it, or as a constant beside them. That
+      file is the one place an address is written, so the plan and the
+      converge cannot disagree about one and a move into a module is one edit.
+    patterns:
+      - pattern: '"$ADDRESS"'
+      - metavariable-regex:
+          metavariable: $ADDRESS
+          regex: ^(data\.)?(proxmox|talos|kubernetes|tailscale|terraform|random|helm|cloudflare|tls)_[a-z0-9_]+\.[a-z0-9_]+
+    paths:
+      include: [/scripts/contractor/]
+      exclude: ["*_test.go", /scripts/contractor/steps/steps.go]
