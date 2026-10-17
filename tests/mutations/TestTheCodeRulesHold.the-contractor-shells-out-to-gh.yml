@@ -1,0 +1,10 @@
+guard: TestTheCodeRulesHold
+file: scripts/contractor/internal/phases/compute.go
+reads_source: true
+find: "	sshKey, err := onepassword.Read(keyRef)"
+replace: "	_ = exec.Command(\"gh\", \"run\", \"list\")\n	sshKey, err := onepassword.Read(keyRef)"
+mentions: "invokes gh. It is absent from the runner image"
+why: >
+  gh is on every developer's machine and in no image the contractor runs in.
+  It once halted the first integration run with "executable file not found",
+  and the job asking holds no actions:read for it to have worked anyway.
