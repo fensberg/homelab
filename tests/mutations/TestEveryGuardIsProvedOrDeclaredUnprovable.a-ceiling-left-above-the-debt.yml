@@ -1,0 +1,9 @@
+guard: TestEveryGuardIsProvedOrDeclaredUnprovable
+file: tests/mutations.yml
+find: "owed_ceiling: 25\n"
+replace: "owed_ceiling: 26\n"
+mentions: "lower it to 25"
+why: >
+  A ceiling left above the guards actually owed is room for the next guard to
+  arrive unproved with every check green. It happened once, by one, and was
+  seen only because another test failed beside it.

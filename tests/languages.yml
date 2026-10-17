@@ -68,7 +68,7 @@ governed:
     read_by: >-
       shellcheck and shfmt via pre-commit and the Shell Lint lane, with each
       unit required to be executed by a test
-      (TestEveryShellUnitIsCovered).
+      (TestEveryUnitIsExecutedByATestOrIsADeclaredDebt).
   - kind: ".ts"
     parsed_by: [semgrep]
     read_by: "pnpm typecheck (tsc) and vitest, with a coverage floor under the js key."
@@ -124,8 +124,8 @@ governed:
     parsed_by: [conftest, semgrep]
     read_by: >-
       scripts/versions.env is sourced by the provisioning script, the runner
-      image build and the composite action, and
-      TestEveryPinnedVersionIsUsed reads it.
+      image build and the composite action, and the configuration rules
+      (policy/conftest/version_pins.rego, versions.rego) read it.
   - kind: ".toml"
     parsed_by: [conftest, semgrep]
     read_by: "gitleaks, which loads .gitleaks.toml on every pre-commit run."
@@ -153,7 +153,7 @@ governed:
   - kind: "CODEOWNERS"
     read_by: >-
       GitHub, which requests the review this repository's merge rules require.
-      TestCodeownersCoversTheSensitivePaths checks it here.
+      Nothing here checks it: the guard this once named was never written.
   - kind: ".patch"
     optional: true
     read_by: >-

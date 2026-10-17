@@ -117,7 +117,7 @@ func unproved(comment string, guards map[string]bool) string {
 	if len(cited) == 0 {
 		return "names no guard"
 	}
-	// A reason may rest on more than one guard; `and TestOther` names the rest.
+	// A reason may rest on more than one guard; `and` before a second name names the rest.
 	for _, more := range regexp.MustCompile(`\band (Test[A-Za-z0-9_]+)`).FindAllStringSubmatch(comment, -1) {
 		cited = append(cited, more)
 	}
