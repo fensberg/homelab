@@ -1,4 +1,4 @@
-guard: TestTerratestNeverPrintsEstateOutputs
+guard: TestTheCodeRulesHold
 file: tests/go/harness/tofu.go
 reads_source: true
 find: "\t\tLogger: logger.Discard,"

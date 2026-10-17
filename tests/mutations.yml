@@ -150,8 +150,6 @@ unprovable:
   # The reader behind TestNoCodePicksASiteByName, whose own ledger entry
   # proves the guard. Its table holds the values it must find and the prose it
   # must leave.
-  - test: TestSiteValuesFindsValuesAndLeavesProse
-    reason: table
   # The reader behind TestTheContractorWritesAResourceAddressInOnePlace, which
   # its own ledger entry proves.
   # The transcript shapes. A pattern that stops matching reports nothing and

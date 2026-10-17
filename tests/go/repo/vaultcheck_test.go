@@ -3,7 +3,6 @@ package repo
 import (
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 )
@@ -24,109 +23,13 @@ import (
 // and drop it - onepassword.Probe returns a Status and nothing else, so a
 // caller cannot print what it was never handed.
 //
-// These tests are what stop that design being quietly undone. They are the
-// same shape, and exist for the same reason, as the break-glass rules: an
-// invariant about what the source is allowed to do, checked against the source
-// as text, because nothing else in the pipeline would notice it changing.
+// The code rules in policy/semgrep/vault-check.yml are what stop that design
+// being quietly undone: Probe's one return value, and no call in the check
+// that fetches a value, stores one or writes a file.
 
-// The files that make up the check. Named explicitly rather than discovered,
-// so that moving the logic somewhere else fails loudly here instead of
-// silently taking it out of scope.
-var vaultCheckFiles = []string{
-	"scripts/details/onepassword/probe.go",
-	"scripts/contractor/internal/phases/checkvault.go",
-	"scripts/contractor/config/vaultrefs.go",
-}
-
-// Probe's signature is the load-bearing part of the design: one return value,
-// of a type that cannot carry a secret. Widening it to return the value - even
-// "just for an error message" - is what this guards.
-var probeSignature = regexp.MustCompile(`func Probe\(ref string\) Status \{`)
-
-func TestVaultProbeReturnsAStatusAndNothingElse(t *testing.T) {
-	root := repoRoot(t)
-	path := filepath.Join(root, "scripts", "details", "onepassword", "probe.go")
-	body, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("reading probe.go: %v", err)
-	}
-	if !probeSignature.Match(body) {
-		t.Errorf(`onepassword.Probe no longer has the signature:
-
-    func Probe(ref string) Status
-
-That single return value is the guarantee, not a style choice. op cannot check
-a reference's existence without returning its value, so Probe necessarily
-reads the secret - and the only thing keeping it from escaping is that Probe
-has no way to hand it back. A second return value, of any type that can carry
-a string, removes that.
-
-If the check genuinely needs to say more, add cases to Status. Do not return
-what was read.`)
-	}
-}
-
-// The calls that fetch or write a secret. None of them belongs anywhere in
-// this path: the check reads the template, asks op whether each reference
-// resolves, and prints statuses.
-var secretBearingCalls = []string{
-	"onepassword.Read(",   // returns the value
-	"onepassword.Inject(", // renders the whole template to disk
-	"onepassword.WriteField(",
-	"onepassword.EnsureField(", // generates and stores a secret
-}
-
-func TestVaultCheckNeverFetchesOrWritesASecret(t *testing.T) {
-	root := repoRoot(t)
-	for _, rel := range vaultCheckFiles {
-		body, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatalf("reading %s: %v - if this file moved, move the rule with it rather than deleting it", rel, err)
-		}
-		if call, found := firstMatch(string(body), secretBearingCalls); found {
-			t.Errorf(`%s calls %s.
-
-The vault check must not fetch a secret's value or write one anywhere. It
-exists to report structure - ok / empty / missing - and its output is meant to
-be safe to paste into an issue. A call that returns or stores a value puts one
-inside the blast radius of the next debug print.`, rel, call)
-		}
-	}
-}
-
-// Writing to a file is the other way a value escapes, and it would not look
-// like a leak in review - it would look like caching, or a report someone
-// wanted to keep. The check has no reason to create a file at all.
-var fileWritingCalls = []string{
-	"os.WriteFile(",
-	"os.Create(",
-	"os.OpenFile(",
-	"os.Rename(",
-}
-
-func TestVaultCheckWritesNoFiles(t *testing.T) {
-	root := repoRoot(t)
-	for _, rel := range vaultCheckFiles {
-		body, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatalf("reading %s: %v", rel, err)
-		}
-		if call, found := firstMatch(string(body), fileWritingCalls); found {
-			t.Errorf(`%s calls %s.
-
-The vault check writes nothing. That is what makes it the one ignite mode with
-nothing to sterilize afterwards - it can be interrupted at any point and leave
-the workspace exactly as it found it. A file created here is a file somebody
-has to remember to delete, which is the property this project already decided
-not to rely on.`, rel, call)
-		}
-	}
-}
-
-// Guard against all three tests above passing because the feature was renamed
-// or removed. Without this, deleting probe.go would turn every rule here into
-// a t.Fatalf about a missing file - which is at least loud - but renaming the
-// *call* while keeping the files would not be caught by anything.
+// Guard against those rules passing because the feature was renamed or
+// removed: renaming the *call* while keeping the files would not be caught by
+// anything else.
 func TestVaultCheckStillExists(t *testing.T) {
 	root := repoRoot(t)
 
@@ -144,13 +47,4 @@ rules need to point at that instead, and the new way needs the same guarantee -
 or the check is gone and these tests should go with it. Passing quietly is the
 one outcome that is wrong.`)
 	}
-}
-
-func firstMatch(body string, tokens []string) (string, bool) {
-	for _, tok := range tokens {
-		if strings.Contains(body, tok) {
-			return tok, true
-		}
-	}
-	return "", false
 }
