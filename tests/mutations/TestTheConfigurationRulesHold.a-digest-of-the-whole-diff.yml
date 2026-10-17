@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+file: .github/workflows/sensitive-paths.yml
+find: "          FILES: ${{ steps.sensor.outputs.files }}\n"
+replace: "          FILES: \"\"\n"
+mentions: "does not read the sensor's file list"
+why: >
+  The digest is of the sensitive files' part of the diff. Taken over
+  anything else it changes with every unrelated push, so an acknowledgement
+  is withdrawn by a typo fix elsewhere, and people learn to re-acknowledge
+  without reading.

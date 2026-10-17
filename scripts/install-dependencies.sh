@@ -475,6 +475,13 @@ info "taking delivery of kustomize ${KUSTOMIZE_VERSION}"
 "$(dirname "$0")/take-delivery.sh" kustomize
 ok "kustomize installed into ~/.local/bin"
 
+# Conftest, which runs the configuration rules in policy/conftest. The guards
+# that run at push are among them (TestTheConfigurationRulesHold), so a
+# workstation without it cannot push.
+info "taking delivery of conftest ${CONFTEST_VERSION}"
+"$(dirname "$0")/take-delivery.sh" conftest
+ok "conftest installed into ~/.local/bin"
+
 step "commit signing"
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 

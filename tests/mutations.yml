@@ -87,7 +87,7 @@
 # entry - which is also where the comment check's own decision is proved, in
 # TestSatisfiedByProseOnlyNamesAPassToFailFlip.
 
-owed_ceiling: 52
+owed_ceiling: 33
 
 unprovable:
   # --- cannot be proved by mutation ----------------------------------------
@@ -211,17 +211,9 @@ unprovable:
     reason: table
   - test: TestRouteProblemsNamesEachWayARouteAndItsServiceDisagree
     reason: table
-  - test: TestInTheClearRefusesEveryPortThatIsNotHTTPSAndNamesWhatIsOutsideIt
-    reason: table
-  - test: TestEachToolHeldToItsLayerIsCaughtDoingANeighboursJob
-    reason: table
   - test: TestALayerIsHeldToWhatItsSecretsCarry
     reason: table
-  - test: TestAnAlertIsHeldToSayingAllThreeThings
-    reason: table
   - test: TestPathsIntoTheEstateNamesEachWayOneIsOpened
-    reason: table
-  - test: TestUnpinnedReleasesNamesEachWayAReleaseIsNotPinned
     reason: table
   # Removes each application from a copy of the repository and runs every
   # guard against it: a check on the checks, like the ledger's own runner.
@@ -236,13 +228,9 @@ unprovable:
     reason: table
   - test: TestOwnerOutsideItsAddressFindsTheNameAndNotTheAddress
     reason: table
-  - test: TestUnprovedKeysFindsAKeyThePatrolDoesNotProve
-    reason: table
   - test: TestLockFaultsFindsEachWayALockDoesNotHold
     reason: table
   - test: TestUnversionedSitesWantsALineForEverySiteAndNoOther
-    reason: table
-  - test: TestResourcesInRootsFindsOnlyWhatARootItselfDeclares
     reason: table
   - test: TestAssertingDeclarationsAndExpectedFailuresAreReadNotMatched
     reason: table
@@ -258,13 +246,7 @@ unprovable:
     reason: table
   # The reader behind TestEveryConcurrencyGroupNamesWhatSupersedesIt, which
   # its own ledger entry proves. Its table holds each way to share a group.
-  - test: TestAuditConcurrencyCatchesEachWayToShareAGroup
-    reason: table
-  - test: TestASettingIsAWallOnlyWhileItHoldsWorkflowsToAListAtACommit
-    reason: table
   - test: TestAPoolsPolicyIsHeldToItsListAndItsRunnersToNothingOfTheClusters
-    reason: table
-  - test: TestARequiredCheckIsReadAndAJobIsKnownByItsNameOrItsKey
     reason: table
   - test: TestAMachineWithNoAddressIsSeenAndATemplateIsNotAMachine
     reason: table
@@ -328,25 +310,11 @@ unprovable:
   # sprint, and doing it badly would produce entries that prove nothing.
   - test: TestAWorkstationWithNoOverlayKeyIsRefused
     owed: true
-  - test: TestAuditWorkflowCatchesTheWaysInAndIgnoresTheOthers
-    owed: true
   - test: TestBreakGlassIdentityIsNeverReferencedByOpenTofu
     owed: true
   - test: TestBreakGlassIdentityIsNotInTheConfigTemplate
     owed: true
   - test: TestBreakGlassIdentityIsReadOnlyByTheRestorePath
-    owed: true
-  - test: TestChartSourcesAreApproved
-    owed: true
-  - test: TestClusterImagesComeFromApprovedRegistriesAndArePinned
-    owed: true
-  - test: TestEveryCheckoutRefusesToPersistCredentials
-    owed: true
-  - test: TestEveryCommitHookIsPinned
-    owed: true
-  - test: TestEveryJobHardensTheRunnerFirst
-    owed: true
-  - test: TestEveryJobIsBounded
     owed: true
   - test: TestEveryPhaseHasASourceFileNamedAfterIt
     owed: true
@@ -355,10 +323,6 @@ unprovable:
   - test: TestEverySensitivePathExplainsItself
     owed: true
   - test: TestEveryVaultReferenceInTheTemplateIsWrapped
-    owed: true
-  - test: TestEveryWorkflowDefaultsToAPipefailShell
-    owed: true
-  - test: TestFluxSyncsAnonymously
     owed: true
   - test: TestGuardAndSignedpushAgreeOnTheScratchRef
     owed: true
@@ -370,10 +334,6 @@ unprovable:
     owed: true
   - test: TestNoGitCredentialIsCreatedForFlux
     owed: true
-  - test: TestNoSourceControlTokenInTheConfigTemplate
-    owed: true
-  - test: TestNoWorkflowDeclaresAVersionThatVersionsEnvOwns
-    owed: true
   - test: TestNothingReadsAValueFromTheHealthGate
     owed: true
   - test: TestNothingRunsTofuBeforeAttach
@@ -382,13 +342,7 @@ unprovable:
     owed: true
   - test: TestParseSensitivePaths
     owed: true
-  - test: TestReachableFromPullRequest
-    owed: true
   - test: TestRunnerImageCarriesEveryBinaryTheContractorInvokes
-    owed: true
-  - test: TestRunnerManifestsAgreeWithOpenTofu
-    owed: true
-  - test: TestRunnerScaleSetPinsItsImageByDigest
     owed: true
   - test: TestSensorAndParserAgreeOnEveryPath
     owed: true
@@ -404,19 +358,9 @@ unprovable:
     owed: true
   - test: TestTheCodeLawsAreCoveredBySensitivePaths
     owed: true
-  - test: TestTheDigestCoversOnlyTheSensitiveFiles
-    owed: true
-  - test: TestTheHealthGateDependsOnTheMachines
-    owed: true
   - test: TestTheLabelMechanismIsGone
     owed: true
   - test: TestTheRoutingFixIsAppliedPerHostNotPerSite
-    owed: true
-  - test: TestTheToolshedIsIgnored
-    owed: true
-  - test: TestTheTripwireCanRefuse
-    owed: true
-  - test: TestTheTripwireOpensAConversation
     owed: true
   - test: TestTheWorkstationDoesNotWearTheRouterTag
     owed: true
@@ -425,8 +369,6 @@ unprovable:
   - test: TestTheWorkstationTagIsDocumentedInThePolicy
     owed: true
   - test: TestVersionsAreDeclaredOnceAndSharedByBoth
-    owed: true
-  - test: TestWorkflowEgressIsDeclaredInTheSuppliersList
     owed: true
 
   # --- the ledger cannot mutate Go source ------------------------------------

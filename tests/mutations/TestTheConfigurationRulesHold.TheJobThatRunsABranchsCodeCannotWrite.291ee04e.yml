@@ -1,0 +1,11 @@
+guard: TestTheConfigurationRulesHold
+file: .github/workflows/plan-infrastructure.yml
+find: "          # artifact and the scripts through the action.\n          checkout: \"false\""
+replace: "          # artifact and the scripts through the action.\n          checkout: \"true\""
+mentions: "checks the branch out"
+why: >
+  The job that reports a plan holds the only token in that workflow that
+  can write to the pull request. With the branch checked out beside it,
+  the next step somebody adds there that runs a file from the workspace
+  is a branch's own code holding that token, which is what the split
+  from the plan job took away.

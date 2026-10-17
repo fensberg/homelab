@@ -75,7 +75,7 @@ concurrency:
 # rather than errors. It is set on every workflow, including those with no
 # `run:` step today, so the one added tomorrow is already covered.
 #
-# tests/go/repo/pipefail_test.go asserts this is present.
+# policy/conftest/workflow_shape.rego asserts this is present.
 defaults:
   run:
     shell: bash
@@ -840,12 +840,14 @@ jobs:
           # scripts/contractor has none, so there is no go.sum of its own to key on.
           cache-dependency-path: tests/go/go.sum
 
-      - name: Install OpenTofu and kustomize
+      - name: Install OpenTofu, kustomize and Conftest
         # The installer script from scripts/deliveries.lock by hash, run into
         # directories the runner account owns - this job runs with sudo
         # removed (#410). Until #416 the script was fetched and executed with
         # nothing checking what arrived.
-        run: scripts/take-delivery.sh opentofu kustomize
+        # Conftest runs the configuration rules in policy/conftest, which the
+        # guards here prove like any other (TestTheConfigurationRulesHold).
+        run: scripts/take-delivery.sh opentofu kustomize conftest
 
       # Untagged, so this compiles and runs only the hermetic tests in
       # tests/go: the repository-invariant checks and the state-encryption
@@ -908,12 +910,14 @@ jobs:
           # scripts/contractor has none, so there is no go.sum of its own to key on.
           cache-dependency-path: tests/go/go.sum
 
-      - name: Install OpenTofu and kustomize
+      - name: Install OpenTofu, kustomize and Conftest
         # The installer script from scripts/deliveries.lock by hash, run into
         # directories the runner account owns - this job runs with sudo
         # removed (#410). Until #416 the script was fetched and executed with
         # nothing checking what arrived.
-        run: scripts/take-delivery.sh opentofu kustomize
+        # Conftest runs the configuration rules in policy/conftest, which the
+        # guards here prove like any other (TestTheConfigurationRulesHold).
+        run: scripts/take-delivery.sh opentofu kustomize conftest
 
       # The two tests that prove the other tests: the mutation ledger breaks
       # each guarded file and checks its guard fails, and the comment test

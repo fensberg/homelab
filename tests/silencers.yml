@@ -36,6 +36,11 @@ tools:
     arrives_as: [semgrep/semgrep, SEMGREP_VERSION]
     marks: ["nosemgrep"]
 
+  conftest:
+    arrives_as: [CONFTEST_VERSION]
+    # A rule is excused for a file by an exception rule in the policy.
+    marks: ["exception contains"]
+
   hadolint:
     arrives_as: [HADOLINT_VERSION]
     marks: ["hadolint ignore=", "hadolint global ignore="]

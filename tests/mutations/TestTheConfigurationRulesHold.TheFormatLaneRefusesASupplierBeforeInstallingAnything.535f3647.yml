@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+file: .github/workflows/pr-validation.yml
+find: "guard-deliveries -before-install"
+replace: "guard-deliveries"
+mentions: "does not run the supplier gate before installing"
+why: >
+  pre-commit installs every hook repository before running any hook, so a
+  guard that is itself a hook reports after the download it exists to
+  prevent. Without this step the runner fetches and executes seven
+  third-party repositories before anything can refuse one.

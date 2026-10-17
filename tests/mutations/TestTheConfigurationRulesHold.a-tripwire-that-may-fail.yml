@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+file: .github/workflows/sensitive-paths.yml
+find: "      - name: Require an acknowledgement nobody gave themselves\n"
+replace: "      - name: Require an acknowledgement nobody gave themselves\n        continue-on-error: true\n"
+mentions: "the gate cannot refuse"
+why: >
+  The step that waits for the acknowledgement is the gate. Allowed to fail
+  without failing the job, it reports green over a sensitive change nobody
+  acknowledged.

@@ -1,7 +1,7 @@
 guard: TestNoGuardSkipsWithoutSayingWhyItIsHonest
 file: tests/go/repo/cni_test.go
-find: "func TestTheHealthGateWaitsForTheCNI(t *testing.T) {"
-replace: "func TestTheHealthGateWaitsForTheCNI(t *testing.T) {\n\tt.Skip(\"undeclared\")"
+find: "func TestTheClusterDeclaresNoBuiltInCNIAndNoKubeProxy(t *testing.T) {"
+replace: "func TestTheClusterDeclaresNoBuiltInCNIAndNoKubeProxy(t *testing.T) {\n\tt.Skip(\"undeclared\")"
 reads_source: true
 mentions: "skip without a declared reason"
 why: >

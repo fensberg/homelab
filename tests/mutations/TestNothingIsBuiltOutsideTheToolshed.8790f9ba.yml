@@ -1,9 +1,0 @@
-guard: TestNothingIsBuiltOutsideTheToolshed
-file: taskfile.yml
-find: "      - go build -C scripts/signedpush -o ../../toolshed/signedpush .\n      - ./toolshed/signedpush -token"
-replace: "      - go build -C scripts/signedpush -o signedpush .\n      - ./signedpush -token"
-mentions: "toolshed"
-why: >
-  One ignore rule per program is one per program to forget, and two were
-  forgotten - a 9.4MB binary reached main and a 3.6MB one sat there
-  unnoticed. Building anywhere else reopens that.
