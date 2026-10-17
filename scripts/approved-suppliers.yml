@@ -1310,6 +1310,17 @@ tools:
       finding nothing else caught - CKV_GHA_7, on the expedite workflow's dispatch
       input. Its configuration is .checkov.yaml at the repository root, which
       predates this and carries the reasoning for every exclusion in it.
+  - source: semgrep/semgrep
+    version: SEMGREP_VERSION
+    pypi: semgrep
+    reason: >-
+      Code scanning. The Logic Scan lane runs the publisher's own rules over
+      every pull request, and the code rules in policy/semgrep are the
+      estate's: what a guard used to find by matching a file's text, Semgrep
+      finds by parsing it in its own language, so a comment is not code.
+      Taken from PyPI like the other Python tools, so the lane, the guards'
+      harness (TestTheCodeRulesHold) and a workstation all run the one
+      version pinned here.
   - source: cloudflare/cloudflared
     version: CLOUDFLARED_VERSION
     fetch: https://github.com/cloudflare/cloudflared/releases/download/{version}/cloudflared-linux-amd64
