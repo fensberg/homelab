@@ -25,7 +25,7 @@ import (
 // caller cannot print what it was never handed.
 //
 // These tests are what stop that design being quietly undone. They are the
-// same shape, and exist for the same reason, as breakglass_test.go: an
+// same shape, and exist for the same reason, as the break-glass rules: an
 // invariant about what the source is allowed to do, checked against the source
 // as text, because nothing else in the pipeline would notice it changing.
 
@@ -144,4 +144,13 @@ rules need to point at that instead, and the new way needs the same guarantee -
 or the check is gone and these tests should go with it. Passing quietly is the
 one outcome that is wrong.`)
 	}
+}
+
+func firstMatch(body string, tokens []string) (string, bool) {
+	for _, tok := range tokens {
+		if strings.Contains(body, tok) {
+			return tok, true
+		}
+	}
+	return "", false
 }

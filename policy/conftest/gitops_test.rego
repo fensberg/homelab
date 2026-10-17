@@ -5,7 +5,7 @@ import rego.v1
 
 sync(spec) := {"path": "clusters/core/flux-system/gotk-sync.yaml", "contents": {"kind": "GitRepository", "spec": spec}}
 
-config(source_control) := {"path": "config/management.tpl.json", "contents": {"source_control": source_control}}
+config(source_control) := {"path": "config/management.tpl.json", "contents": {"source_control": source_control, "state_backup": {"recipient": "{{ op://estate/state_backup/recipient }}"}}}
 
 good := [sync({"url": "https://github.com/o/r"}), config({"repo_url": "https://github.com/o/r"})]
 
@@ -36,4 +36,13 @@ test_a_token_in_the_template_is_refused if {
 
 test_no_source_control_in_the_template_is_refused if {
 	denies([good[0]], "no longer declares source_control")
+}
+
+test_the_break_glass_identity_in_the_template_is_refused if {
+	i := [good[0], {"path": "config/management.tpl.json", "contents": {"source_control": {"repo_url": "x"}, "state_backup": {"recipient": "{{ op://estate/state_backup/recipient }}", "identity": "{{ op://estate/state_backup/identity }}"}}}]
+	denies(i, `references "state_backup/identity"`)
+}
+
+test_a_template_without_the_recipient_is_refused if {
+	denies([good[0], {"path": "config/management.tpl.json", "contents": {"source_control": {"repo_url": "x"}}}], "no longer references state_backup/recipient")
 }

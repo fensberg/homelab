@@ -329,7 +329,9 @@ func goFiles(t *testing.T) []string {
 	t.Helper()
 	var out []string
 	for _, rel := range trackedFiles(t) {
-		if strings.HasSuffix(rel, ".go") {
+		// A code rule's example is written to be refused and is compiled by
+		// no module: semgrep --test reads it (TestEveryCodeRuleProvesItself).
+		if strings.HasSuffix(rel, ".go") && !strings.HasPrefix(rel, semgrepExamples+"/") {
 			out = append(out, rel)
 		}
 	}
