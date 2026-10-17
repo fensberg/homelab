@@ -20,3 +20,6 @@ TOFU_VERSION=$(cat .tofu-version)
 version="$(kubectl version --client)"
 # ok: the-installer-does-not-override-a-pinned-version
 echo "installing kubectl ${KUBECTL_VERSION}"
+
+# ok: the-installer-does-not-override-a-pinned-version
+echo "$TOFU_VERSION $version"
