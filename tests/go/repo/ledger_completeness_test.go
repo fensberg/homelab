@@ -113,9 +113,14 @@ cannot join that list without another one leaving it. Write the mutation entry
 for this one, or prove an older one and lower the ceiling in the same diff.`,
 			owed, l.OwedCeiling)
 	}
+	// And may not sit above what is owed. Slack is room the next new guard
+	// spends without being proved: a proof landed on #773 and the ceiling was
+	// left one above the count, which a log line said only when something
+	// else had already failed.
 	if owed < l.OwedCeiling {
-		t.Logf("%d guards owed against a ceiling of %d - lower it to %d to keep the "+
-			"debt ratcheting down", owed, l.OwedCeiling, owed)
+		t.Errorf("%d guards owed against a ceiling of %d - lower it to %d. A ceiling above "+
+			"what is owed is room the next new guard spends without being proved.",
+			owed, l.OwedCeiling, owed)
 	}
 
 	if len(seen) == 0 {

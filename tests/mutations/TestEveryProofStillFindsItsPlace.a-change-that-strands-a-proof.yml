@@ -1,0 +1,10 @@
+guard: TestEveryProofStillFindsItsPlace
+file: scripts/versions.env
+find: "KUBERNETES_VERSION=1.36.3"
+replace: "KUBERNETES_VERSION=1.36.4"
+mentions: "`find` appears 0 times in scripts/versions.env"
+why: >
+  A pin moved without the proof that breaks it, which is how five proofs on
+  the configuration rules pull request came to point at nothing - found only
+  when the ledger ran, eight minutes into the meta lane. Every proof is held
+  to finding its place at push, where that costs nothing.

@@ -1,6 +1,6 @@
 guard: TestEverySilencedFindingNamesTheGuardThatProvesItMayBe
 file: modules/infrastructure/platform/database.tf
-find: "a format, proved by TestAConnectionStringInTheCodeCarriesNoCredentialOfItsOwn"
+find: "a format, proved by TestTheCodeRulesHold (policy/semgrep/credentials.yml)"
 replace: "a format, with no credential written in it"
 mentions: "names no guard"
 why: >
