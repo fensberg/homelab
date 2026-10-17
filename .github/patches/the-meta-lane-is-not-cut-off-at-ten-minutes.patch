@@ -1,0 +1,30 @@
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index 95cdd76..4ec0a71 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -874,8 +874,10 @@ jobs:
+     name: "Meta-tests (mutation ledger, comment stripping)"
+     runs-on: ${{ github.event_name == 'schedule' && format('pr-builds-{0}', vars.pull_request_runners_site) || 'ubuntu-latest' }}
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+-    # which is what GitHub's default timeout allows.
+-    timeout-minutes: 15
++    # which is what GitHub's default timeout allows. Above the tests' own
++    # bound below, so that a slow run is reported by Go, naming the test,
++    # rather than cut off by the runner.
++    timeout-minutes: 35
+     permissions:
+       contents: read
+     steps:
+@@ -932,6 +934,12 @@ jobs:
+       # about half its time, and here they run beside it instead of after it.
+       - name: Prove the guards fail when they should
+         working-directory: tests/go
++        env:
++          # Go's default of ten minutes is not a budget anybody set, and the
++          # two tests together passed it on #779 while the ledger was being
++          # made faster: the bound stopped the work that shortens it. This is
++          # a ceiling for a stuck run, not the target; the lane's own time is.
++          GOFLAGS: -timeout=30m
+         run: go test ./repo/ -run "$META_TESTS"
+ 
+   test-js:
