@@ -170,3 +170,37 @@ removed:
     reason: moved with its guard to the configuration rules (policy/conftest/runners.rego), as TestTheConfigurationRulesHold.RunnerPodsAreNotBestEffort.12f6e271.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestTheDescribingStepRunsWhetherOrNotThisRunPublished.2a24d17d.yml
     reason: moved with its guard to the configuration rules (policy/conftest/fabricator_describing.rego), as TestTheConfigurationRulesHold.TheDescribingStepRunsWhetherOrNotThisRunPublished.2a24d17d.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNothingInstallsFromPyPIOutsideTakeDelivery.b9ad87f2.yml
+    reason: moved with its guard to the code rules (policy/semgrep/deliveries.yml), as TestTheCodeRulesHold.NothingInstallsFromPyPIOutsideTakeDelivery.b9ad87f2.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheInstallerDoesNotOverrideAPinnedVersion.b7ade3eb.yml
+    reason: moved with its guard to the code rules (policy/semgrep/deliveries.yml), as TestTheCodeRulesHold.TheInstallerDoesNotOverrideAPinnedVersion.b7ade3eb.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestAConnectionStringInTheCodeCarriesNoCredentialOfItsOwn.34fdeae1.yml
+    reason: moved with its guard to the code rules (policy/semgrep/credentials.yml), as TestTheCodeRulesHold.AConnectionStringInTheCodeCarriesNoCredentialOfItsOwn.34fdeae1.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNoWorkflowReachesALocalActionByARelativePath.9412ba8a.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/workflow_shape.rego), as TestTheConfigurationRulesHold.NoWorkflowReachesALocalActionByARelativePath.9412ba8a.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNoTestReadsThePatchesDirectory.c8fc52e7.yml
+    reason: moved with its guard to the code rules (policy/semgrep/pending-patches.yml), as TestTheCodeRulesHold.NoTestReadsThePatchesDirectory.c8fc52e7.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheContractorWritesAResourceAddressInOnePlace.b4e1b18d.yml
+    reason: moved with its guard to the code rules (policy/semgrep/contractor-addresses.yml), as TestTheCodeRulesHold.TheContractorWritesAResourceAddressInOnePlace.b4e1b18d.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheTeardownResolvesTheBucketItEmptiesFromTheTable.42b43594.yml
+    reason: moved with its guard to the code rules (policy/semgrep/state-backups.yml), as TestTheCodeRulesHold.TheTeardownResolvesTheBucketItEmptiesFromTheTable.42b43594.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestBackupAndRestoreReachTheStateBackupsThroughOneResolver.75ee8272.yml
+    reason: moved with its guard to the code rules (policy/semgrep/state-backups.yml), as TestTheCodeRulesHold.BackupAndRestoreReachTheStateBackupsThroughOneResolver.75ee8272.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNothingResolvesTheStateBackupsByHand.3f815e2a.yml
+    reason: moved with its guard to the code rules (policy/semgrep/state-backups.yml), as TestTheCodeRulesHold.NothingResolvesTheStateBackupsByHand.3f815e2a.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheDNSResolversAreDeclaredInOnePlace.7507caea.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/dns_resolvers.rego), as TestTheConfigurationRulesHold.TheDNSResolversAreDeclaredInOnePlace.7507caea.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTheDNSResolversAreDeclaredInOnePlace.7d479442.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/dns_resolvers.rego), as TestTheConfigurationRulesHold.TheDNSResolversAreDeclaredInOnePlace.7d479442.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestAFileReachesOutsideItsDirectoryFromTheTop.b2d473f5.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/root_paths.rego), as TestTheConfigurationRulesHold.AFileReachesOutsideItsDirectoryFromTheTop.b2d473f5.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryScriptedStepThatIsBashSaysSo.28632a10.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/scripted_steps.rego), as TestTheConfigurationRulesHold.EveryScriptedStepThatIsBashSaysSo.28632a10.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNoCodePicksASiteByName.3a01162f.yml
+    reason: moved with its guard to the code rules (policy/semgrep/site-names-text.yml), as TestTheCodeRulesHold.NoCodePicksASiteByName.3a01162f.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestTerratestNeverPrintsEstateOutputs.023fc30e.yml
+    reason: moved with its guard to the code rules (policy/semgrep/terratest.yml), as TestTheCodeRulesHold.TerratestNeverPrintsEstateOutputs.023fc30e.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNothingFindsTheRepositoryByCountingDirectories.4b861936.yml
+    reason: moved with its guard to the code rules (policy/semgrep/repository-root.yml), as TestTheCodeRulesHold.NothingFindsTheRepositoryByCountingDirectories.4b861936.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestNothingFindsTheRepositoryByCountingDirectories.8c1cef0d.yml
+    reason: moved with its guard to the code rules (policy/semgrep/repository-root.yml), as TestTheCodeRulesHold.NothingFindsTheRepositoryByCountingDirectories.8c1cef0d.yml, unchanged in what it breaks (2026-10-16)

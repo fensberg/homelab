@@ -1,0 +1,13 @@
+guard: TestTheCodeRulesHold
+file: tests/go/harness/scrape.go
+reads_source: true
+find: "	sort.Strings(failures)"
+replace: "	_ = []string{\"..\", \"..\"}\n\tsort.Strings(failures)"
+mentions: "fixed-depth climb"
+why: >
+  reads_source, because the guard tokenizes Go source rather than running
+  it.
+
+  Two ".." literals in a row, which is the shape filepath.Join("..", "..",
+  ...) takes. Eight copies of that answer existed, each right until the
+  file holding it moved; the move that proved it broke four tests at once.

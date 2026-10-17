@@ -1,0 +1,9 @@
+guard: TestTheCodeRulesHold
+file: policy/semgrep/credentials.yml
+find: "    pattern-regex: (?m)^(?![ \\t]*(?:#|//)).*?[a-z][a-z0-9+.-]*://(?:%[sdvq]|\\$\\{[^}]+\\})"
+replace: "    pattern-regex: (?m)^(?![ \\t]*(?:#|//)).*?nothing-is-written-like-this://(?:%[sdvq]|\\$\\{[^}]+\\})"
+mentions: "a-connection-string-with-a-user-part-is-written-somewhere found nothing"
+why: >
+  A presence rule finds what another rule's reason rests on. One that has
+  stopped finding anything leaves that reason standing on nothing, and its
+  finds are not refusals, so without this it would go quiet in silence.

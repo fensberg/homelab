@@ -131,65 +131,6 @@ func itoaSmall(n int) string {
 	return string(rune('0'+n/10)) + string(rune('0'+n%10))
 }
 
-// The resolvers are declared once and read everywhere.
-//
-// They were written out four times - twice in compute.tf's cloud-init and twice
-// in talos.tf's ResolverConfig (#360). Four copies of one value is the exact
-// duplication scripts/versions.env exists to refuse for tool versions, and it
-// fails the same way: three of them get updated and the fourth machine class
-// resolves through something nobody meant.
-//
-// It is also the estate's only documented route for a fork on a network with
-// internal resolvers or a policy against public upstreams. One line to change
-// is a route; four lines to find is a bug waiting.
-func TestTheDNSResolversAreDeclaredInOnePlace(t *testing.T) {
-	declaration := regexp.MustCompile(`dns_resolvers\s*=\s*\[`)
-	// An IPv4 literal, which is what a restatement looks like. Addresses that
-	// belong to the estate's own scheme are not resolvers and are skipped.
-	literal := regexp.MustCompile(`"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"`)
-
-	declared := 0
-	checked := 0
-	// Every OpenTofu file, not a list of the three that held the copies: a
-	// restatement in a file nobody listed is the one this exists to find.
-	for _, path := range tracked(t, func(rel string) bool {
-		return strings.HasSuffix(rel, ".tf") && !strings.Contains(rel, "/tests/")
-	}) {
-		body := readRepoFile(t, path)
-		checked++
-		for _, line := range strings.Split(body, "\n") {
-			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(trimmed, "#") {
-				continue // Prose about the decision is not the decision.
-			}
-			if declaration.MatchString(line) {
-				declared++
-				continue
-			}
-			if !strings.Contains(line, "dns") && !strings.Contains(line, "nameserver") &&
-				!strings.Contains(line, "servers") {
-				continue
-			}
-			if m := literal.FindStringSubmatch(line); m != nil {
-				t.Errorf(`%s names the resolver %s directly:
-
-    %s
-
-The resolvers are declared once in variables.tf as local.dns_resolvers, because
-this value was restated four times and a fork changing it had to find all four.
-Read it from there.`, path, m[1], trimmed)
-			}
-		}
-	}
-	if checked < 10 {
-		t.Fatalf("only %d file(s) were read, so the enumeration has stopped matching", checked)
-	}
-	if declared != 1 {
-		t.Errorf("local.dns_resolvers is declared %d time(s); it has to be exactly "+
-			"one, or it is not a single source", declared)
-	}
-}
-
 // A Talos image's datastore path changes when its schematic does.
 //
 // WHAT WAS WRONG. `proxmox_download_file` is identified by its datastore path,

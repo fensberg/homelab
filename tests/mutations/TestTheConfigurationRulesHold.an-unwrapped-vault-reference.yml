@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+file: config/management.tpl.json
+find: '"recipient": "{{ '
+replace: '"recipient": "'
+mentions: "has an unwrapped op:// reference"
+why: >
+  op inject substitutes only the wrapped form. A bare reference is valid JSON
+  and is copied into the rendered config as it is, so the Backup phase would
+  be handed a vault path where it expects an age recipient - the bug the
+  estate's own recipient once shipped with.

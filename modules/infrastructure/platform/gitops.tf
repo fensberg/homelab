@@ -22,7 +22,7 @@
 # state, so it made a leaked state file yield a live token in exchange for
 # nothing. If this repository is ever made private, the credential comes back
 # with that cost attached and belongs in the decision, not in a quiet edit;
-# tests/go/repo/gitops_test.go says so where somebody would be about to.
+# policy/conftest/gitops.rego says so where somebody would be about to.
 # =============================================================================
 
 resource "kubernetes_namespace" "flux_system" {

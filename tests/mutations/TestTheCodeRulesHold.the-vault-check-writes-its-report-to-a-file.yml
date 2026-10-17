@@ -1,0 +1,9 @@
+guard: TestTheCodeRulesHold
+file: scripts/contractor/internal/phases/checkvault.go
+reads_source: true
+find: "\treturn vaultReport(refs, onepassword.Probe, os.Stdout)"
+replace: "\tf, _ := os.Create(\"vault-report\")\n\treturn vaultReport(refs, onepassword.Probe, f)"
+mentions: "writes a file. The vault check writes nothing"
+why: >
+  The check reports to the terminal. A report written to a file is a file
+  somebody has to remember to delete.

@@ -255,6 +255,22 @@ repos:
         pass_filenames: false
         always_run: true
 
+      # A secret in the commits being pushed, scanned the way the Secrets Scan
+      # lane scans a pull request - by the same verb, so the two cannot differ.
+      # The lane alone came after the push, and a pushed commit cannot be
+      # rewritten here: an example written to be refused cost a new branch and
+      # a new pull request (#778), with gitleaks at commit passing it. From
+      # origin/main, because every branch is cut from it and only main is
+      # merged in, so what lies between is the branch's own; a clone behind
+      # main scans more, never less. About two seconds.
+      - id: guard-secrets
+        name: refuse a secret in the commits being pushed (pre-push)
+        entry: go run -C scripts/security . guard-secrets -base origin/main -head HEAD
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+
       # -count=1, so that the answer is about the tree being pushed. Go keeps
       # a test's result and gives it back when it believes nothing the test
       # read has changed, and on 2026-10-11 it believed that of a tree whose
@@ -279,10 +295,11 @@ repos:
         # feedback it would get anyway, while the operator sat waiting.
         #
         # What a push must stop is what no later push can repair: an unsigned
-        # commit (enforce-push, above), a secret (gitleaks, at commit), a real
-        # name or address reaching a public repository (the forkability and
-        # transcript guards, which are fast and run here). Everything else is
-        # a red check on the pull request, fixed by the next push.
+        # commit (enforce-push, above), a secret (gitleaks at commit, and
+        # guard-secrets above at push), a real name or address reaching a
+        # public repository (the forkability and transcript guards, which are
+        # fast and run here). Everything else is a red check on the pull
+        # request, fixed by the next push.
         #
         # -short is what keeps it fast: a guard that costs whole seconds calls
         # heavy() and skips here, saying why. CI's Test lane runs the package

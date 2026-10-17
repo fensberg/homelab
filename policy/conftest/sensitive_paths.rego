@@ -162,3 +162,16 @@ own_topic(script) if {
 	some m in regex.find_all_string_submatch_n(`(?m)^\s+-topic ([a-z]+) \\$`, script, 1)
 	m[1] != "sensitive"
 }
+
+# The label mechanism is gone. Two mechanisms for one acknowledgement is two
+# things to keep in step, and the weaker one becomes the one people use.
+
+dead := ["removeLabel", "addLabels", "--json labels", "labeled"]
+
+deny contains msg if {
+	walk(doc, [path, v])
+	some s in array.concat([v | is_string(v)], [k | some k in path; is_string(k)])
+	some word in dead
+	contains(s, word)
+	msg := sprintf("the workflow still manipulates or reads labels (%q). The acknowledgement is a conversation now; a label alongside it is a second, weaker gate that will drift from this one.", [word])
+}

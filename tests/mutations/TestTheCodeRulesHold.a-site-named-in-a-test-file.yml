@@ -1,0 +1,10 @@
+guard: TestTheCodeRulesHold
+file: policy/semgrep/site-names-code.yml
+find: "          regex: .*\\bsite0\\b\n    paths:\n      exclude: [\"*_test.go\"]\n"
+replace: "          regex: .*\\bsite0\\b\n"
+mentions: "names a site as a value. Take the site from the config template instead - a program from config.ResolveSite"
+why: >
+  Tests name a site to build the configuration they check; without the
+  exclusion the rule refuses them. This is also the program rule's own
+  proof: the workflows' proofs share the first words of its message, and
+  name a different rule.

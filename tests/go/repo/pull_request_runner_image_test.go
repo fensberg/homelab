@@ -12,6 +12,9 @@ import (
 	"homelab/details/workorders"
 )
 
+// takeDelivery is the one thing that installs a locked tool.
+const takeDelivery = "scripts/take-delivery.sh"
+
 // The image a pull request's jobs run in carries exactly what those jobs take
 // delivery of: every tool, and nothing else.
 //

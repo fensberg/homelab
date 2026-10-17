@@ -1,0 +1,8 @@
+guard: TestTheCodeRulesHold
+file: policy/semgrep/terratest.yml
+find: "      include: [/tests/go/]\n      exclude: [/tests/go/harness/]\n"
+replace: "      include: [/tests/go/]\n"
+mentions: "builds its own terraform.Options. They are built in tests/go/harness"
+why: >
+  The harness is the one place the options are built, so the rule must let
+  it through and refuses it without the exclusion.

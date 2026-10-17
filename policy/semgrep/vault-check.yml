@@ -1,0 +1,73 @@
+# The vault check reports structure and holds nothing.
+#
+# `contractor check-inventory` proves every op:// reference in the template
+# resolves, and reports each as ok / empty / missing - output that is safe to
+# paste into an issue. Three things keep it that way, in the files that make up
+# the check, named rather than discovered so that moving the logic somewhere
+# else fails loudly instead of silently taking it out of scope:
+#
+#   - onepassword.Probe returns one value, of a type that cannot carry a
+#     secret. op cannot check a reference's existence without returning its
+#     value, so Probe necessarily reads the secret, and the only thing keeping
+#     it from escaping is that Probe has no way to hand it back.
+#   - nothing in the check fetches a value or writes one anywhere;
+#   - nothing in the check writes a file, which is what makes it the one mode
+#     with nothing to sterilize afterwards.
+rules:
+  - id: the-vault-probe-returns-a-status-and-nothing-else
+    languages: [go]
+    severity: INFO
+    message: onepassword.Probe returns a Status and nothing else
+    metadata:
+      presence: >-
+        onepassword.Probe no longer has the signature func Probe(ref string)
+        Status. That single return value is the guarantee: a second return
+        value, of any type that can carry a string, lets a secret it read
+        escape. If the check needs to say more, add cases to Status
+    pattern: |
+      func Probe($REF string) Status { ... }
+    paths:
+      include: [/scripts/details/onepassword/probe.go]
+
+  - id: the-vault-check-never-fetches-or-writes-a-secret
+    languages: [go]
+    severity: ERROR
+    message: >-
+      fetches or writes a secret. The vault check must not fetch a secret's
+      value or write one anywhere. It exists to report structure - ok / empty /
+      missing - and its output is meant to be safe to paste into an issue. A
+      call that returns or stores a value puts one inside the blast radius of
+      the next debug print.
+    # And by their bare names: probe.go is in the package that defines them,
+    # where a call carries no package name. Neither other file's package has
+    # a function of these names.
+    pattern-either:
+      - pattern: onepassword.Read(...)
+      - pattern: onepassword.Inject(...)
+      - pattern: onepassword.WriteField(...)
+      - pattern: onepassword.EnsureField(...)
+      - pattern: Read(...)
+      - pattern: Inject(...)
+      - pattern: WriteField(...)
+      - pattern: EnsureField(...)
+    paths:
+      include: &check
+        - /scripts/details/onepassword/probe.go
+        - /scripts/contractor/internal/phases/checkvault.go
+        - /scripts/contractor/config/vaultrefs.go
+
+  - id: the-vault-check-writes-no-files
+    languages: [go]
+    severity: ERROR
+    message: >-
+      writes a file. The vault check writes nothing. That is what makes it the
+      one mode with nothing to sterilize afterwards - it can be interrupted at
+      any point and leave the workspace exactly as it found it. A file created
+      here is a file somebody has to remember to delete.
+    pattern-either:
+      - pattern: os.WriteFile(...)
+      - pattern: os.Create(...)
+      - pattern: os.OpenFile(...)
+      - pattern: os.Rename(...)
+    paths:
+      include: *check

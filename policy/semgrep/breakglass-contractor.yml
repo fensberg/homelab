@@ -1,0 +1,31 @@
+# The break-glass identity is read only by the restore path.
+#
+# The identity exists to be used when a human is putting the estate back
+# together, and it reaches the restore path on stdin, piped from the estate's
+# vault by that human: no program here reads it from a vault, the restore path
+# included. Every other phase works with the recipient, which is public; a
+# phase that holds the private half could decrypt the backups it is writing,
+# which is the property this key exists to deny. Keeping it out of OpenTofu
+# and out of the rendered config is breakglass-opentofu.yml and
+# policy/conftest/gitops.rego.
+rules:
+  - id: the-break-glass-identity-is-read-only-by-the-restore-path
+    # Followed as data, from the identity's reference - or its path written
+    # out - to the call that reads a vault value. Nothing is exempt, test
+    # files included: restore.go was, and fetched nothing, so the exemption
+    # stood ready for a read nobody had reviewed.
+    mode: taint
+    languages: [go]
+    severity: ERROR
+    message: >-
+      reads the break-glass identity from the vault. Nothing here may: the
+      restore path takes it on stdin, from the person restoring. Every phase in
+      the ignition sequence works with the recipient, which is public - a phase
+      that holds the private half is a phase that could decrypt the backups it
+      is writing, which is the property this key exists to deny.
+    pattern-sources:
+      - pattern: BackupIdentityRef
+      - pattern: $PKG.BackupIdentityRef
+      - pattern: '"=~/state_backup\/identity/"'
+    pattern-sinks:
+      - pattern: onepassword.Read(...)

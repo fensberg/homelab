@@ -1,0 +1,13 @@
+guard: TestTheCodeRulesHold
+file: scripts/contractor/internal/phases/restore.go
+reads_source: true
+find: "		backups, err := config.StateBackupLocation(cfg, ctx.Site, root.Name)"
+replace: "		backups, err := resolveStateBackupsHere(cfg, ctx.Site, root.Name)"
+mentions: "does not call config.StateBackupLocation"
+why: >
+  reads_source, because the guard parses restore.go for its calls rather
+  than running it.
+
+  Restore resolving the location itself - the shape of somebody adding a
+  fallback or a special case for recovery. The deleted guard this replaces
+  caught the same thing by name; for a stretch in between nothing did.

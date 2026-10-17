@@ -198,7 +198,7 @@ func runSensor(t *testing.T, changed string) (string, error) {
 }
 
 func TestSensorTripsOnAGuardedPath(t *testing.T) {
-	out, err := runSensor(t, "tests/go/repo/breakglass_test.go\nREADME.md\n")
+	out, err := runSensor(t, "tests/go/repo/vaultcheck_test.go\nREADME.md\n")
 	if err != nil {
 		t.Fatalf("sensor failed: %v", err)
 	}

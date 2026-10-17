@@ -1,0 +1,10 @@
+guard: TestTheCodeRulesHold
+file: scripts/contractor/config/vaultrefs.go
+reads_source: true
+find: "	leaves, err := flattenFile(templatePath)"
+replace: "	_ = os.WriteFile(\"vault-report.txt\", nil, 0o600)\n	leaves, err := flattenFile(templatePath)"
+mentions: "writes a file. The vault check writes nothing"
+why: >
+  A file the vault check writes is a file someone has to remember to delete,
+  and the check is the one mode with nothing to sterilize because it writes
+  none. A report kept "for later" would not look like a leak in review.

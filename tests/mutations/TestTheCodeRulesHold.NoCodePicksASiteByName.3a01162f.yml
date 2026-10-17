@@ -1,0 +1,9 @@
+guard: TestTheCodeRulesHold
+file: .github/workflows/integration-tests.yml
+find: "          SITE: ${{ matrix.site }}\n        run: ./toolshed/contractor record-as-built"
+replace: "          SITE: ${{ matrix.site || 'site0' }}\n        run: ./toolshed/contractor record-as-built"
+mentions: "names a site as a value. Take the site from the config template instead - a workflow from its sites keys"
+why: >
+  A fallback to the first site reads as harmless while there is only one.
+  It is the setting that keeps recording site0 under a name that does not
+  say so once site1 exists, and leaves site1 with no record at all.

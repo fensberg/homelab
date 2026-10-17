@@ -1,0 +1,14 @@
+guard: TestTheCodeRulesHold
+file: tests/go/harness/scrape.go
+reads_source: true
+find: "	return failures, total, nil"
+replace: "	_ = filepath.Dir(filepath.Dir(\"x\"))\n\treturn failures, total, nil"
+mentions: "fixed-depth climb"
+why: >
+  reads_source, because the guard tokenizes Go source rather than running
+  it.
+
+  The second spelling of the same climb - nested filepath.Dir - which the
+  guard's first version could not see. The one copy of it was in the
+  contractor's main.go, the only root-finder that ran in the shipped
+  binary, and it went through unnoticed while the ".." copies were caught.

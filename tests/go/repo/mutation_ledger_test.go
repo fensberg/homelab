@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -335,6 +336,23 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 
 	bin := testBinary(t)
 
+	// Passing first, once for each guard. Every proof's copy is the same
+	// unbroken tree until its mutation lands, so a guard's answer on it is
+	// one answer, and asking it once per proof was asking it again: 168 of
+	// the ledger's 644 guard runs, 135 of them a whole Conftest or Semgrep
+	// scan, and the meta lane past its ten minutes (#779). The first proof
+	// of a guard asks, in its own copy, and the rest wait for that answer.
+	var mu sync.Mutex
+	unbroken := map[string]*unbrokenRun{}
+	unbrokenOf := func(guard string) *unbrokenRun {
+		mu.Lock()
+		defer mu.Unlock()
+		if unbroken[guard] == nil {
+			unbroken[guard] = &unbrokenRun{}
+		}
+		return unbroken[guard]
+	}
+
 	for _, m := range append(append([]mutation{}, l.Mutations...), applicationMutations(t)...) {
 		name := m.Guard
 		if m.Test != "" {
@@ -346,93 +364,20 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 			// does can be seen by another - and one after another, two
 			// hundred of them were four minutes of every pull request.
 			t.Parallel()
-			required := []struct{ field, value string }{
-				{"guard", m.Guard}, {"file", m.File},
-				{"mentions", m.Mentions}, {"why", m.Why},
-			}
-			if m.creates() {
-				if m.Find != "" || m.Replace != "" {
-					t.Fatal("this entry both creates a file and substitutes in one; " +
-						"it can only prove one thing, so say which")
-				}
-			} else {
-				required = append(required,
-					struct{ field, value string }{"find", m.Find},
-					struct{ field, value string }{"replace", m.Replace})
-			}
-			for _, missing := range required {
-				if strings.TrimSpace(missing.value) == "" {
-					t.Fatalf("this entry has no %s, so it proves nothing", missing.field)
-				}
-			}
-
-			// A Go target usually proves nothing. The guards are run from a
-			// binary compiled once from the real tree, so editing Go source
-			// in the scratch copy changes no behaviour and the entry would
-			// "fail to fail" for a reason that has nothing to do with the
-			// guard. Refuse it rather than let it look like coverage.
-			//
-			// EXCEPT WHERE THE GUARD READS THE SOURCE AS DATA, which this
-			// refusal used to state as a property of the ledger when it is
-			// really a property of the guard. runGuard sets the repo-root
-			// environment variable to the scratch tree and repoRoot honours
-			// it, so a guard that opens .go files and inspects their text sees
-			// the mutation in full. Only guards asserting COMPILED BEHAVIOUR
-			// are blind to it.
-			//
-			// So the opt-in is explicit and narrow rather than the default
-			// being loosened: `reads_source: true` says "this guard reads the
-			// named file, it does not execute it". Getting that wrong makes an
-			// entry that cannot fail, which is why it has to be claimed rather
-			// than inferred.
-			if strings.HasSuffix(m.File, ".go") && !m.ReadsSource {
-				t.Fatalf("this entry mutates %s, and the ledger cannot judge Go source.\n\n"+
-					"The guards run from a binary compiled once from the real tree, so a "+
-					"change to Go source in the scratch copy has no effect - the entry "+
-					"would pass or fail for reasons unrelated to what it claims.\n\n"+
-					"Guards over Go behaviour belong in that program's own package tests, "+
-					"beside the code, where a counterexample is an ordinary table entry.\n\n"+
-					"If this guard READS the file as data rather than executing it, say so "+
-					"with `reads_source: true` - the scratch tree does reach a guard that "+
-					"opens source and inspects its text.",
-					m.File)
-			}
-
 			// A copy of the tree to break. The entry's target is read from
 			// the copy, so what is counted and what is broken are one file.
 			scratch := scratchRepo(t)
-
-			if m.creates() {
-				if _, err := os.Stat(filepath.Join(scratch, m.File)); err == nil {
-					t.Fatalf("this entry plants %s, and that file already exists in the "+
-						"repository. Planting it would overwrite something real, and the "+
-						"guard would be judged against the wrong thing.", m.File)
-				}
-			}
-
-			var original []byte
-			if !m.creates() {
-				var err error
-				original, err = os.ReadFile(filepath.Join(scratch, m.File))
-				if err != nil {
-					t.Fatalf("the ledger names %s, which cannot be read: %v\n\n"+
-						"The file moved or was deleted. Point the entry at where it went; "+
-						"do not delete the entry.", m.File, err)
-				}
-			}
-			if n := strings.Count(string(original), m.Find); !m.creates() && n != 1 {
-				t.Fatalf("`find` appears %d times in %s, and an entry that is not "+
-					"exactly one place is ambiguous.\n\n"+
-					"Widen `find` until it names one spot. Guessing which of %d it "+
-					"meant is how a ledger entry ends up proving something other than "+
-					"what it says.", n, m.File, n)
+			if problems := placeProblems(scratch, m); len(problems) > 0 {
+				t.Fatal(problems[0])
 			}
 
 			// Passing first. A guard that is already broken would satisfy
 			// "fails after the mutation" for free, and prove nothing at all.
-			if ok, out := runGuard(t, bin, scratch, m.Guard); !ok {
+			u := unbrokenOf(m.Guard)
+			u.once.Do(func() { u.passed, u.output = runGuard(t, bin, scratch, m.Guard) })
+			if !u.passed {
 				t.Fatalf("%s already fails on an unmutated copy, so this entry cannot "+
-					"prove anything about it.\n\nFix the guard first.\n\n%s", m.Guard, out)
+					"prove anything about it.\n\nFix the guard first.\n\n%s", m.Guard, u.output)
 			}
 
 			target := filepath.Join(scratch, m.File)
@@ -484,6 +429,13 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 			}
 		})
 	}
+}
+
+// unbrokenRun is a guard's answer on the unbroken tree, asked once.
+type unbrokenRun struct {
+	once   sync.Once
+	passed bool
+	output string
 }
 
 // Nothing may be satisfied by a comment.
@@ -707,5 +659,111 @@ func TestSatisfiedByProseOnlyNamesAPassToFailFlip(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// placeProblems is everything wrong with a ledger entry that can be told
+// without running its guard: a field it lacks, Go source it may not judge, a
+// file that is not where it says or already is where it would plant one, and
+// a `find` that is not exactly one place. The ledger refuses an entry for any
+// of these before it runs anything, and TestEveryProofStillFindsItsPlace asks
+// the same of every entry at push, so a proof left behind by a change is found
+// in milliseconds rather than eight minutes into the meta lane.
+func placeProblems(root string, m mutation) []string {
+	required := []struct{ field, value string }{
+		{"guard", m.Guard}, {"file", m.File},
+		{"mentions", m.Mentions}, {"why", m.Why},
+	}
+	if m.creates() {
+		if m.Find != "" || m.Replace != "" {
+			return []string{"this entry both creates a file and substitutes in one; " +
+				"it can only prove one thing, so say which"}
+		}
+	} else {
+		required = append(required,
+			struct{ field, value string }{"find", m.Find},
+			struct{ field, value string }{"replace", m.Replace})
+	}
+	for _, missing := range required {
+		if strings.TrimSpace(missing.value) == "" {
+			return []string{fmt.Sprintf("this entry has no %s, so it proves nothing", missing.field)}
+		}
+	}
+
+	// A Go target usually proves nothing. The guards are run from a
+	// binary compiled once from the real tree, so editing Go source
+	// in the scratch copy changes no behaviour and the entry would
+	// "fail to fail" for a reason that has nothing to do with the
+	// guard. Refuse it rather than let it look like coverage.
+	//
+	// EXCEPT WHERE THE GUARD READS THE SOURCE AS DATA, which this
+	// refusal used to state as a property of the ledger when it is
+	// really a property of the guard. runGuard sets the repo-root
+	// environment variable to the scratch tree and repoRoot honours
+	// it, so a guard that opens .go files and inspects their text sees
+	// the mutation in full. Only guards asserting COMPILED BEHAVIOUR
+	// are blind to it.
+	//
+	// So the opt-in is explicit and narrow rather than the default
+	// being loosened: `reads_source: true` says "this guard reads the
+	// named file, it does not execute it". Getting that wrong makes an
+	// entry that cannot fail, which is why it has to be claimed rather
+	// than inferred.
+	if strings.HasSuffix(m.File, ".go") && !m.ReadsSource {
+		return []string{fmt.Sprintf("this entry mutates %s, and the ledger cannot judge Go source.\n\n"+
+			"The guards run from a binary compiled once from the real tree, so a "+
+			"change to Go source in the scratch copy has no effect - the entry "+
+			"would pass or fail for reasons unrelated to what it claims.\n\n"+
+			"Guards over Go behaviour belong in that program's own package tests, "+
+			"beside the code, where a counterexample is an ordinary table entry.\n\n"+
+			"If this guard READS the file as data rather than executing it, say so "+
+			"with `reads_source: true` - the scratch tree does reach a guard that "+
+			"opens source and inspects its text.",
+			m.File)}
+	}
+
+	if m.creates() {
+		if _, err := os.Stat(filepath.Join(root, m.File)); err == nil {
+			return []string{fmt.Sprintf("this entry plants %s, and that file already exists in the "+
+				"repository. Planting it would overwrite something real, and the "+
+				"guard would be judged against the wrong thing.", m.File)}
+		}
+		return nil
+	}
+	original, err := os.ReadFile(filepath.Join(root, m.File))
+	if err != nil {
+		return []string{fmt.Sprintf("the ledger names %s, which cannot be read: %v\n\n"+
+			"The file moved or was deleted. Point the entry at where it went; "+
+			"do not delete the entry.", m.File, err)}
+	}
+	if n := strings.Count(string(original), m.Find); n != 1 {
+		return []string{fmt.Sprintf("`find` appears %d times in %s, and an entry that is not "+
+			"exactly one place is ambiguous.\n\n"+
+			"Widen `find` until it names one spot. Guessing which of %d it "+
+			"meant is how a ledger entry ends up proving something other than "+
+			"what it says.", n, m.File, n)}
+	}
+	return nil
+}
+
+// Every proof still finds its place, checked at push. A change that moves,
+// deletes or rewrites what a proof breaks leaves the proof pointing at
+// nothing, and the ledger only says so when it runs - on the pull request,
+// minutes in. Nothing here runs a guard: it reads each entry and the file it
+// names, which is the part of the ledger's judgement that costs nothing.
+func TestEveryProofStillFindsItsPlace(t *testing.T) {
+	root := repoRoot(t)
+	entries := append(append([]mutation{}, readLedger(t).Mutations...), applicationMutations(t)...)
+	if len(entries) < 100 {
+		t.Fatalf("only %d proofs were read, which is not this ledger - the reader has stopped matching", len(entries))
+	}
+	for _, m := range entries {
+		for _, p := range placeProblems(root, m) {
+			name := m.Guard
+			if m.Test != "" {
+				name += "/" + m.Test
+			}
+			t.Errorf("%s (%s): %s", name, m.File, p)
+		}
 	}
 }

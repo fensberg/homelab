@@ -1,0 +1,10 @@
+guard: TestTheCodeRulesHold
+file: policy/semgrep/contractor-addresses.yml
+find: 'exclude: ["*_test.go", /scripts/contractor/steps/steps.go]'
+replace: "exclude: [/scripts/contractor/steps/steps.go]"
+mentions: "writes a resource address. Name it in scripts/contractor/steps"
+why: >
+  The contractor's tests write resource addresses on purpose, to check what
+  the code does with them; without the exclusion the rule refuses them. This
+  shows the exclusion exempts something, so it is not a hole nobody has
+  looked into.

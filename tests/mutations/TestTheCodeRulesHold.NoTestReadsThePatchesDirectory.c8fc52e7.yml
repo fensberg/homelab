@@ -1,0 +1,9 @@
+guard: TestTheCodeRulesHold
+file: tests/go/repo/heavy_test.go
+find: "package repo\n"
+replace: "package repo\n\nvar _ = \".github/patches\"\n"
+reads_source: true
+mentions: "reads .github/patches"
+why: >
+  The first line of the machinery this refuses is a test naming the
+  directory. Caught there, nobody spends hours building the rest.

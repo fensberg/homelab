@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -103,19 +104,8 @@ func TestEveryGuardIsProvedOrDeclaredUnprovable(t *testing.T) {
 		}
 	}
 
-	// The debt may shrink, never grow. Without this the owed list is a place to
-	// put anything rather than a queue with an end.
-	if owed > l.OwedCeiling {
-		t.Errorf(`%d guards are marked owed; the ceiling is %d.
-
-owed means "provable, not yet proved". It is bounded on purpose: a new guard
-cannot join that list without another one leaving it. Write the mutation entry
-for this one, or prove an older one and lower the ceiling in the same diff.`,
-			owed, l.OwedCeiling)
-	}
-	if owed < l.OwedCeiling {
-		t.Logf("%d guards owed against a ceiling of %d - lower it to %d to keep the "+
-			"debt ratcheting down", owed, l.OwedCeiling, owed)
+	if problem := owedCeilingProblem(owed, l.OwedCeiling); problem != "" {
+		t.Error(problem)
 	}
 
 	if len(seen) == 0 {
@@ -146,6 +136,43 @@ failing case" is a good reason; silence is not.`,
 	for _, m := range l.Mutations {
 		if !seen[m.Guard] {
 			t.Errorf("the ledger names guard %q, which is not a test in tests/go/repo", m.Guard)
+		}
+	}
+}
+
+// owedCeilingProblem is what is wrong with an owed count against its
+// ceiling, or "". The debt may shrink, never grow: without a ceiling the owed
+// list is a place to put any new guard nobody wants to prove. And the ceiling
+// may not sit above what is owed, because slack is room the next new guard
+// spends unproved - a proof landed on #773 and the ceiling was left one above
+// the count, which a log line said only when something else had failed.
+func owedCeilingProblem(owed, ceiling int) string {
+	switch {
+	case owed > ceiling:
+		return fmt.Sprintf(`%d guards are marked owed; the ceiling is %d.
+
+owed means "provable, not yet proved". It is bounded on purpose: a new guard
+cannot join that list without another one leaving it. Write the mutation entry
+for this one, or prove an older one and lower the ceiling in the same diff.`, owed, ceiling)
+	case owed < ceiling:
+		return fmt.Sprintf("%d guards owed against a ceiling of %d - lower it to %d. A ceiling above "+
+			"what is owed is room the next new guard spends without being proved.", owed, ceiling, owed)
+	}
+	return ""
+}
+
+func TestTheOwedCeilingFitsTheDebtExactly(t *testing.T) {
+	for _, c := range []struct {
+		owed, ceiling int
+		want          string
+	}{
+		{24, 24, ""},
+		{25, 24, "the ceiling is 24"},
+		{23, 24, "lower it to 23"},
+	} {
+		got := owedCeilingProblem(c.owed, c.ceiling)
+		if (c.want == "") != (got == "") || !strings.Contains(got, c.want) {
+			t.Errorf("%d owed against %d: got %q, want %q", c.owed, c.ceiling, got, c.want)
 		}
 	}
 }

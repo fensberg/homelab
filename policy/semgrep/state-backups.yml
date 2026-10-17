@@ -1,0 +1,64 @@
+# The state backups and the bucket a teardown empties are reached one way.
+#
+# Backup and Restore are the two ends of one pipe, and the way this breaks is
+# silent in the worst direction: a restore pointed somewhere else finds
+# nothing and reports that there is no backup, at the moment somebody is
+# recovering an estate. So both reach the backups through
+# config.StateBackupLocation, and nothing anywhere builds the route by hand -
+# a list of two readers is the thing that goes stale, and a third reader
+# would not be on it. And a teardown empties the bucket it resolves from the
+# table, not the raw config value: the two are the same string only while the
+# database bucket carries an empty suffix.
+rules:
+  - id: nothing-resolves-the-state-backups-by-hand
+    languages: [go]
+    severity: ERROR
+    message: >-
+      is building the route to the state backups itself. Use
+      config.StateBackupLocation, which Backup and Restore both use - the
+      bucket alone is half the answer, and the other half, which credential
+      reaches it, is where copies disagreed before.
+    pattern-either:
+      - pattern: config.StateBackupPath(...)
+      - pattern: config.LatestStateBackupPath(...)
+      - pattern: config.BucketByKey("state")
+
+  - id: backup-reaches-the-state-backups-through-the-resolver
+    languages: [go]
+    severity: INFO
+    message: Backup reaches the state backups through config.StateBackupLocation
+    metadata:
+      presence: >-
+        scripts/contractor/internal/phases/backup.go does not call
+        config.StateBackupLocation, so Backup and Restore can resolve the
+        backups two ways and a restore finds nothing during a recovery
+    pattern: config.StateBackupLocation(...)
+    paths:
+      include: [/scripts/contractor/internal/phases/backup.go]
+
+  - id: restore-reaches-the-state-backups-through-the-resolver
+    languages: [go]
+    severity: INFO
+    message: Restore reaches the state backups through config.StateBackupLocation
+    metadata:
+      presence: >-
+        scripts/contractor/internal/phases/restore.go does not call
+        config.StateBackupLocation, so Backup and Restore can resolve the
+        backups two ways and a restore finds nothing during a recovery
+    pattern: config.StateBackupLocation(...)
+    paths:
+      include: [/scripts/contractor/internal/phases/restore.go]
+
+  - id: the-teardown-resolves-the-bucket-it-empties-from-the-table
+    languages: [go]
+    severity: INFO
+    message: the teardown resolves the bucket it empties from the table
+    metadata:
+      presence: >-
+        teardown.go does not resolve the bucket it empties with
+        config.BucketByKey("database"). Emptying is the irreversible half of a
+        demolish; it must name the bucket declared destroyable, rather than
+        whichever bucket name happened to be in the config
+    pattern: config.BucketByKey("database")
+    paths:
+      include: [/scripts/contractor/internal/phases/teardown.go]

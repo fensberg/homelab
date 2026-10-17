@@ -132,9 +132,11 @@ func discover(t *testing.T) []unit {
 		units = append(units, unit{"go", "scripts/" + m})
 	}
 
-	// Shell: every script the repository ships, wherever it lives.
+	// Shell: every script the repository ships, wherever it lives. A code
+	// rule's example is not one: it is written to be refused, and read - never
+	// run - by semgrep --test (TestEveryCodeRuleProvesItself).
 	for _, p := range tracked(t, func(rel string) bool {
-		return strings.HasSuffix(rel, ".sh") || strings.HasPrefix(rel, "githooks/")
+		return (strings.HasSuffix(rel, ".sh") || strings.HasPrefix(rel, "githooks/")) && !strings.HasPrefix(rel, semgrepExamples+"/")
 	}) {
 		units = append(units, unit{"shell", p})
 	}

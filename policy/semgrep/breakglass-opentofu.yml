@@ -1,0 +1,38 @@
+# The break-glass identity stays where only a person restoring can reach it.
+#
+# The age identity is the break-glass: its entire job is to be the one thing
+# that survives everything else being compromised. Three ways to destroy that
+# property, each of which looks like ordinary convenience at the time:
+#
+#  1. Referencing it from OpenTofu. Anything OpenTofu reads becomes a value it
+#     can persist, and state is exactly what the key exists to make worthless.
+#     A leaked state file containing the key that decrypts the backups of that
+#     same state is a closed loop.
+#  2. Putting it in the rendered config, which lands on disk beside every other
+#     secret and is read by the same program the key is meant to outlive.
+#  3. Reading it in any phase but a restore. Every phase in the ignition
+#     sequence works with the recipient, which is public; a phase that holds
+#     the private half could decrypt the backups it is writing.
+#
+# The identity is addressed two ways, and both are refused: as the vault
+# reference a human pastes, and as the config path OpenTofu would traverse.
+# "identity" on its own is too common a word to look for, so each is anchored
+# to the item that holds it. "backup_identity" is the name the field had
+# before the keypair moved up to the estate, and stays refused so that
+# reintroducing the old name does not reintroduce the old exposure.
+#
+# The rendered config's half is a configuration rule
+# (policy/conftest/gitops.rego), and the contractor's is
+# breakglass-contractor.yml.
+rules:
+  - id: the-break-glass-identity-is-never-referenced-by-opentofu
+    languages: [generic]
+    severity: ERROR
+    message: >-
+      references the break-glass identity. It must never be an OpenTofu value:
+      anything OpenTofu reads is a value it can write to state, and state is
+      what this key exists to make worthless. It is read by the contractor in
+      Go, through op, and only during a restore.
+    pattern-regex: (?m)^(?![ \t]*(?:#|//)).*?(?:state_backup[/.]identity|backup_identity)
+    paths:
+      include: ["*.tf"]
