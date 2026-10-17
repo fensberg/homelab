@@ -32,7 +32,7 @@ import (
 //
 // WHAT IT DOES NOT READ. The epoch records and the ledger's history are what
 // happened, and name what was there at the time; the files .gitattributes
-// marks vendored are somebody else's.
+// marks vendored are somebody else's; a patch is a diff, both halves at once.
 
 // historyPrefixes are where a name is a record of the past, not a claim.
 var historyPrefixes = []string{"docs/epochs/", ledgerEntries + "/", ledgerEntries + ".yml", "tests/mutations-removed.yml"}
@@ -59,7 +59,9 @@ func TestNoReferenceNamesAGuardThatIsGone(t *testing.T) {
 	var problems []string
 	read := 0
 	for _, rel := range files {
-		if vendored[rel] || isHistory(rel) || strings.HasPrefix(rel, semgrepExamples+"/") {
+		// A patch is a diff: it carries the claim it removes beside the one it
+		// adds, and says nothing about the tree as it is.
+		if vendored[rel] || isHistory(rel) || strings.HasPrefix(rel, semgrepExamples+"/") || strings.HasSuffix(rel, ".patch") {
 			continue
 		}
 		text, ok := proseOf(t, rel)
