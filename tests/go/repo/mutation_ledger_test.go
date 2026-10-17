@@ -336,6 +336,23 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 
 	bin := testBinary(t)
 
+	// Passing first, once for each guard. Every proof's copy is the same
+	// unbroken tree until its mutation lands, so a guard's answer on it is
+	// one answer, and asking it once per proof was asking it again: 168 of
+	// the ledger's 644 guard runs, 135 of them a whole Conftest or Semgrep
+	// scan, and the meta lane past its ten minutes (#779). The first proof
+	// of a guard asks, in its own copy, and the rest wait for that answer.
+	var mu sync.Mutex
+	unbroken := map[string]*unbrokenRun{}
+	unbrokenOf := func(guard string) *unbrokenRun {
+		mu.Lock()
+		defer mu.Unlock()
+		if unbroken[guard] == nil {
+			unbroken[guard] = &unbrokenRun{}
+		}
+		return unbroken[guard]
+	}
+
 	for _, m := range append(append([]mutation{}, l.Mutations...), applicationMutations(t)...) {
 		name := m.Guard
 		if m.Test != "" {
@@ -356,9 +373,11 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 
 			// Passing first. A guard that is already broken would satisfy
 			// "fails after the mutation" for free, and prove nothing at all.
-			if ok, out := runGuard(t, bin, scratch, m.Guard); !ok {
+			u := unbrokenOf(m.Guard)
+			u.once.Do(func() { u.passed, u.output = runGuard(t, bin, scratch, m.Guard) })
+			if !u.passed {
 				t.Fatalf("%s already fails on an unmutated copy, so this entry cannot "+
-					"prove anything about it.\n\nFix the guard first.\n\n%s", m.Guard, out)
+					"prove anything about it.\n\nFix the guard first.\n\n%s", m.Guard, u.output)
 			}
 
 			target := filepath.Join(scratch, m.File)
@@ -410,6 +429,13 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 			}
 		})
 	}
+}
+
+// unbrokenRun is a guard's answer on the unbroken tree, asked once.
+type unbrokenRun struct {
+	once   sync.Once
+	passed bool
+	output string
 }
 
 // Nothing may be satisfied by a comment.

@@ -34,7 +34,7 @@ const conftestProgram = "conftest"
 const conftestRules = "policy/conftest"
 
 // conftestInputs is every tracked file of a kind the declaration hands to
-// Conftest.
+// Conftest, except the code rules and their examples.
 func conftestInputs(t *testing.T) []string {
 	t.Helper()
 	kinds := map[string]bool{}
@@ -48,7 +48,7 @@ func conftestInputs(t *testing.T) []string {
 	}
 	var files []string
 	for _, rel := range trackedFiles(t) {
-		if kinds[kindOf(rel)] {
+		if kinds[kindOf(rel)] && !isCodeRuleFile(rel) {
 			files = append(files, rel)
 		}
 	}

@@ -64,7 +64,7 @@ func semgrepInputs(t *testing.T) []string {
 	}
 	var files []string
 	for _, rel := range trackedFiles(t) {
-		if kinds[kindOf(rel)] && !strings.HasPrefix(rel, semgrepRules+"/") {
+		if kinds[kindOf(rel)] && !isCodeRuleFile(rel) {
 			files = append(files, rel)
 		}
 	}
@@ -74,6 +74,13 @@ func semgrepInputs(t *testing.T) []string {
 	}
 	return files
 }
+
+// isCodeRuleFile reports whether a path is one of the code rules or one of
+// their examples. Neither is the estate, and no harness reads them as if they
+// were: an example is written to be refused. One declared a Kubernetes secret
+// to show the rule refusing it, and the Flux rule, reading every .tf as
+// configuration, took that secret for one the repository creates.
+func isCodeRuleFile(rel string) bool { return strings.HasPrefix(rel, semgrepRules+"/") }
 
 // runSemgrep runs the code scanner in the repository with the given
 // arguments, and gives what it wrote to standard output and whether it
