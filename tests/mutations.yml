@@ -87,7 +87,7 @@
 # entry - which is also where the comment check's own decision is proved, in
 # TestSatisfiedByProseOnlyNamesAPassToFailFlip.
 
-owed_ceiling: 33
+owed_ceiling: 28
 
 unprovable:
   # --- cannot be proved by mutation ----------------------------------------
@@ -332,10 +332,6 @@ unprovable:
     owed: true
   - test: TestNoCompiledBinaryIsTracked
     owed: true
-  - test: TestNoGitCredentialIsCreatedForFlux
-    owed: true
-  - test: TestNothingReadsAValueFromTheHealthGate
-    owed: true
   - test: TestNothingRunsTofuBeforeAttach
     owed: true
   - test: TestOnlyQuietTofuSubcommandsAreStreamed
@@ -357,8 +353,6 @@ unprovable:
   - test: TestSetupConfiguresCommitSigning
     owed: true
   - test: TestTheCodeLawsAreCoveredBySensitivePaths
-    owed: true
-  - test: TestTheLabelMechanismIsGone
     owed: true
   - test: TestTheRoutingFixIsAppliedPerHostNotPerSite
     owed: true

@@ -1,4 +1,4 @@
-guard: TestTheInstallerDoesNotOverrideAPinnedVersion
+guard: TestTheCodeRulesHold
 file: scripts/install-dependencies.sh
 find: "\tinfo \"installing kubectl ${KUBECTL_VERSION}\""
 replace: "\tKUBECTL_VERSION=\"$(curl -fsSL https://dl.k8s.io/release/stable.txt)\"\n\tinfo \"installing kubectl ${KUBECTL_VERSION}\""
