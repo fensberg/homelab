@@ -192,3 +192,7 @@ removed:
     reason: moved with its guard to the configuration rules (policy/conftest/dns_resolvers.rego), as TestTheConfigurationRulesHold.TheDNSResolversAreDeclaredInOnePlace.7507caea.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestTheDNSResolversAreDeclaredInOnePlace.7d479442.yml
     reason: moved with its guard to the configuration rules (policy/conftest/dns_resolvers.rego), as TestTheConfigurationRulesHold.TheDNSResolversAreDeclaredInOnePlace.7d479442.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestAFileReachesOutsideItsDirectoryFromTheTop.b2d473f5.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/root_paths.rego), as TestTheConfigurationRulesHold.AFileReachesOutsideItsDirectoryFromTheTop.b2d473f5.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryScriptedStepThatIsBashSaysSo.28632a10.yml
+    reason: moved with its guard to the configuration rules (policy/conftest/scripted_steps.rego), as TestTheConfigurationRulesHold.EveryScriptedStepThatIsBashSaysSo.28632a10.yml, unchanged in what it breaks (2026-10-16)
