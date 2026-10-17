@@ -1,0 +1,9 @@
+guard: TestTheCodeRulesHold
+file: scripts/contractor/config/vaultrefs.go
+reads_source: true
+find: "import \"sort\"\n"
+replace: "import (\n\t\"sort\"\n\n\t\"homelab/details/onepassword\"\n)\n\nfunc peek(ref string) { _, _ = onepassword.Read(ref) }\n"
+mentions: "fetches or writes a secret. The vault check must not"
+why: >
+  Listing the references is a question about the template alone; reading one
+  is the vault check holding a secret.

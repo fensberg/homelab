@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -207,6 +209,29 @@ func TestEveryCodeRuleProvesItself(t *testing.T) {
 func presenceRules(t *testing.T) map[string]string {
 	t.Helper()
 	out := map[string]string{}
+	for _, r := range codeRules(t) {
+		if r.Presence != "" {
+			out[strings.ReplaceAll(semgrepRules, "/", ".")+"."+r.ID] = r.Presence
+		}
+	}
+	return out
+}
+
+// codeRule is one rule, as the file in policy/semgrep that holds it declares
+// it.
+type codeRule struct {
+	File     string // the rule file, from the root
+	ID       string // as the file writes it
+	Message  string
+	Presence string
+	Include  []string
+	Exclude  []string
+}
+
+// codeRules is every rule in policy/semgrep.
+func codeRules(t *testing.T) []codeRule {
+	t.Helper()
+	var out []codeRule
 	for _, rel := range trackedFiles(t) {
 		if filepath.Dir(rel) != semgrepRules || !strings.HasSuffix(rel, ".yml") {
 			continue
@@ -214,19 +239,234 @@ func presenceRules(t *testing.T) map[string]string {
 		var doc struct {
 			Rules []struct {
 				ID       string `yaml:"id"`
+				Message  string `yaml:"message"`
 				Metadata struct {
 					Presence string `yaml:"presence"`
 				} `yaml:"metadata"`
+				Paths struct {
+					Include []string `yaml:"include"`
+					Exclude []string `yaml:"exclude"`
+				} `yaml:"paths"`
 			} `yaml:"rules"`
 		}
 		if err := yaml.Unmarshal([]byte(readRepoFile(t, rel)), &doc); err != nil {
 			t.Fatalf("%s is not a rule file that can be read: %v", rel, err)
 		}
 		for _, r := range doc.Rules {
-			if r.Metadata.Presence != "" {
-				out[strings.ReplaceAll(semgrepRules, "/", ".")+"."+r.ID] = r.Metadata.Presence
+			out = append(out, codeRule{rel, r.ID, r.Message, r.Metadata.Presence, r.Paths.Include, r.Paths.Exclude})
+		}
+	}
+	if len(out) < 10 {
+		t.Fatalf("only %d code rules were read from %s, which is not this repository - the reader has stopped matching", len(out), semgrepRules)
+	}
+	return out
+}
+
+// Where a rule looks is half of what it promises, and its examples cannot
+// show it: Semgrep's --test runs a rule over its own example file and
+// ignores the rule's paths. So nothing proved that a rule read the files it
+// was written for, and one did not - the site-name rule over the workflows
+// named only the files at the top of .github/workflows, and the composite
+// actions in the directories below, which the guard it replaced had read,
+// went unread with every check green (#779). It was found by reading.
+//
+// So the ledger holds the places, one proof for each:
+//
+//   - every place a rule includes, by a proof that breaks a file there and
+//     is refused by that rule. A rule that names no place reads every file of
+//     its language, and needs one proof anywhere.
+//   - every place a rule excludes, by a proof that takes the exclusion out
+//     and is refused by that rule: an exclusion is an exemption, and one that
+//     exempts nothing is a hole waiting for something to fall in.
+//   - a file nobody has written yet, by a proof that plants one: the rules
+//     find what they read by its kind and its place, never from a list of the
+//     files there today, and only a new file shows it.
+//
+// A proof is the rule's when what it requires the failure to mention is part
+// of that rule's message and of no other's. The two site-name rules open with
+// the same words, and the rule over programs had no proof of its own: one
+// over a workflow said those words, and stood for both.
+func TestEveryPlaceACodeRuleReadsIsProved(t *testing.T) {
+	const harness = "TestTheCodeRulesHold"
+	var proofs []mutation
+	for _, m := range readLedger(t).Mutations {
+		if m.Guard == harness {
+			proofs = append(proofs, m)
+		}
+	}
+	if !slices.ContainsFunc(proofs, mutation.creates) {
+		t.Errorf("no proof of %s plants a file, so nothing shows a code rule reads a file that is not there today", harness)
+	}
+	rules := codeRules(t)
+	owned := map[string][]mutation{}
+	for _, m := range proofs {
+		var named []string
+		for _, r := range rules {
+			if r.Presence == "" && strings.TrimSpace(m.Mentions) != "" && strings.Contains(r.Message, m.Mentions) {
+				named = append(named, r.ID)
+			}
+		}
+		switch {
+		case len(named) > 1:
+			t.Errorf("the proof that breaks %s requires %q, which %s all say, so it shows none of them reads the file", m.File, m.Mentions, strings.Join(named, " and "))
+		case len(named) == 1:
+			owned[named[0]] = append(owned[named[0]], m)
+		}
+	}
+	for _, r := range rules {
+		if r.Presence != "" {
+			continue // it fails by itself when its place holds nothing
+		}
+		own := owned[r.ID]
+		if len(r.Include) == 0 && len(own) == 0 {
+			t.Errorf("%s: no proof is refused by %s", r.File, r.ID)
+		}
+		for _, place := range r.Include {
+			if !slices.ContainsFunc(own, func(m mutation) bool { return semgrepPathMatches(place, m.File) }) {
+				t.Errorf("%s: %s includes %s, and no proof breaks a file there that the rule refuses", r.File, r.ID, place)
+			}
+		}
+		for _, place := range r.Exclude {
+			if !slices.ContainsFunc(own, func(m mutation) bool {
+				return m.File == r.File && strings.Contains(m.Find, place) && !strings.Contains(m.Replace, place)
+			}) {
+				t.Errorf("%s: %s excludes %s, and no proof takes the exclusion out and is refused, so nothing shows it exempts anything", r.File, r.ID, place)
 			}
 		}
 	}
-	return out
+}
+
+// semgrepPathMatches reports whether a place a rule's paths name holds a file,
+// read as Semgrep reads it: as a line of a .gitignore. A leading slash, or a
+// slash anywhere but the end, ties it to the root; with neither it matches at
+// any depth. A trailing slash means a directory. ** stands for any number of
+// directories, and a pattern that matches a directory matches what is in it.
+func semgrepPathMatches(pattern, rel string) bool {
+	dirOnly := strings.HasSuffix(pattern, "/")
+	pattern = strings.TrimSuffix(pattern, "/")
+	anchored := strings.Contains(pattern, "/")
+	pat := strings.Split(strings.TrimPrefix(pattern, "/"), "/")
+	parts := strings.Split(rel, "/")
+	for end := len(parts); end >= 1; end-- {
+		if dirOnly && end == len(parts) {
+			continue // the file itself is not a directory
+		}
+		for start := 0; start < end && (start == 0 || !anchored); start++ {
+			if segmentsMatch(pat, parts[start:end]) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// segmentsMatch reports whether a pattern's segments match a path's, one
+// for one, with ** taking as many as it needs.
+func segmentsMatch(pat, parts []string) bool {
+	if len(pat) == 0 {
+		return len(parts) == 0
+	}
+	if pat[0] == "**" {
+		for i := 0; i <= len(parts); i++ {
+			if segmentsMatch(pat[1:], parts[i:]) {
+				return true
+			}
+		}
+		return false
+	}
+	if len(parts) == 0 {
+		return false
+	}
+	ok, err := path.Match(pat[0], parts[0])
+	return err == nil && ok && segmentsMatch(pat[1:], parts[1:])
+}
+
+func TestSemgrepPathsAreReadAsGitignoreLines(t *testing.T) {
+	for _, c := range []struct {
+		pattern, rel string
+		want         bool
+	}{
+		{"/.github/workflows/**/*.yml", ".github/workflows/pr.yml", true},
+		{"/.github/workflows/**/*.yml", ".github/workflows/mobilize/action.yml", true},
+		{"/.github/workflows/*.yml", ".github/workflows/mobilize/action.yml", false},
+		{"/.github/workflows/**/*.yml", "x/.github/workflows/pr.yml", false},
+		{"/taskfile.yml", "taskfile.yml", true},
+		{"/taskfile.yml", "apps/taskfile.yml", false},
+		{"taskfile.yml", "apps/taskfile.yml", true},
+		{"*_test.go", "scripts/contractor/a_test.go", true},
+		{"*_test.go", "scripts/contractor/a.go", false},
+		{"/scripts/contractor/", "scripts/contractor/internal/phases/destroy.go", true},
+		{"/scripts/contractor/", "scripts/contractorish/main.go", false},
+		{"/scripts/contractor/", "scripts/contractor", false},
+		{"/tests/mutations/", "tests/mutations/a.yml", true},
+		{"/tests/mutations.yml", "tests/mutations/a.yml", false},
+		{"*.md", "docs/epochs/01.md", true},
+		{"scripts/contractor/", "a/scripts/contractor/b.go", false},
+		{"[", "[", false},
+	} {
+		if got := semgrepPathMatches(c.pattern, c.rel); got != c.want {
+			t.Errorf("semgrepPathMatches(%q, %q) = %v, want %v", c.pattern, c.rel, got, c.want)
+		}
+	}
+}
+
+// A rule's examples show what it refuses, and Semgrep holds it to refusing
+// exactly the lines they mark. That is half an oracle: the other half is what
+// it must let through, and a rule with no example of that has never been
+// shown a line that looks like the fault and is not. The pattern `.*` passes
+// an example made only of faults. So every rule that refuses shows, in its
+// examples, at least one line marked `ok:` with its id - the near miss it was
+// written to tell apart.
+func TestEveryCodeRuleShowsWhatItAccepts(t *testing.T) {
+	accepted := map[string]bool{}
+	for _, rel := range trackedFiles(t) {
+		if filepath.Dir(rel) != semgrepExamples {
+			continue
+		}
+		stem := strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel))
+		for _, line := range strings.Split(readRepoFile(t, rel), "\n") {
+			for _, id := range acceptedIn(line) {
+				accepted[semgrepRules+"/"+stem+".yml "+id] = true
+			}
+		}
+	}
+	for _, r := range codeRules(t) {
+		if r.Presence == "" && !accepted[r.File+" "+r.ID] {
+			t.Errorf("%s: %s has no example marked `ok: %s`, so nothing shows what it lets through", r.File, r.ID, r.ID)
+		}
+	}
+}
+
+// okMark is Semgrep's annotation for a line a rule must not refuse.
+var okMark = regexp.MustCompile(`(?:^|[^a-z])ok:\s*([a-z0-9][a-z0-9, -]*)`)
+
+// acceptedIn is the rule ids a line of an example marks as not to be refused.
+func acceptedIn(line string) []string {
+	var ids []string
+	for _, m := range okMark.FindAllStringSubmatch(line, -1) {
+		for _, id := range strings.Split(m[1], ",") {
+			if id = strings.TrimSpace(id); id != "" {
+				ids = append(ids, id)
+			}
+		}
+	}
+	return ids
+}
+
+func TestAcceptedInReadsSemgrepsOkMark(t *testing.T) {
+	for _, c := range []struct {
+		line string
+		want []string
+	}{
+		{"# ok: a-rule", []string{"a-rule"}},
+		{"\t// ok: a-rule, b-rule", []string{"a-rule", "b-rule"}},
+		{"# ruleid: a-rule", nil},
+		{"# todook: a-rule", nil},
+		{"x := 1 // ok:a-rule", []string{"a-rule"}},
+		{"nothing marked here", nil},
+	} {
+		if got := acceptedIn(c.line); !slices.Equal(got, c.want) {
+			t.Errorf("acceptedIn(%q) = %q, want %q", c.line, got, c.want)
+		}
+	}
 }

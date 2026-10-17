@@ -22,8 +22,6 @@ rules:
       - pattern: config.StateBackupPath(...)
       - pattern: config.LatestStateBackupPath(...)
       - pattern: config.BucketByKey("state")
-    paths:
-      exclude: [/scripts/contractor/config/]
 
   - id: backup-reaches-the-state-backups-through-the-resolver
     languages: [go]

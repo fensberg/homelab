@@ -28,10 +28,7 @@ rules:
     paths:
       exclude:
         - /scripts/take-delivery.sh
-        - "*.md"
         - /tests/mutations/
-        - /tests/mutations.yml
-        - /tests/mutations-removed.yml
 
   - id: the-installer-does-not-override-a-pinned-version
     # The pin is only a pin if the thing installing it reads it.

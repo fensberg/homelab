@@ -43,4 +43,3 @@ rules:
           }
     paths:
       include: [/scripts/contractor/internal/phases/]
-      exclude: ["*_test.go"]

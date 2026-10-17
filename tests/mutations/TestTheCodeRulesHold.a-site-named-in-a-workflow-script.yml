@@ -1,0 +1,8 @@
+guard: TestTheCodeRulesHold
+file: .github/workflows/github-script/env-reaches-script.js
+find: "module.exports = async ({ core }) => {\n"
+replace: "const site = 'site0';\nmodule.exports = async ({ core }) => {\n"
+mentions: "names a site as a value. Take the site from the config template instead - a workflow from its sites keys"
+why: >
+  The workflows' scripts run with the workflow's reach, and a site named in
+  one is a site named in the workflow.

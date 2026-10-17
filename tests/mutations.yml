@@ -147,6 +147,10 @@ unprovable:
     reason: table
   - path: tests/go/repo/vaultcheck_test.go
     reason: table
+  - test: TestSemgrepPathsAreReadAsGitignoreLines
+    reason: table
+  - test: TestAcceptedInReadsSemgrepsOkMark
+    reason: table
   # The reader behind TestNoCodePicksASiteByName, whose own ledger entry
   # proves the guard. Its table holds the values it must find and the prose it
   # must leave.

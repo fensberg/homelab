@@ -1,7 +1,9 @@
 # The break-glass identity is read only by the restore path.
 #
-# The identity exists to be fetched when a human is putting the estate back
-# together. Every other phase works with the recipient, which is public; a
+# The identity exists to be used when a human is putting the estate back
+# together, and it reaches the restore path on stdin, piped from the estate's
+# vault by that human: no program here reads it from a vault, the restore path
+# included. Every other phase works with the recipient, which is public; a
 # phase that holds the private half could decrypt the backups it is writing,
 # which is the property this key exists to deny. Keeping it out of OpenTofu
 # and out of the rendered config is breakglass-opentofu.yml and
@@ -9,13 +11,15 @@
 rules:
   - id: the-break-glass-identity-is-read-only-by-the-restore-path
     # Followed as data, from the identity's reference - or its path written
-    # out - to the call that reads a vault value. restore.go is the one place
-    # that fetches the value and uses it, which is what a restore is.
+    # out - to the call that reads a vault value. Nothing is exempt, test
+    # files included: restore.go was, and fetched nothing, so the exemption
+    # stood ready for a read nobody had reviewed.
     mode: taint
     languages: [go]
     severity: ERROR
     message: >-
-      reads the break-glass identity. Only the restore path may. Every phase in
+      reads the break-glass identity from the vault. Nothing here may: the
+      restore path takes it on stdin, from the person restoring. Every phase in
       the ignition sequence works with the recipient, which is public - a phase
       that holds the private half is a phase that could decrypt the backups it
       is writing, which is the property this key exists to deny.
@@ -25,5 +29,3 @@ rules:
       - pattern: '"=~/state_backup\/identity/"'
     pattern-sinks:
       - pattern: onepassword.Read(...)
-    paths:
-      exclude: ["*_test.go", /scripts/contractor/internal/phases/restore.go]

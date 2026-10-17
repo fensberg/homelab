@@ -38,11 +38,18 @@ rules:
       missing - and its output is meant to be safe to paste into an issue. A
       call that returns or stores a value puts one inside the blast radius of
       the next debug print.
+    # And by their bare names: probe.go is in the package that defines them,
+    # where a call carries no package name. Neither other file's package has
+    # a function of these names.
     pattern-either:
       - pattern: onepassword.Read(...)
       - pattern: onepassword.Inject(...)
       - pattern: onepassword.WriteField(...)
       - pattern: onepassword.EnsureField(...)
+      - pattern: Read(...)
+      - pattern: Inject(...)
+      - pattern: WriteField(...)
+      - pattern: EnsureField(...)
     paths:
       include: &check
         - /scripts/details/onepassword/probe.go
