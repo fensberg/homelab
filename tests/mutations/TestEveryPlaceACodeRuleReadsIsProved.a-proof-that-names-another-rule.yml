@@ -1,0 +1,9 @@
+guard: TestEveryPlaceACodeRuleReadsIsProved
+file: tests/mutations/TestTheCodeRulesHold.a-site-named-in-a-task.yml
+find: "rule: no-workflow-or-task-picks-a-site-by-name\n"
+replace: "rule: no-program-picks-a-site-by-name\n"
+mentions: "includes /taskfile.yml, and no proof breaks a file there"
+why: >
+  A proof belongs to the rule it names. Named for another rule, the one proof
+  that breaks the taskfile proves that rule, and the place the site-name rule
+  over workflows and tasks reads is left without one.

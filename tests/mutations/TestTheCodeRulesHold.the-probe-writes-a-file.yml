@@ -1,4 +1,5 @@
 guard: TestTheCodeRulesHold
+rule: the-vault-check-writes-no-files
 file: scripts/details/onepassword/probe.go
 reads_source: true
 find: "import (\n\t\"os/exec\"\n\t\"strings\"\n)\n"

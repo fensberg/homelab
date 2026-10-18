@@ -1,4 +1,5 @@
 guard: TestTheCodeRulesHold
+rule: nothing-finds-the-repository-by-counting-directories
 file: tests/go/harness/scrape.go
 reads_source: true
 find: "	sort.Strings(failures)"

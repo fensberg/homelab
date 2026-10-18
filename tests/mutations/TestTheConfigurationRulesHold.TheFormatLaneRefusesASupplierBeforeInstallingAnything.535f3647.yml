@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: format_lane
 file: .github/workflows/pr-validation.yml
 find: "guard-deliveries -before-install"
 replace: "guard-deliveries"

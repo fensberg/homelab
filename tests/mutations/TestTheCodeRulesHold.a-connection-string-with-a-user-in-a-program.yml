@@ -1,4 +1,5 @@
 guard: TestTheCodeRulesHold
+rule: a-connection-string-carries-no-credential-of-its-own
 file: scripts/contractor/internal/phases/teardown.go
 reads_source: true
 find: "\tbucketName := cred.Bucket\n"

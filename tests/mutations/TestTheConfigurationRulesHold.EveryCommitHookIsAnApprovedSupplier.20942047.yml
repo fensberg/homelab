@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: suppliers
 file: .pre-commit-config.yaml
 find: "repos:"
 replace: "repos:\n  - repo: https://github.com/example/undeclared\n    rev: v1.0.0\n    hooks:\n      - id: whatever"

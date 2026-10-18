@@ -204,3 +204,5 @@ removed:
     reason: moved with its guard to the code rules (policy/semgrep/repository-root.yml), as TestTheCodeRulesHold.NothingFindsTheRepositoryByCountingDirectories.4b861936.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestNothingFindsTheRepositoryByCountingDirectories.8c1cef0d.yml
     reason: moved with its guard to the code rules (policy/semgrep/repository-root.yml), as TestTheCodeRulesHold.NothingFindsTheRepositoryByCountingDirectories.8c1cef0d.yml, unchanged in what it breaks (2026-10-16)
+  - proof: TestEveryPlaceACodeRuleReadsIsProved.a-proof-two-rules-could-own.yml
+    reason: proved the place guard's refusal of a phrase two rules' messages share, which went when proofs came to name their rule (rule:, #780); its place is taken by TestEveryPlaceACodeRuleReadsIsProved.a-proof-that-names-another-rule.yml (2026-10-18)

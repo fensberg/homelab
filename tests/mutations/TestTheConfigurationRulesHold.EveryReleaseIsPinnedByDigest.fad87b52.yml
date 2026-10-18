@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: releases
 file: clusters/core/infrastructure/configs/planted-release.yaml
 create: |
   ---

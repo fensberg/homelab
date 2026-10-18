@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: gitops
 file: config/management.tpl.json
 find: "  \"state_backup\": {\n"
 replace: "  \"state_backup\": {\n    \"identity\": \"{{ op://estate/state_backup/identity }}\",\n"

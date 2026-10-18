@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: runner_images
 file: clusters/core/infrastructure/configs/runner-scale-set.yaml
 find: "            image: ghcr.io/fensberg/homelab-runner@sha256:"
 replace: "            image: ghcr.io/fensberg/homelab-runner:sha256-"

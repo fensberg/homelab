@@ -1,4 +1,5 @@
 guard: TestTheCodeRulesHold
+rule: the-contractor-writes-a-resource-address-in-one-place
 file: policy/semgrep/contractor-addresses.yml
 find: 'exclude: ["*_test.go", /scripts/contractor/steps/steps.go]'
 replace: 'exclude: ["*_test.go"]'

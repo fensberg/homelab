@@ -1,4 +1,5 @@
 guard: TestTheCodeRulesHold
+rule: no-workflow-or-task-picks-a-site-by-name
 file: .github/workflows/mobilize/action.yml
 find: "name: \"Mobilize\"\n"
 replace: "name: \"Mobilize site0\"\n"

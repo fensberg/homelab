@@ -61,6 +61,11 @@
 #             entry passing through an unrelated error path - a test that dies
 #             on a nil map is red for the wrong reason, and red for the wrong
 #             reason is not proof of anything.
+#   rule      for a proof of TestTheCodeRulesHold or TestTheConfigurationRulesHold
+#             only, and required there: the rule that must be among those
+#             refusing - a Semgrep rule's id, or a Conftest package under
+#             rules. Those run every rule at once, so the right words in the
+#             failure could still be another rule's (#780).
 #   why       what breaks in the estate if this guard stops working.
 #   reads_source
 #             opt-in for a `.go` target, which is otherwise refused. Say true

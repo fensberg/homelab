@@ -24,8 +24,8 @@ import (
 //
 // WHY THIS RUNS THEM. The mutation ledger proves every guard fails when what
 // it guards is broken, on a copy of the real tree. Running Conftest from here
-// keeps that proof for every rule moved: a ledger entry names this test, and
-// the message of the rule that must refuse the mutation.
+// keeps that proof for every rule moved: a ledger entry names this test and
+// the rule that must refuse the mutation.
 
 // conftestProgram is the policy engine, delivered by scripts/take-delivery.sh.
 const conftestProgram = "conftest"

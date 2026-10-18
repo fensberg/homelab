@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: bypass_merge
 file: .github/workflows/bypass-merge-rides-along.yml
 create: |
   name: "Bypass merge rides along"

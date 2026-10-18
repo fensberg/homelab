@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: sensitive_paths
 file: .github/workflows/sensitive-paths.yml
 find: "            -topic keys \\"
 replace: "            -topic sensitive \\"

@@ -1,4 +1,5 @@
 guard: TestTheCodeRulesHold
+rule: the-break-glass-identity-is-never-referenced-by-opentofu
 file: modules/infrastructure/platform/variables.tf
 find: '  runner_system_namespace = "arc-systems"'
 replace: "  backup_key              = local.config.state_backup.identity\n  runner_system_namespace = \"arc-systems\""

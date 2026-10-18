@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: one_owner_per_layer
 file: clusters/core/infrastructure/controllers/traefik.yaml
 find: "    certificatesResolvers: {}\n"
 replace: "    certificatesResolvers:\n      own:\n        acme: {}\n"

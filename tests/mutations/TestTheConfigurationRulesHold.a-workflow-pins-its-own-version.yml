@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: version_pins
 file: .github/workflows/fabricator.yml
 find: "        env:\n          CONTEXT: ${{ matrix.order.context }}\n          ORDER_PINS: ${{ matrix.order.pins }}\n"
 replace: "        env:\n          TOFU_VERSION: 1.10.6\n          CONTEXT: ${{ matrix.order.context }}\n          ORDER_PINS: ${{ matrix.order.pins }}\n"

@@ -1,4 +1,5 @@
 guard: TestTheCodeRulesHold
+rule: the-contractor-does-not-shell-out-to-gh
 file: scripts/contractor/internal/phases/compute.go
 reads_source: true
 find: "	sshKey, err := onepassword.Read(keyRef)"

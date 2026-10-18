@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: health_gate
 file: modules/infrastructure/cluster/talos.tf
 find: "    talos_cluster_kubeconfig.this,\n    proxmox_virtual_environment_vm.talos_cp,\n"
 replace: "    talos_cluster_kubeconfig.this,\n"

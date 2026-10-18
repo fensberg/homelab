@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: format_lane
 file: .github/workflows/setup-go/action.yml
 find: "go-version: ${{ env.GO_VERSION }}"
 replace: 'go-version: "1.26.7"'

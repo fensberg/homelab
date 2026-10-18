@@ -1,4 +1,5 @@
 guard: TestTheCodeRulesHold
+rule: nothing-reads-a-value-from-the-health-gate
 file: modules/infrastructure/cluster/outputs.tf
 find: 'output "talosconfig" {'
 replace: "output \"healthy_nodes\" {\n  value = data.talos_cluster_health.this[0].control_plane_nodes\n}\n\noutput \"talosconfig\" {"

@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: sensitive_paths
 file: .github/workflows/sensitive-paths.yml
 find: "    types: [opened, synchronize, reopened]"
 replace: "    types: [opened, synchronize, reopened, labeled]"

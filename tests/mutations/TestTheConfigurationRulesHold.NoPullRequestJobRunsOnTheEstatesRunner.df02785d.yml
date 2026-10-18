@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: pull_request_runners
 file: .github/workflows/plan-infrastructure.yml
 find: "    # that converges. It runs in a pool on the untrusted worker.\n    runs-on: pr-builds-${{ vars.pull_request_runners_site }}\n"
 replace: "    # that converges. It runs in a pool on the untrusted worker.\n    runs-on: homelab-site0\n"

@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: toolshed
 file: .gitignore
 find: "# One line cannot be forgotten for a program nobody thought about.\ntoolshed/\n"
 replace: "# One line cannot be forgotten for a program nobody thought about.\n"

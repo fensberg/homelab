@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: dns_resolvers
 file: modules/infrastructure/platform/variables.tf
 find: "  object_storage = local.site.object_storage"
 replace: "  object_storage = local.site.object_storage\n  dns_servers    = [\"9.9.9.9\"]"

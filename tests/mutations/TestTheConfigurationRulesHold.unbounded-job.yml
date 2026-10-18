@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: workflow_jobs
 file: .github/workflows/zz-an-unbounded-job.yml
 create: |
   name: planted

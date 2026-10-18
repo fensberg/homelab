@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: runners
 file: .github/workflows/deploy-infrastructure.yml
 find: "    runs-on: homelab-${{ matrix.site }}\n"
 replace: "    runs-on: homelab-production\n"

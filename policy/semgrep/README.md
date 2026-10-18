@@ -14,8 +14,8 @@ What took a round each to learn, so the next rule does not:
   mention every rule of its pair. Rules over two languages are two files.
 - **`--test` ignores `paths:`.** An example proves a pattern, never its scope.
   Scope is proved in the ledger, place by place: every include and every
-  exclude needs a proof that breaks a file there, linked to the rule by a
-  phrase only its message holds (`TestEveryPlaceACodeRuleReadsIsProved`).
+  exclude needs a proof that breaks a file there and names the rule with
+  `rule:` (`TestEveryPlaceACodeRuleReadsIsProved`).
 - **Every rule shows a near miss** with an `ok:` line, not only the faults it
   refuses (`TestEveryCodeRuleShowsWhatItAccepts`).
 - **An example is not the estate.** Neither harness reads `policy/semgrep/`,

@@ -1,4 +1,5 @@
 guard: TestTheCodeRulesHold
+rule: terraform-options-are-built-in-the-harness
 file: policy/semgrep/terratest.yml
 find: "      include: [/tests/go/]\n      exclude: [/tests/go/harness/]\n"
 replace: "      include: [/tests/go/]\n"

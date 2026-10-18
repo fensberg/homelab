@@ -1,4 +1,5 @@
 guard: TestTheCodeRulesHold
+rule: the-vault-check-writes-no-files
 file: scripts/contractor/internal/phases/checkvault.go
 reads_source: true
 find: "\treturn vaultReport(refs, onepassword.Probe, os.Stdout)"

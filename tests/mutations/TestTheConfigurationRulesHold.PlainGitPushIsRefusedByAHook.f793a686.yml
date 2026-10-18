@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: push_hooks
 file: .pre-commit-config.yaml
 find: "        stages: [pre-push]\n        fail_fast: true"
 replace: "        stages: [pre-push]\n        fail_fast: false"

@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: config_template
 file: config/management.tpl.json
 find: '"recipient": "{{ '
 replace: '"recipient": "'

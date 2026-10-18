@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: taskfile_modules
 file: taskfile.yml
 find: '          go test -C "$dir" ./...'
 replace: "          go test -C scripts/contractor ./..."
