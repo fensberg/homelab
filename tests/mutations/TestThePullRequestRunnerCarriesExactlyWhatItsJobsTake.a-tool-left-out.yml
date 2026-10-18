@@ -1,7 +1,7 @@
 guard: TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake
 file: .github/pull-request-runner-image/Dockerfile
-find: "kwokctl opentofu pre-commit pre-commit-hooks semgrep shellcheck zizmor"
-replace: "kwokctl opentofu pre-commit pre-commit-hooks semgrep shellcheck"
+find: "kwokctl opa opentofu pre-commit pre-commit-hooks semgrep shellcheck zizmor"
+replace: "kwokctl opa opentofu pre-commit pre-commit-hooks semgrep shellcheck"
 mentions: "take delivery of zizmor"
 why: >
   An image that falls behind its jobs fails nothing. The job installs what
