@@ -33,7 +33,7 @@ rules:
       presence: >-
         tests/go/harness/tofu.go does not set Logger: logger.Discard on the
         options it builds, and Terratest's default logger prints the output of
-        every command - this root's include the cluster kubeconfig and the
+        every command - this root's outputs include the cluster kubeconfig and the
         state database connection string (#491)
     pattern: |
       terraform.Options{..., Logger: logger.Discard, ...}

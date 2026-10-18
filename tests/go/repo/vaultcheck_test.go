@@ -37,14 +37,15 @@ func TestVaultCheckStillExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading checkvault.go: %v", err)
 	}
-	// The report has to actually be driven by a probe, or the rules above are
-	// guarding a function nobody calls.
+	// The report has to actually be driven by a probe, or the rules in
+	// policy/semgrep/vault-check.yml are guarding a function nobody calls.
 	if !strings.Contains(string(probe), "onepassword.Probe") {
 		t.Fatal(`checkvault.go no longer calls onepassword.Probe.
 
-Either the check now resolves references some other way - in which case these
-rules need to point at that instead, and the new way needs the same guarantee -
-or the check is gone and these tests should go with it. Passing quietly is the
+Either the check now resolves references some other way - in which case the
+rules in policy/semgrep/vault-check.yml need to point at that instead, and the
+new way needs the same guarantee - or the check is gone and those rules should
+go with it. Passing quietly is the
 one outcome that is wrong.`)
 	}
 }

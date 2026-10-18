@@ -127,7 +127,7 @@ belongs in an epoch record.
   and stored somewhere this program can read would foreclose the property in
   the same breath as creating it. Generated once for the estate with
   `age-keygen` — one break-glass key, not one per site — and never referenced
-  by OpenTofu, which `tests/go/repo` enforces.
+  by OpenTofu, which `policy/semgrep/breakglass-opentofu.yml` enforces.
 
   Everything below that floor is generated: the state database password is
   created by build-site and written to 1Password, because the rule that decides
@@ -396,13 +396,14 @@ Interrupting a destroy deliberately does _not_ sterilize: wiping state
 part-way through a teardown is how VMs get orphaned, so it waits for tofu to
 release its lock and leaves everything in place to be re-run.
 
-**Getting state back is `contractor restore`.** It fetches the break-glass
-identity, decrypts the latest age backup from object storage, checks that what
-came back is state describing something, and pushes it through the encrypted
-backend. It refuses if local state already exists. It is the only place in the
-program that reads the private half, which `tests/go/repo` enforces, and it
-restores state and stops - what to do with it afterwards is a judgement call,
-not a next step.
+**Getting state back is `contractor restore`.** It takes the break-glass
+identity on stdin, piped from the estate's vault by the person restoring,
+decrypts the latest age backup from object storage, checks that what came back
+is state describing something, and pushes it through the encrypted backend. It
+refuses if local state already exists. It is the only place in the program
+that holds the private half, and no program here reads it from a vault
+(`policy/semgrep/breakglass-contractor.yml`). It restores state and stops -
+what to do with it afterwards is a judgement call, not a next step.
 
 **Checking the vault is `contractor check-inventory`** (`task check-inventory`).
 It proves every `op://` reference in `config/management.tpl.json` resolves and
@@ -490,7 +491,7 @@ Hostnames, credentials and even the site's human name are `op://` references,
 so the file shows the shape of the estate without revealing what or where
 anything is. Every one of them must be wrapped in `{{ }}` - `op inject`
 substitutes nothing else, and a bare `op://` string is valid JSON that reaches
-the reader verbatim. `tests/go/repo` asserts it.
+the reader verbatim. `policy/conftest/config_template.rego` asserts it.
 
 **Every `op://` reference in the template must resolve.** There is no way to
 leave a placeholder site or node, so add the vault items first, then the

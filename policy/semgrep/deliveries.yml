@@ -9,8 +9,9 @@
 # orders it is policy/conftest/expedite_duty.rego.
 rules:
   - id: nothing-installs-from-pypi-outside-take-delivery
-    # Read as text, in every kind of file, because an install can be written
-    # in a script, a Dockerfile, a workflow's step or a task. A line that only
+    # Read as text, in every kind of file Semgrep is handed
+    # (tests/languages.yml), because an install can be written in a script, a
+    # Dockerfile, a workflow's step or a task. A line that only
     # mentions an install is prose - "this used to be pipx install pre-commit"
     # is exactly what a comment should say - so a whole-line comment in any of
     # the languages written here is not read.

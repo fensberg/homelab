@@ -34,8 +34,8 @@ import (
 //
 // NOT SILENCEABLE FROM INSIDE A FILE. Semgrep honours an inline ignore
 // comment, which the Logic Scan lane's registry rules are silenced with, each
-// naming the guard that proves it (tests/silencers.yml). An estate rule is a guard,
-// and a guard a comment can switch off is a suggestion, so these run with
+// naming the guard that proves it (tests/silencers.yml). An estate rule is a
+// guard, and a guard a comment can switch off is a suggestion, so these run with
 // --disable-nosem: a rule that is wrong is changed, with its examples.
 
 // semgrepProgram is the code scanner, delivered by scripts/take-delivery.sh.
@@ -76,8 +76,8 @@ func semgrepInputs(t *testing.T) []string {
 }
 
 // isCodeRuleFile reports whether a path is one of the code rules or one of
-// their examples. Neither is the estate, and no harness reads them as if they
-// were: an example is written to be refused. One declared a Kubernetes secret
+// their examples. Neither is the estate, and neither harness reads them as if
+// they were: an example is written to be refused. One declared a Kubernetes secret
 // to show the rule refusing it, and the Flux rule, reading every .tf as
 // configuration, took that secret for one the repository creates.
 func isCodeRuleFile(rel string) bool { return strings.HasPrefix(rel, semgrepRules+"/") }

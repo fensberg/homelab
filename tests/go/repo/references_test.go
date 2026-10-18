@@ -32,7 +32,8 @@ import (
 //
 // WHAT IT DOES NOT READ. The epoch records and the ledger's history are what
 // happened, and name what was there at the time; the files .gitattributes
-// marks vendored are somebody else's; a patch is a diff, both halves at once.
+// marks vendored are somebody else's; a patch is a diff, both halves at once;
+// a code rule's example is written to be refused, and names what it likes.
 
 // historyPrefixes are where a name is a record of the past, not a claim.
 var historyPrefixes = []string{"docs/epochs/", ledgerEntries + "/", ledgerEntries + ".yml", "tests/mutations-removed.yml"}

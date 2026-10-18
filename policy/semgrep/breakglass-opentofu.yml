@@ -31,8 +31,8 @@ rules:
     message: >-
       references the break-glass identity. It must never be an OpenTofu value:
       anything OpenTofu reads is a value it can write to state, and state is
-      what this key exists to make worthless. It is read by the contractor in
-      Go, through op, and only during a restore.
+      what this key exists to make worthless. It reaches the contractor only
+      during a restore, on stdin from the person restoring.
     pattern-regex: (?m)^(?![ \t]*(?:#|//)).*?(?:state_backup[/.]identity|backup_identity)
     paths:
       include: ["*.tf"]

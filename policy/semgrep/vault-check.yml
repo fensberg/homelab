@@ -3,8 +3,10 @@
 # `contractor check-inventory` proves every op:// reference in the template
 # resolves, and reports each as ok / empty / missing - output that is safe to
 # paste into an issue. Three things keep it that way, in the files that make up
-# the check, named rather than discovered so that moving the logic somewhere
-# else fails loudly instead of silently taking it out of scope:
+# the check. They are named rather than discovered: a named file that moves
+# leaves its proofs with nowhere to land, and TestVaultCheckStillExists refuses
+# a check that stops calling onepassword.Probe. Logic moved into a new file
+# beside them is not seen.
 #
 #   - onepassword.Probe returns one value, of a type that cannot carry a
 #     secret. op cannot check a reference's existence without returning its
