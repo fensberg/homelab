@@ -2,10 +2,12 @@ package repo
 
 import (
 	"fmt"
+	"hash/fnv"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -52,6 +54,10 @@ type mutation struct {
 	// ReadsSource opts a Go target in, for the one kind of guard the blanket
 	// refusal below gets wrong. See the refusal for why the default stays no.
 	ReadsSource bool `yaml:"reads_source"`
+	// Source is where the proof is written: its file in the estate's ledger,
+	// or its place in an application's. It decides which part of the meta
+	// lane proves it.
+	Source string `yaml:"-"`
 }
 
 // creates reports whether the entry proves a guard by adding a file rather
@@ -111,7 +117,8 @@ func applicationMutations(t *testing.T) []mutation {
 				"if a proof genuinely no longer applies, lower the floor in the same diff "+
 				"so somebody sees it happen.", rel, len(l.Mutations), l.Floor)
 		}
-		for _, m := range l.Mutations {
+		for i, m := range l.Mutations {
+			m.Source = fmt.Sprintf("%s#%d", rel, i)
 			if !strings.HasPrefix(m.File, a.Root+"/") {
 				t.Fatalf("%s has an entry that breaks %s, which is not this application's. "+
 					"A proof about the estate belongs in tests/mutations.yml, where removing "+
@@ -176,6 +183,7 @@ func readLedger(t *testing.T) ledger {
 		if m.Guard == "" || !strings.HasPrefix(filepath.Base(file), m.Guard+".") {
 			t.Fatalf("%s/%s proves the guard %q and is not named for it. A proof is found by its guard's name, so name the file <guard>.<anything>.yml.", ledgerEntries, filepath.Base(file), m.Guard)
 		}
+		m.Source = filepath.Base(file)
 		l.Mutations = append(l.Mutations, m)
 	}
 	if len(l.Mutations) == 0 {
@@ -332,7 +340,22 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 	skipIfInner(t)
 	heavy(t, "a check on the checks: it copies the repository and runs a guard per mutation, side by side")
 
+	part := readMetaPartOrFail(t)
+	if !part.provesAny() {
+		t.Skipf("this is part %d of %d of the meta lane, which is the comment test's; the ledger's proofs are in the others", part.index, part.total)
+	}
+
 	l := readLedger(t)
+
+	var entries []mutation
+	for _, m := range append(append([]mutation{}, l.Mutations...), applicationMutations(t)...) {
+		if part.proves(m.Source) {
+			entries = append(entries, m)
+		}
+	}
+	if len(entries) == 0 {
+		t.Fatalf("part %d of %d of the meta lane holds no proof, so it proves nothing; the ledger was read as %d proofs", part.index, part.total, len(l.Mutations))
+	}
 
 	bin := testBinary(t)
 
@@ -353,7 +376,7 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 		return unbroken[guard]
 	}
 
-	for _, m := range append(append([]mutation{}, l.Mutations...), applicationMutations(t)...) {
+	for _, m := range entries {
 		name := m.Guard
 		if m.Test != "" {
 			name += "/" + m.Test
@@ -431,6 +454,107 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 	}
 }
 
+// metaPartEnv says which of the meta lane's jobs this is, as "<index>/<total>"
+// - GitHub's own count of the jobs it made from one definition, so no number
+// is written down that could stop matching how many there are. Part 0 runs
+// the comment test; parts 1 to total-1 share the ledger's proofs. Unset, as at
+// a terminal or on the nightly run, one run is the whole of both.
+const metaPartEnv = "META_PART"
+
+// metaPart is which part of the meta lane a run is. The zero value is the
+// whole of it.
+type metaPart struct{ index, total int }
+
+func readMetaPart(value string) (metaPart, error) {
+	if value == "" {
+		return metaPart{}, nil
+	}
+	i, n, ok := strings.Cut(value, "/")
+	index, errI := strconv.Atoi(i)
+	total, errN := strconv.Atoi(n)
+	if !ok || errI != nil || errN != nil || total < 2 || index < 0 || index >= total {
+		return metaPart{}, fmt.Errorf("%s is %q, which is not a part of the meta lane: it is <index>/<total>, with at least two parts, part 0 the comment test's", metaPartEnv, value)
+	}
+	return metaPart{index, total}, nil
+}
+
+// readMetaPartOrFail is this run's part. A part it cannot read fails rather
+// than running everything or nothing: either would say the ledger was proved.
+func readMetaPartOrFail(t *testing.T) metaPart {
+	t.Helper()
+	part, err := readMetaPart(os.Getenv(metaPartEnv))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return part
+}
+
+func (p metaPart) whole() bool { return p.total == 0 }
+
+func (p metaPart) runsComments() bool { return p.whole() || p.index == 0 }
+
+func (p metaPart) provesAny() bool { return p.whole() || p.index > 0 }
+
+// proves reports whether this part proves the proof written at source. Each
+// proof falls in exactly one of parts 1 to total-1, by a hash of where it is
+// written, so a proof added or removed moves no other.
+func (p metaPart) proves(source string) bool {
+	if p.whole() {
+		return true
+	}
+	if p.index == 0 {
+		return false
+	}
+	h := fnv.New32a()
+	h.Write([]byte(source))
+	return int(h.Sum32()%uint32(p.total-1)) == p.index-1
+}
+
+func TestReadMetaPartTakesOnlyAPartItCanPlace(t *testing.T) {
+	for _, c := range []struct {
+		value string
+		want  metaPart
+		ok    bool
+	}{
+		{"", metaPart{}, true},
+		{"0/17", metaPart{0, 17}, true},
+		{"16/17", metaPart{16, 17}, true},
+		{"17/17", metaPart{}, false},
+		{"0/1", metaPart{}, false},
+		{"-1/3", metaPart{}, false},
+		{"3", metaPart{}, false},
+		{"a/b", metaPart{}, false},
+	} {
+		got, err := readMetaPart(c.value)
+		if (err == nil) != c.ok || got != c.want {
+			t.Errorf("readMetaPart(%q) = %v, %v", c.value, got, err)
+		}
+	}
+}
+
+func TestEveryProofFallsInExactlyOnePartOfTheLedger(t *testing.T) {
+	sources := []string{"TestA.1.yml", "TestA.2.yml", "TestB.x.yml", "modules/applications/a/tests/mutations.yml#0", "", "TestC.long-name-of-a-proof.yml"}
+	for _, total := range []int{2, 5, 17} {
+		for _, s := range sources {
+			if (metaPart{0, total}).proves(s) {
+				t.Errorf("part 0 of %d, the comment test's, proves %q", total, s)
+			}
+			held := 0
+			for i := 1; i < total; i++ {
+				if (metaPart{i, total}).proves(s) {
+					held++
+				}
+			}
+			if held != 1 {
+				t.Errorf("%q falls in %d of the %d ledger parts, not one", s, held, total-1)
+			}
+		}
+	}
+	if !(metaPart{}).proves("TestA.1.yml") || !(metaPart{}).runsComments() {
+		t.Error("the whole of the meta lane does not run everything")
+	}
+}
+
 // unbrokenRun is a guard's answer on the unbroken tree, asked once.
 type unbrokenRun struct {
 	once   sync.Once
@@ -452,6 +576,9 @@ type unbrokenRun struct {
 func TestNoTestIsSatisfiedByAComment(t *testing.T) {
 	skipIfInner(t)
 	heavy(t, "a check on the checks: it re-runs the whole package with comments stripped, about a minute")
+	if part := readMetaPartOrFail(t); !part.runsComments() {
+		t.Skipf("this is part %d of %d of the meta lane, which proves a share of the ledger; the comment test is part 0", part.index, part.total)
+	}
 
 	l := readLedger(t)
 	exempt := map[string]string{}

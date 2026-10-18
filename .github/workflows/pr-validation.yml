@@ -871,8 +871,19 @@ jobs:
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
-    name: "Meta-tests (mutation ledger, comment stripping)"
+    name: "Meta-tests (${{ matrix.part == 0 && 'comment stripping' || format('mutation ledger, part {0}', matrix.part) }})"
     runs-on: ${{ github.event_name == 'schedule' && format('pr-builds-{0}', vars.pull_request_runners_site) || 'ubuntu-latest' }}
+    # Wide, on GitHub's runners: part 0 runs the comment test and the others
+    # share the ledger's proofs, each in a job of its own. One job, it ran
+    # past ten minutes. Each job learns which part it is from GitHub's own
+    # count (META_PART, below), so no number written here can come to
+    # disagree with how many parts there are, and a proof falls in exactly
+    # one of them. The nightly run is on the estate's own runners, where a
+    # job is not free, and stays one job doing all of it.
+    strategy:
+      fail-fast: false
+      matrix:
+        part: ${{ fromJSON(github.event_name == 'schedule' && '[0]' || '[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]') }}
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows. Above the tests' own
     # bound below, so that a slow run is reported by Go, naming the test,
@@ -940,6 +951,9 @@ jobs:
           # made faster: the bound stopped the work that shortens it. This is
           # a ceiling for a stuck run, not the target; the lane's own time is.
           GOFLAGS: -timeout=30m
+          # Which part this job is, as <index>/<total>; empty for one job,
+          # which is then the whole of both tests.
+          META_PART: ${{ strategy.job-total > 1 && format('{0}/{1}', strategy.job-index, strategy.job-total) || '' }}
         run: go test ./repo/ -run "$META_TESTS"
 
   test-js:

@@ -151,6 +151,10 @@ unprovable:
     reason: table
   - test: TestAcceptedInReadsSemgrepsOkMark
     reason: table
+  - test: TestReadMetaPartTakesOnlyAPartItCanPlace
+    reason: table
+  - test: TestEveryProofFallsInExactlyOnePartOfTheLedger
+    reason: table
   - test: TestOutputOfKeepsOneTestsLinesFromAnInterleavedRun
     reason: table
   # The reader behind TestNoCodePicksASiteByName, whose own ledger entry
