@@ -27,14 +27,6 @@ opentofu contains f if {
 	endswith(f.path, ".tf")
 }
 
-# opentofu_outside_tests is every OpenTofu file but those inside a directory
-# named tests: a module's tofu tests and their fixtures, which declare things
-# to be refused.
-opentofu_outside_tests contains f if {
-	some f in opentofu
-	not contains(f.path, "/tests/")
-}
-
 # dockerfiles is every Dockerfile, as Conftest reads one: its instructions in
 # order, each with the stage it is in.
 dockerfiles contains f if {

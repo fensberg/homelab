@@ -93,7 +93,8 @@ config := [f | some f in lib.objects; f.contents.kind == "ConfigMap"; f.contents
 
 values := [f |
 	some agent in agents
-	some f in lib.at(sprintf("%s/cilium-values.yaml", [dir(agent.path)]))
+	some f in lib.named("cilium-values.yaml")
+	f.path == sprintf("%s/cilium-values.yaml", [dir(agent.path)])
 ]
 
 deny contains msg if {

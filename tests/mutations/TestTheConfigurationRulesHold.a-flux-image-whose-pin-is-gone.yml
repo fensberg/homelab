@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: suppliers
+file: clusters/core/flux-system/kustomization.yaml
+find: "    digest: sha256:16ada99456385100698a5d7adf90aba8a2089d987ab541c9566b6d7b0e897038\n"
+replace: "    tag: v1\n"
+mentions: "is not pinned by digest"
+why: >
+  The rule reads the kustomizations that pin images by digest, by their
+  file's name. A pin taken out leaves the image to whatever its tag points
+  to.

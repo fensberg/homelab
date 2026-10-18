@@ -15,7 +15,7 @@ import data.lib
 import rego.v1
 
 tf contains f if {
-	some f in lib.opentofu_outside_tests
+	some f in lib.opentofu
 }
 
 declarations contains [f.path, block] if {

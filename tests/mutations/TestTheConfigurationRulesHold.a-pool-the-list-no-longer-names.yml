@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: pull_request_runners
+file: scripts/approved-suppliers.yml
+find: "  names:\n    - source\n    - builds\n"
+replace: "  names:\n    - builds\n"
+mentions: "runs pull-request code on pr-source-"
+why: >
+  The rule reads the pools the suppliers list declares, at its path. A pool
+  dropped from the list leaves the jobs on it running pull-request code
+  somewhere undeclared.

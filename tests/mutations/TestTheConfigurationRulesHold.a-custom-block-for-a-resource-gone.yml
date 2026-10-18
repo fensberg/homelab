@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: custom_blocks
+file: tests/custom-blocks.yml
+find: "  - resource: cloudflare_zero_trust_access_policy.members\n"
+replace: "  - resource: cloudflare_zero_trust_access_policy.former_members\n"
+mentions: "and no such OpenTofu resource exists any more"
+why: >
+  The rule reads the list of resources allowed in a root, at its path. An
+  entry for a resource that is gone is an exemption standing ready for
+  something else.

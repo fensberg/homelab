@@ -1,0 +1,17 @@
+guard: TestOnlyTheSelectorsReadTheInput
+file: policy/conftest/hidden_test.rego
+create: |
+  package rules.hidden
+
+  import rego.v1
+
+  deny contains msg if {
+  	some f in input
+  	f.path == "taskfile.yml"
+  	msg := "hidden"
+  }
+mentions: "(package rules.hidden) names the input"
+why: >
+  Conftest runs a rule from a file named like a test. Judged by its file's
+  name, a rule hidden that way read the input past this guard; judged by the
+  package it declares, it is a rule like any other.

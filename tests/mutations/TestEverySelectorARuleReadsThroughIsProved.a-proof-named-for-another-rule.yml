@@ -1,0 +1,8 @@
+guard: TestEverySelectorARuleReadsThroughIsProved
+file: tests/mutations/TestTheConfigurationRulesHold.the-workflow-asks-for-the-bare-go-key.yml
+find: "rule: coverage_shim\n"
+replace: "rule: required_checks\n"
+mentions: 'coverage_shim reads through data.lib.at(".github/workflows/pr-validation.yml"), and no proof'
+why: >
+  A proof proves the rule it names. Named for another, the one proof that
+  breaks the workflow this rule reads leaves that place unproved.

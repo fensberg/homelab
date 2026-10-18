@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: allowed_actions
+file: .github/workflows/setup-go/action.yml
+find: "uses: actions/setup-go@b7ad1dad"
+replace: "uses: someone-else/setup-go@b7ad1dad"
+mentions: "a workflow uses someone-else/setup-go, which it would refuse"
+why: >
+  The rule reads the actions every workflow and composite action names. A
+  composite action is where the commit and the owner of a third-party action
+  are written once for every job.

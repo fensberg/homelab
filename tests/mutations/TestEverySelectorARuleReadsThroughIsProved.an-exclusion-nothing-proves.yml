@@ -1,0 +1,9 @@
+guard: TestEverySelectorARuleReadsThroughIsProved
+file: policy/conftest/lib.rego
+find: "\tis_object(f.contents)\n\tis_string(f.contents.kind)\n"
+replace: "\tis_object(f.contents)\n\tis_string(f.contents.kind)\n\tnot startswith(f.path, \"tests/\")\n"
+mentions: "excludes with"
+why: >
+  An exclusion in a selector is an exemption for every rule reading through
+  it. One that no proof shows exempting anything is a hole waiting for
+  something to fall in.

@@ -1,0 +1,8 @@
+guard: TestEverySelectorARuleReadsThroughIsProved
+file: policy/conftest/push_hooks.rego
+find: 'lib.at("taskfile.yml")'
+replace: 'lib.at(concat("", ["taskfile", ".yml"]))'
+mentions: "gives lib.at a path it works out as it runs"
+why: >
+  A path built at run time is a place nothing can name before the rule runs,
+  so no proof can be asked to break a file there.

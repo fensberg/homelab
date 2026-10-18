@@ -16,7 +16,7 @@ pins := [f.contents | some f in lib.at("scripts/versions.env")][0]
 
 # What the cluster's module says a site runs, as a local.
 declared(key) := {[f.path, v] |
-	some f in lib.opentofu_outside_tests
+	some f in lib.opentofu
 	some block in object.get(f.contents, "locals", [])
 	v := block[key]
 	is_string(v)
