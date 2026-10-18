@@ -62,18 +62,17 @@ func TestAnApplicationIsRemovedByDeletingItsDirectoryAndItsBlocks(t *testing.T) 
 			for _, problem := range ledgerNoLongerDescribes(t, untouched) {
 				described[problem] = true
 			}
-			// Every guard against the copy as it is, while the other copy
-			// is being made and the guards run against that: the two runs
-			// are the whole of this test's time and share nothing.
-			type run struct {
-				verdicts map[string]bool
-				output   []byte
+			// Every guard against the copy as it is, and then against the
+			// copy without the application: one after the other. They ran
+			// side by side, which put two whole suites - each with its
+			// coverage build and its Semgrep scans - on one runner beside the
+			// lane's own slow guards, and a Rego test that takes milliseconds
+			// was held past the five seconds conftest verify gives each test
+			// (#781). One suite at a time is this guard's share of the lane.
+			before, beforeOutput := allVerdicts(bin, untouched)
+			if len(before) == 0 {
+				t.Fatalf("no test verdict was parsed from the run against the copy as it is:\n%s", beforeOutput)
 			}
-			asItIs := make(chan run, 1)
-			go func() {
-				v, out := allVerdicts(bin, untouched)
-				asItIs <- run{v, out}
-			}()
 			scratch := scratchRepo(t)
 			removeApplication(t, scratch, a)
 			indexScratchTree(t, scratch)
@@ -96,11 +95,6 @@ func TestAnApplicationIsRemovedByDeletingItsDirectoryAndItsBlocks(t *testing.T) 
 			if len(after) == 0 {
 				t.Fatalf("no test verdict was parsed from the run against the copy without %s:\n%s", a.Name, afterOutput)
 			}
-			was := <-asItIs
-			if len(was.verdicts) == 0 {
-				t.Fatalf("no test verdict was parsed from the run against the copy as it is:\n%s", was.output)
-			}
-			before := was.verdicts
 			var broke []string
 			for name, passed := range after {
 				if !passed && before[name] {
