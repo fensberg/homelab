@@ -6,11 +6,11 @@
 # move down to the module's own tests.
 package rules.pools
 
+import data.lib
 import rego.v1
 
 memberships := [[name, block] |
-	some f in input
-	endswith(f.path, ".tf")
+	some f in lib.opentofu
 	some name, blocks in object.get(object.get(f.contents, "resource", {}), "proxmox_pool_membership", {})
 	some block in blocks
 ]

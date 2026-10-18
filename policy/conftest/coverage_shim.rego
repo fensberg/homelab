@@ -13,11 +13,12 @@
 # applies the patch to notice.
 package rules.coverage_shim
 
+import data.lib
 import rego.v1
 
-workflow := [f | some f in input; f.path == ".github/workflows/pr-validation.yml"]
+workflow := [f | some f in lib.at(".github/workflows/pr-validation.yml")]
 
-baseline := [f | some f in input; f.path == "tests/coverage-baseline.json"]
+baseline := [f | some f in lib.at("tests/coverage-baseline.json")]
 
 asks_for_it if {
 	some f in workflow

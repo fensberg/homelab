@@ -15,19 +15,11 @@
 # not a base that was swapped under a tag.
 package rules.image_bases
 
+import data.lib
 import rego.v1
 
-# A Dockerfile, as Conftest reads one, is its instructions in order, each
-# with the stage it is in.
-dockerfiles contains f if {
-	some f in input
-	is_array(f.contents)
-	count(f.contents) > 0
-	every i in f.contents {
-		is_object(i)
-		i.Cmd
-	}
-}
+# Every Dockerfile, as lib reads one.
+dockerfiles := lib.dockerfiles
 
 base(f, stage) := i.Value[0] if {
 	some i in f.contents

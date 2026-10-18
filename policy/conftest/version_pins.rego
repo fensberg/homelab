@@ -28,10 +28,10 @@ package rules.version_pins
 import data.lib
 import rego.v1
 
-pins := [f.contents | some f in input; f.path == "scripts/versions.env"][0]
+pins := [f.contents | some f in lib.at("scripts/versions.env")][0]
 
 
-exporter := [f | some f in input; f.path == ".github/actions/versions/action.yml"]
+exporter := [f | some f in lib.at(".github/actions/versions/action.yml")]
 
 deny contains msg if {
 	count(pins) == 0

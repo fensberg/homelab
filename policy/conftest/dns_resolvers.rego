@@ -11,12 +11,11 @@
 # is a route; four lines to find is a bug waiting.
 package rules.dns_resolvers
 
+import data.lib
 import rego.v1
 
 tf contains f if {
-	some f in input
-	endswith(f.path, ".tf")
-	not contains(f.path, "/tests/")
+	some f in lib.opentofu_outside_tests
 }
 
 declarations contains [f.path, block] if {

@@ -1345,6 +1345,18 @@ tools:
       The industry's policy-as-code tool for configuration, chosen on
       2026-10-16 over guards that matched text in Go; each rule carries its own
       tests, run by `conftest verify`.
+  - source: open-policy-agent/opa
+    version: OPA_VERSION
+    fetch: https://github.com/open-policy-agent/opa/releases/download/v{version}/opa_linux_amd64_static
+    reason: >-
+      Reads the configuration rules themselves: `opa parse` gives each rule's
+      syntax tree, so a guard can tell which of the selectors in
+      policy/conftest/lib.rego a rule reads its files through, and refuse one
+      that reads the input any other way; `opa eval` asks a selector which
+      files it picks, with the same engine Conftest runs them on. The engine
+      Conftest embeds, from the same publisher, at the version it embeds.
+      Agreed 2026-10-18, over OPA's Go library in the tests module and over
+      selectors written as globs.
   - source: kubernetes-sigs/kwok
     version: KWOK_VERSION
     binary: kwokctl

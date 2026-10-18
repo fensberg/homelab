@@ -13,11 +13,11 @@
 # named in the map the sum is made from.
 package rules.free_plan
 
+import data.lib
 import rego.v1
 
 tf contains f if {
-	some f in input
-	endswith(f.path, ".tf")
+	some f in lib.opentofu
 }
 
 workers contains [f.path, name] if {

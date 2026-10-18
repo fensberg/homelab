@@ -18,10 +18,11 @@
 # channel is shown in place of a first step.
 package rules.alerts
 
+import data.lib
 import rego.v1
 
 alerts contains [f.path, r.alert, object.get(r, "annotations", {})] if {
-	some f in input
+	some f in lib.objects
 	f.contents.kind == "PrometheusRule"
 	some g in object.get(f.contents.spec, "groups", [])
 	some r in object.get(g, "rules", [])
@@ -54,7 +55,7 @@ deny contains msg if {
 	msg := "no alert was found in what Flux applies, so this checked nothing"
 }
 
-stack := [f | some f in input; f.contents.kind == "HelmRelease"; f.contents.metadata.name == "kube-prometheus-stack"]
+stack := [f | some f in lib.objects; f.contents.kind == "HelmRelease"; f.contents.metadata.name == "kube-prometheus-stack"]
 
 shows_the_first_step(f) if {
 	walk(f.contents, [_, v])

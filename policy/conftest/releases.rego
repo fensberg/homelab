@@ -12,12 +12,13 @@
 # describe the kind rather than being one.
 package rules.releases
 
+import data.lib
 import rego.v1
 
 digest := `^sha256:[0-9a-f]{64}$`
 
 sources contains f if {
-	some f in input
+	some f in lib.objects
 	f.contents.kind == "OCIRepository"
 	not endswith(f.path, "gotk-components.yaml")
 }

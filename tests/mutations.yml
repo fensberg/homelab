@@ -156,6 +156,8 @@ unprovable:
     reason: table
   - test: TestAcceptedInReadsSemgrepsOkMark
     reason: table
+  - test: TestReadsInputCountsTheInputAndNothingThatSaysIt
+    reason: table
   - test: TestReadMetaPartTakesOnlyAPartItCanPlace
     reason: table
   - test: TestEveryProofFallsInExactlyOnePartOfTheLedger

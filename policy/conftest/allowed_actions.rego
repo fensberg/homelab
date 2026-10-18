@@ -11,8 +11,7 @@ import data.lib
 import rego.v1
 
 settings contains [where, s] if {
-	some f in input
-	endswith(f.path, ".tf")
+	some f in lib.opentofu
 	some name, blocks in object.get(object.get(f.contents, "resource", {}), "github_actions_repository_permissions", {})
 	some s in blocks
 	where := sprintf("%s: github_actions_repository_permissions.%s", [f.path, name])

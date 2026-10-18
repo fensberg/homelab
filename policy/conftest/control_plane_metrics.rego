@@ -17,6 +17,7 @@
 # these switched off and a comment promising the machine configuration later.
 package rules.control_plane_metrics
 
+import data.lib
 import rego.v1
 
 components := {
@@ -25,13 +26,12 @@ components := {
 	"kubeEtcd": ["listen-metrics-urls", "etcd serves no metrics until listen-metrics-urls asks for them"],
 }
 
-stack := [f | some f in input; f.contents.kind == "HelmRelease"; f.contents.metadata.name == "kube-prometheus-stack"]
+stack := [f | some f in lib.objects; f.contents.kind == "HelmRelease"; f.contents.metadata.name == "kube-prometheus-stack"]
 
 # Where OpenTofu says a setting, as the expression it writes, with the lines
 # that are comments inside it left out.
 settings contains [f.path, setting] if {
-	some f in input
-	endswith(f.path, ".tf")
+	some f in lib.opentofu
 	walk(f.contents, [_, v])
 	is_string(v)
 	some [setting, _] in components

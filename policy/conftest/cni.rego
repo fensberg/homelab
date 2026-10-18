@@ -13,13 +13,13 @@
 # of tidy-up that looks harmless in a diff.
 package rules.cni
 
+import data.lib
 import rego.v1
 
 apply := "terraform_data.cilium"
 
 gates contains [f.path, name, block] if {
-	some f in input
-	endswith(f.path, ".tf")
+	some f in lib.opentofu
 	some name, blocks in object.get(object.get(f.contents, "data", {}), "talos_cluster_health", {})
 	some block in blocks
 }
@@ -49,7 +49,7 @@ deny contains msg if {
 # network. If a chart version or a values change ever drops it, the DMZ node
 # will simply never come up, and nothing else in this repository would say why.
 
-agents := [f | some f in input; f.contents.kind == "DaemonSet"; f.contents.metadata.name == "cilium"]
+agents := [f | some f in lib.objects; f.contents.kind == "DaemonSet"; f.contents.metadata.name == "cilium"]
 
 deny contains msg if {
 	count(agents) == 0
@@ -89,12 +89,11 @@ blanket(tolerations) if {
 
 dir(path) := concat("/", array.slice(parts, 0, count(parts) - 1)) if parts := split(path, "/")
 
-config := [f | some f in input; f.contents.kind == "ConfigMap"; f.contents.metadata.name == "cilium-config"]
+config := [f | some f in lib.objects; f.contents.kind == "ConfigMap"; f.contents.metadata.name == "cilium-config"]
 
 values := [f |
 	some agent in agents
-	some f in input
-	f.path == sprintf("%s/cilium-values.yaml", [dir(agent.path)])
+	some f in lib.at(sprintf("%s/cilium-values.yaml", [dir(agent.path)]))
 ]
 
 deny contains msg if {

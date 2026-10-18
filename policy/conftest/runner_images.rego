@@ -7,10 +7,11 @@
 # nothing in this repository would record or review.
 package rules.runner_images
 
+import data.lib
 import rego.v1
 
 sets contains f if {
-	some f in input
+	some f in lib.objects
 	f.contents.kind == "HelmRelease"
 	object.get(f.contents, ["spec", "chart", "spec", "chart"], "") == "gha-runner-scale-set"
 }

@@ -12,6 +12,7 @@
 # every other check still green.
 package rules.flux_controllers
 
+import data.lib
 import rego.v1
 
 components := "gotk-components.yaml"
@@ -19,8 +20,7 @@ components := "gotk-components.yaml"
 dir(path) := concat("/", array.slice(parts, 0, count(parts) - 1)) if parts := split(path, "/")
 
 shipped contains [dir(f.path), m[1]] if {
-	some f in input
-	endswith(f.path, sprintf("/%s", [components]))
+	some f in lib.named(components)
 	walk(f.contents, [path, v])
 	count(path) > 0
 	path[count(path) - 1] == "image"
@@ -29,8 +29,7 @@ shipped contains [dir(f.path), m[1]] if {
 }
 
 pinned(at, name) if {
-	some f in input
-	f.path == sprintf("%s/kustomization.yaml", [at])
+	some f in lib.at(sprintf("%s/kustomization.yaml", [at]))
 	some image in object.get(f.contents, "images", [])
 	image.name == sprintf("ghcr.io/fluxcd/%s", [name])
 	contains(object.get(image, "digest", ""), "sha256:")

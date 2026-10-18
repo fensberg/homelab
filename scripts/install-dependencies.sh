@@ -482,6 +482,12 @@ info "taking delivery of conftest ${CONFTEST_VERSION}"
 "$(dirname "$0")/take-delivery.sh" conftest
 ok "conftest installed into ~/.local/bin"
 
+# OPA, which reads the configuration rules themselves: a guard that runs at
+# push (TestOnlyTheSelectorsReadTheInput) asks it for each rule's syntax tree.
+info "taking delivery of opa ${OPA_VERSION}"
+"$(dirname "$0")/take-delivery.sh" opa
+ok "opa installed into ~/.local/bin"
+
 # TruffleHog, which the push hook runs over the commits a push would publish
 # (security guard-secrets), so a workstation without it cannot push.
 info "taking delivery of trufflehog ${TRUFFLEHOG_VERSION}"

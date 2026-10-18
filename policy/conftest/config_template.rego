@@ -14,9 +14,10 @@
 # of the per-site item.
 package rules.config_template
 
+import data.lib
 import rego.v1
 
-template := [f | some f in input; f.path == "config/management.tpl.json"]
+template := [f | some f in lib.at("config/management.tpl.json")]
 
 wrapped := `\{\{\s*op://[^}]*\}\}`
 

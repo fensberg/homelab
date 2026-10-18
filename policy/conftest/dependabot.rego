@@ -6,11 +6,12 @@
 # major is read on its own rather than bundled with patch bumps.
 package rules.dependabot
 
+import data.lib
 import rego.v1
 
 config := ".github/dependabot.yml"
 
-updates := [u | some f in input; f.path == config; some u in object.get(f.contents, "updates", [])]
+updates := [u | some f in lib.at(config); some u in object.get(f.contents, "updates", [])]
 
 where(u) := sprintf("%s in %s", [u["package-ecosystem"], u.directory])
 

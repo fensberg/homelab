@@ -9,9 +9,10 @@
 # module are refused.
 package rules.taskfile_modules
 
+import data.lib
 import rego.v1
 
-taskfile := [f | some f in input; f.path == "taskfile.yml"]
+taskfile := [f | some f in lib.at("taskfile.yml")]
 
 named contains trim_space(line) if {
 	some f in taskfile

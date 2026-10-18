@@ -9,11 +9,11 @@
 # merge, and nothing said so until a merge tried (2026-10-11).
 package rules.scripted_steps
 
+import data.lib
 import rego.v1
 
 steps contains [f.path, script] if {
-	some f in input
-	endswith(f.path, ".tf")
+	some f in lib.opentofu
 	walk(f.contents, [path, script])
 	count(path) > 2
 	path[count(path) - 3] == "provisioner"
