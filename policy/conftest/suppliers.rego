@@ -110,7 +110,8 @@ remote contains [path, ref] if {
 }
 
 overlay_pins(at, name) if {
-	some k in lib.at(sprintf("%s/kustomization.yaml", [at]))
+	some k in lib.named("kustomization.yaml")
+	k.path == sprintf("%s/kustomization.yaml", [at])
 	some image in object.get(k.contents, "images", [])
 	image.name == name
 	startswith(object.get(image, "digest", ""), "sha256:")

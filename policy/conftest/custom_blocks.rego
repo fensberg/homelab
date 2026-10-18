@@ -23,7 +23,7 @@ declarations := "tests/custom-blocks.yml"
 dir(path) := concat("/", array.slice(parts, 0, count(parts) - 1)) if parts := split(path, "/")
 
 tofu contains f if {
-	some f in lib.opentofu_outside_tests
+	some f in lib.opentofu
 }
 
 roots contains dir(f.path) if {

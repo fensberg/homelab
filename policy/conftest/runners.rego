@@ -39,9 +39,10 @@ local(name) := {[f.path, v] |
 	is_string(v)
 }
 
-# What one file says, in every document of it.
+# What one manifest file says, in every object of it.
 says(path, want) if {
-	some f in lib.at(path)
+	some f in lib.objects
+	f.path == path
 	walk(f.contents, [_, v])
 	is_string(v)
 	contains(v, want)

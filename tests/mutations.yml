@@ -158,6 +158,8 @@ unprovable:
     reason: table
   - test: TestReadsInputCountsTheInputAndNothingThatSaysIt
     reason: table
+  - test: TestSelectorUsesFindsLibByEveryNameAFileGivesIt
+    reason: table
   - test: TestReadMetaPartTakesOnlyAPartItCanPlace
     reason: table
   - test: TestEveryProofFallsInExactlyOnePartOfTheLedger

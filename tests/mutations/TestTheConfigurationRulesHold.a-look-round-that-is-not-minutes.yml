@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: heartbeat_cadence
+file: management/estate/watchman/watchman.tf
+find: "  looks_every_minutes = 10\n"
+replace: "  looks_every_minutes = \"ten\"\n"
+mentions: "not a plain number of minutes"
+why: >
+  The rule reads how often the watchman looks round from the OpenTofu that
+  schedules it. A value that is not minutes leaves how long a silence lasts
+  unknowable.

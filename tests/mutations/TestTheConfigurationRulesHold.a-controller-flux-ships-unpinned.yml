@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: flux_controllers
+file: clusters/core/flux-system/gotk-components.yaml
+find: "          image: ghcr.io/fluxcd/source-controller:v1.9.4\n"
+replace: "          image: ghcr.io/fluxcd/source-watcher:v1.9.4\n"
+mentions: "ships ghcr.io/fluxcd/source-watcher and the kustomization beside it does not pin it"
+why: >
+  The rule reads the components Flux ships, by their file's name. A
+  controller the kustomization beside them does not name runs at whatever
+  its tag points to.

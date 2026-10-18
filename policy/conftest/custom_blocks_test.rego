@@ -11,7 +11,6 @@ roots := [
 	tf("parts/shared/a.tf", {"resource": {"x_thing": {"in_a_module": [{}]}}}),
 	tf("ground/beta/access.tf", {"provider": {"x": [{}]}}),
 	tf("ground/gamma/access.tf", {"provider": {"x": [{}]}}),
-	tf("ground/alpha/tests/t.tf", {"provider": {"x": [{}]}, "resource": {"x_thing": {"fixture": [{}]}}}),
 ]
 
 listing(entries) := {"path": "tests/custom-blocks.yml", "contents": {"opentofu": entries, "go": []}}

@@ -135,7 +135,7 @@ func parseRego(t *testing.T, rel string) regoTree {
 	if _, err := exec.LookPath(opaProgram); err != nil {
 		t.Fatal("opa is not on PATH; take delivery of it: scripts/take-delivery.sh opa")
 	}
-	out, err := exec.Command(opaProgram, "parse", "--format", "json", filepath.Join(repoRoot(t), rel)).Output()
+	out, err := exec.Command(opaProgram, "parse", "--format", "json", "--json-include", "locations", filepath.Join(repoRoot(t), rel)).Output()
 	if err != nil {
 		t.Fatalf("opa could not parse %s: %v", rel, err)
 	}
@@ -176,35 +176,58 @@ func readsInput(node any) int {
 	return n
 }
 
+// policyFiles is every policy file beside the rules, parsed: the rules, lib,
+// main and the tests, each known by the package it declares.
+func policyFiles(t *testing.T) map[string]regoTree {
+	t.Helper()
+	files := map[string]regoTree{}
+	for _, rel := range trackedFiles(t) {
+		if filepath.Dir(rel) == conftestRules && strings.HasSuffix(rel, ".rego") {
+			files[rel] = parseRego(t, rel)
+		}
+	}
+	if len(files) < 10 {
+		t.Fatalf("only %d policy files were read from %s, which is not this repository", len(files), conftestRules)
+	}
+	return files
+}
+
+// isTestPackage reports whether a package is a rule's tests. Known by what
+// it declares, never by its file's name: Conftest runs a rule written in a
+// file named like a test, so a name was a place to hide one.
+func isTestPackage(pkg string) bool { return strings.HasSuffix(pkg, "_test") }
+
 // A rule reads its files through the selectors in lib and names the input
 // nowhere else. A rule that picks its own files by testing paths is a place
 // it reads that nothing names, and no guard can prove a place it cannot see:
 // the code rules' scope was proved place by place (#779), and these rules
 // had 161 such tests across 46 packages. Starting from nothing, the input is
-// lib's alone. Read through OPA's own parser, so a comment or a string that
-// says "input" is neither (agreed 2026-10-18).
+// lib's alone, and lib is one file. Read through OPA's own parser, so a
+// comment or a string that says "input" is neither (agreed 2026-10-18).
+//
+// Two ways round it were found and are closed here: a second file declaring
+// package lib, which Rego joins to the first, and a rule in a file named
+// like a test, which Conftest runs like any other.
 func TestOnlyTheSelectorsReadTheInput(t *testing.T) {
-	var readers []string
-	files, sawLib := 0, false
-	for _, rel := range trackedFiles(t) {
-		if filepath.Dir(rel) != conftestRules || !strings.HasSuffix(rel, ".rego") || strings.HasSuffix(rel, "_test.rego") {
-			continue
-		}
-		files++
-		tree := parseRego(t, rel)
-		if tree.Package == "lib" {
-			sawLib = true
-			continue
-		}
-		if n := readsInput(tree.Tree); n > 0 {
-			readers = append(readers, fmt.Sprintf("%s (package %s) names the input %d time(s)", rel, tree.Package, n))
+	var libs, readers []string
+	for rel, tree := range policyFiles(t) {
+		switch {
+		case tree.Package == "lib":
+			libs = append(libs, rel)
+		case isTestPackage(tree.Package):
+		default:
+			if n := readsInput(tree.Tree); n > 0 {
+				readers = append(readers, fmt.Sprintf("%s (package %s) names the input %d time(s)", rel, tree.Package, n))
+			}
 		}
 	}
-	if files < 10 {
-		t.Fatalf("only %d policy files were read from %s, which is not this repository", files, conftestRules)
-	}
-	if !sawLib {
+	sort.Strings(libs)
+	sort.Strings(readers)
+	switch {
+	case len(libs) == 0:
 		t.Fatalf("no policy file in %s is package lib, so there are no selectors for any rule to read through", conftestRules)
+	case len(libs) > 1:
+		t.Errorf("%s all declare package lib. Rego joins them into one, so each may read the input, and the selectors are no longer in one place a guard reads. Put every selector in one file.", strings.Join(libs, ", "))
 	}
 	for _, r := range readers {
 		t.Errorf("%s. Read the files through a selector in package lib - add one there if none picks what this needs - so the place it reads is one a guard can name.", r)

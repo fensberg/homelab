@@ -100,7 +100,8 @@ deny contains msg if {
 # The kustomization beside a dashboard's directory lists it, and labels what
 # it generates for the sidecar that hands dashboards to Grafana.
 listing(f) := k if {
-	some k in lib.at(sprintf("%s/kustomization.yaml", [dir(dir(f.path))]))
+	some k in lib.named("kustomization.yaml")
+	k.path == sprintf("%s/kustomization.yaml", [dir(dir(f.path))])
 }
 
 deny contains msg if {

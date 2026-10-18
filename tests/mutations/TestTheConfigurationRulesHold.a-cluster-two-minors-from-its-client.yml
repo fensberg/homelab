@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: versions
+file: modules/infrastructure/cluster/variables.tf
+find: "  talos_version = \"v1.13.9\"\n"
+replace: "  talos_version = \"v1.10.0\"\n"
+mentions: "but the cluster runs v1.10"
+why: >
+  The rule reads the OpenTofu that says what a site runs, outside the tofu
+  tests' fixtures. A client two minors from its cluster is where commands
+  start to fail.

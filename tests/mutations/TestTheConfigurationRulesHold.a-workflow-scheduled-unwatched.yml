@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+rule: scheduled_workflows
+file: .github/workflows/converge-estate.yml
+find: "on:\n  push:\n"
+replace: "on:\n  schedule:\n    - cron: \"0 3 * * *\"\n  push:\n"
+mentions: "runs on a schedule and the cluster is not asked about it"
+why: >
+  The rule reads every workflow for the ones on a schedule. A scheduled
+  workflow the cluster does not ask about fails where nobody hears (#441).

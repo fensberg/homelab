@@ -29,7 +29,8 @@ shipped contains [dir(f.path), m[1]] if {
 }
 
 pinned(at, name) if {
-	some f in lib.at(sprintf("%s/kustomization.yaml", [at]))
+	some f in lib.named("kustomization.yaml")
+	f.path == sprintf("%s/kustomization.yaml", [at])
 	some image in object.get(f.contents, "images", [])
 	image.name == sprintf("ghcr.io/fluxcd/%s", [name])
 	contains(object.get(image, "digest", ""), "sha256:")
