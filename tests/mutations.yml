@@ -407,6 +407,13 @@ unprovable:
 # An entry here is an exemption, so it costs what an exemption costs: a reason
 # somebody can read later.
 comment_dependent:
+  - test: TestEveryProofStillFindsItsPlace
+    reason: >
+      Its subject is where each proof's find lands in the file as written,
+      which is the text the ledger applies the mutation to. A find may take in
+      the comment beside the code it breaks, and with the comments stripped
+      such a find has nowhere to land. That moves the anchor, not the guard's
+      verdict on any code.
   - test: TestEverySilencedFindingNamesTheGuardThatProvesItMayBe
     reason: >
       The comment is its subject. A tool's own configuration cannot carry a
