@@ -1,0 +1,9 @@
+guard: TestTheCodeRulesHold
+file: scripts/details/onepassword/probe.go
+reads_source: true
+find: "\tout, err := exec.Command(\"op\", \"read\", ref).Output()\n"
+replace: "\tout, err := exec.Command(\"op\", \"read\", ref).Output()\n\t_, _ = Read(ref)\n"
+mentions: "fetches or writes a secret. The vault check must not"
+why: >
+  The probe is in the package that reads values, where the call that would
+  hand one back has no package name in front of it.

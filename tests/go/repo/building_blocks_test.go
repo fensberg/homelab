@@ -110,63 +110,6 @@ func structTags(t *testing.T, rel string) map[string]bool {
 
 // --- the repository root is found, not counted -----------------------------------
 
-// Nothing finds the repository root by counting directories.
-//
-// A fixed-depth climb is correct until the file holding it moves, and then it
-// is wrong without a word. Nine copies of that answer existed across three
-// modules, in two spellings - a chain of ".." and nested filepath.Dir - and the
-// guard's first version knew only the first, which let the one copy in the
-// shipped binary through. repopath.Root walks up to the marker instead.
-//
-// No debt: every copy has been replaced.
-func TestNothingFindsTheRepositoryByCountingDirectories(t *testing.T) {
-	found := map[string]bool{}
-	for _, rel := range goFiles(t) {
-		if climbsFixedDepth(t, rel) {
-			found[rel] = true
-		}
-	}
-	ratchet(t, "a fixed-depth climb to the repository root", found, map[string]bool{},
-		"Use repopath.Root or repopath.Join from homelab/details/repopath.")
-}
-
-// climbsFixedDepth reports whether a file climbs a fixed number of
-// directories, in either spelling: two ".." literals in a row, as
-// filepath.Join("..", "..", ...) takes, or filepath.Dir(filepath.Dir(...)).
-// Tokenized rather than matched, so explaining the pattern in a comment is not
-// a violation.
-func climbsFixedDepth(t *testing.T, rel string) bool {
-	t.Helper()
-	src := []byte(readRepoFile(t, rel))
-	var s scanner.Scanner
-	fset := token.NewFileSet()
-	s.Init(fset.AddFile(rel, -1, len(src)), src, nil, 0)
-
-	// The last seven tokens: enough to see Dir ( filepath . Dir.
-	var window []string
-	for {
-		_, tok, lit := s.Scan()
-		if tok == token.EOF {
-			return false
-		}
-		cur := tok.String()
-		if tok == token.STRING || tok == token.IDENT {
-			cur = lit
-		}
-		window = append(window, cur)
-		if len(window) > 7 {
-			window = window[1:]
-		}
-		n := len(window)
-		if n >= 3 && window[n-1] == `".."` && window[n-2] == "," && window[n-3] == `".."` {
-			return true
-		}
-		if n >= 7 && strings.Join(window[n-7:], " ") == "filepath . Dir ( filepath . Dir" {
-			return true
-		}
-	}
-}
-
 // --- a fact crossing a module boundary is declared once ----------------------------
 
 // A string restated in more than one Go module is a building block nobody
@@ -329,7 +272,9 @@ func goFiles(t *testing.T) []string {
 	t.Helper()
 	var out []string
 	for _, rel := range trackedFiles(t) {
-		if strings.HasSuffix(rel, ".go") {
+		// A code rule's example is written to be refused and is compiled by
+		// no module: semgrep --test reads it (TestEveryCodeRuleProvesItself).
+		if strings.HasSuffix(rel, ".go") && !strings.HasPrefix(rel, semgrepExamples+"/") {
 			out = append(out, rel)
 		}
 	}

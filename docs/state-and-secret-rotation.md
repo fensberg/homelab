@@ -359,7 +359,7 @@ look at how far reality has drifted — is a judgement call made with the facts
 in front of you, not a step to be chained onto a recovery.
 
 It is also the only thing in this program that reads the private half at all;
-`tests/go/repo/breakglass_test.go` fails if any other file does.
+`policy/semgrep/breakglass-contractor.yml` fails if any other file does.
 
 **Rehearsing it needs no second estate.** Right after a successful ignition,
 move the local state aside, restore, and compare — the workstation is the

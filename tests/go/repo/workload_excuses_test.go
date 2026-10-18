@@ -18,42 +18,6 @@ import (
 // stops being true when the workload changes, and nothing reads the reason
 // when it does. These read the workloads instead.
 
-// A connection string written in the code carries no credential of its own.
-//
-// A secrets scanner reads `scheme://user:password@host` as a credential, and
-// is told not to where the string is a format: every part filled in when it
-// runs, from a value that came out of the vault. So wherever a connection
-// string with a user part is written, the user part is placeholders and
-// nothing else.
-func TestAConnectionStringInTheCodeCarriesNoCredentialOfItsOwn(t *testing.T) {
-	written := regexp.MustCompile(`[a-z][a-z0-9+.-]*://([^/"'\s@]+)@`)
-	placeholder := regexp.MustCompile(`^(%[sdvq]|\$\{[^}]+\})(:(%[sdvq]|\$\{[^}]+\}))?$`)
-	found := 0
-	for _, rel := range trackedFiles(t) {
-		if !strings.HasSuffix(rel, ".tf") && !strings.HasSuffix(rel, ".go") || strings.HasSuffix(rel, "_test.go") {
-			continue
-		}
-		for i, line := range strings.Split(readRepoFile(t, rel), "\n") {
-			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "//") {
-				continue
-			}
-			for _, m := range written.FindAllStringSubmatch(line, -1) {
-				found++
-				if !placeholder.MatchString(m[1]) {
-					t.Errorf("%s:%d writes a connection string whose user part is not a placeholder.\n\n"+
-						"A secrets scanner is silenced on strings of this shape on the ground that they are "+
-						"formats. One with a name or a password written into it is the thing the scanner is for.",
-						rel, i+1)
-				}
-			}
-		}
-	}
-	if found == 0 {
-		t.Fatal("found no connection string with a user part, so nothing was checked and a silencing rests on nothing")
-	}
-}
-
 // workload is one container of one workload this repository's own manifests
 // declare.
 type workloadContainer struct {

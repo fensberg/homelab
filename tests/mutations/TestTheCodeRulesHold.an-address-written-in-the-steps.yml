@@ -1,0 +1,8 @@
+guard: TestTheCodeRulesHold
+file: policy/semgrep/contractor-addresses.yml
+find: 'exclude: ["*_test.go", /scripts/contractor/steps/steps.go]'
+replace: 'exclude: ["*_test.go"]'
+mentions: "writes a resource address. Name it in scripts/contractor/steps"
+why: >
+  The steps are the one place an address is written, so the rule must let
+  them through and refuses them without the exclusion.

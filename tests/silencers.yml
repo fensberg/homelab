@@ -33,7 +33,7 @@ tools:
         lists: [skip-check, skip-path]
 
   semgrep:
-    arrives_as: [semgrep/semgrep]
+    arrives_as: [SEMGREP_VERSION]
     marks: ["nosemgrep"]
 
   conftest:
@@ -71,7 +71,7 @@ tools:
         keys: [ignore-words-list, skip]
 
   trufflehog:
-    arrives_as: [TRUFFLEHOG_VERSION]
+    arrives_as: [TRUFFLEHOG_VERSION, guard-secrets]
     marks: ["trufflehog:ignore"]
 
   gitleaks:

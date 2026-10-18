@@ -67,3 +67,17 @@ test_the_scalar_form_on_a_job_is_read if {
 test_a_group_naming_everything_passes if {
 	count(workflow_shape.deny) == 0 with input as [wf(group({"pull_request": {}, "issue_comment": {}}, {"group": "c-${{ github.event.pull_request.number || github.event.issue.number }}-${{ github.event_name == 'issue_comment' && github.event.comment.id || 'read' }}"}))]
 }
+
+test_a_local_action_by_a_relative_path_is_refused if {
+	some msg in workflow_shape.deny with input as [{"path": ".github/workflows/w.yml", "contents": {"defaults": {"run": {"shell": "bash"}}, "jobs": {"j": {"steps": [{"uses": "./.github/actions/versions"}]}}}}]
+	contains(msg, "reaches a local action with a relative `uses: ./.github/actions/versions`")
+}
+
+test_a_local_action_by_the_repository_passes if {
+	not any_relative with input as [{"path": ".github/workflows/w.yml", "contents": {"defaults": {"run": {"shell": "bash"}}, "jobs": {"j": {"steps": [{"uses": "$/.github/actions/versions"}]}}}}]
+}
+
+any_relative if {
+	some msg in workflow_shape.deny
+	contains(msg, "reaches a local action")
+}

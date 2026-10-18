@@ -87,7 +87,7 @@
 # entry - which is also where the comment check's own decision is proved, in
 # TestSatisfiedByProseOnlyNamesAPassToFailFlip.
 
-owed_ceiling: 33
+owed_ceiling: 24
 
 unprovable:
   # --- cannot be proved by mutation ----------------------------------------
@@ -147,15 +147,17 @@ unprovable:
     reason: table
   - path: tests/go/repo/vaultcheck_test.go
     reason: table
+  - test: TestSemgrepPathsAreReadAsGitignoreLines
+    reason: table
+  - test: TestAcceptedInReadsSemgrepsOkMark
+    reason: table
+  - test: TestOutputOfKeepsOneTestsLinesFromAnInterleavedRun
+    reason: table
   # The reader behind TestNoCodePicksASiteByName, whose own ledger entry
   # proves the guard. Its table holds the values it must find and the prose it
   # must leave.
-  - test: TestSiteValuesFindsValuesAndLeavesProse
-    reason: table
   # The reader behind TestTheContractorWritesAResourceAddressInOnePlace, which
   # its own ledger entry proves.
-  - test: TestAddressLiteralsAreFoundAndProseIsNot
-    reason: table
   # The transcript shapes. A pattern that stops matching reports nothing and
   # looks exactly like a repository with no transcripts in it, so the shapes
   # are held to a table of their own - nineteen rows, each a line that must or
@@ -175,10 +177,12 @@ unprovable:
     reason: table
   # The reader behind TestAFileReachesOutsideItsDirectoryFromTheTop, which its own
   # ledger entry proves.
-  - test: TestClimbsWrongFindsEveryOtherWayUp
-    reason: table
   # The readers behind the two custom-block guards, which their own ledger
   # entries prove. Their tables hold each case they must find and must leave.
+  - test: TestDanglingInFindsWhatIsGoneAndLeavesWhatIsThere
+    reason: table
+  - test: TestTheOwedCeilingFitsTheDebtExactly
+    reason: table
   - test: TestDuplicateFunctionsFindsCopiesAcrossPackagesOnly
     reason: table
   - test: TestApplicationShapeProblemsRefusesWhatIsNotTheShape
@@ -310,19 +314,11 @@ unprovable:
   # sprint, and doing it badly would produce entries that prove nothing.
   - test: TestAWorkstationWithNoOverlayKeyIsRefused
     owed: true
-  - test: TestBreakGlassIdentityIsNeverReferencedByOpenTofu
-    owed: true
-  - test: TestBreakGlassIdentityIsNotInTheConfigTemplate
-    owed: true
-  - test: TestBreakGlassIdentityIsReadOnlyByTheRestorePath
-    owed: true
   - test: TestEveryPhaseHasASourceFileNamedAfterIt
     owed: true
   - test: TestEverySensitivePathExists
     owed: true
   - test: TestEverySensitivePathExplainsItself
-    owed: true
-  - test: TestEveryVaultReferenceInTheTemplateIsWrapped
     owed: true
   - test: TestGuardAndSignedpushAgreeOnTheScratchRef
     owed: true
@@ -331,10 +327,6 @@ unprovable:
   - test: TestMarkedRepliesReachTheLocalTable
     owed: true
   - test: TestNoCompiledBinaryIsTracked
-    owed: true
-  - test: TestNoGitCredentialIsCreatedForFlux
-    owed: true
-  - test: TestNothingReadsAValueFromTheHealthGate
     owed: true
   - test: TestNothingRunsTofuBeforeAttach
     owed: true
@@ -357,8 +349,6 @@ unprovable:
   - test: TestSetupConfiguresCommitSigning
     owed: true
   - test: TestTheCodeLawsAreCoveredBySensitivePaths
-    owed: true
-  - test: TestTheLabelMechanismIsGone
     owed: true
   - test: TestTheRoutingFixIsAppliedPerHostNotPerSite
     owed: true
@@ -419,6 +409,13 @@ unprovable:
 # An entry here is an exemption, so it costs what an exemption costs: a reason
 # somebody can read later.
 comment_dependent:
+  - test: TestEveryProofStillFindsItsPlace
+    reason: >
+      Its subject is where each proof's find lands in the file as written,
+      which is the text the ledger applies the mutation to. A find may take in
+      the comment beside the code it breaks, and with the comments stripped
+      such a find has nowhere to land. That moves the anchor, not the guard's
+      verdict on any code.
   - test: TestEverySilencedFindingNamesTheGuardThatProvesItMayBe
     reason: >
       The comment is its subject. A tool's own configuration cannot carry a

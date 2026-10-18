@@ -1,0 +1,8 @@
+guard: TestEveryPlaceACodeRuleReadsIsProved
+file: policy/semgrep/terratest.yml
+find: "      exclude: [/tests/go/harness/]\n"
+replace: "      exclude: [/tests/go/harness/, /tests/go/integration/]\n"
+mentions: "excludes /tests/go/integration/, and no proof takes the exclusion out"
+why: >
+  An exclusion is an exemption. One nothing shows to be needed is room for
+  the fault to sit in unread.

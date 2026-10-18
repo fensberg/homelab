@@ -365,7 +365,7 @@ type Database struct {
 // is exactly why this one field can live where the per-site credentials cannot.
 //
 // Only the public half appears here. The private identity is deliberately
-// absent from the config contract, and tests/go/repo/breakglass_test.go
+// absent from the config contract, and policy/semgrep/breakglass-opentofu.yml
 // enforces that it never appears in OpenTofu either.
 type StateBackup struct {
 	Recipient string `json:"recipient"`

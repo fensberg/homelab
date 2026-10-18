@@ -81,11 +81,11 @@ deny contains msg if {
 
 # No workflow restates a version that scripts/versions.env pins.
 #
-# WHAT THIS GUARDS. versions.env has claimed this test existed since it was
-# written - "tests/go/repo/versions_test.go asserts that no consumer restates a
-# key" - and it did not (#165). Four workflows carried their own
-# `go-version: "1.26.7"`, including deploy-infrastructure, the lane that
-# reaches real hardware. They agreed with the pin that day. Nothing kept them
+# WHAT THIS GUARDS. versions.env claimed, from the day it was written, that a
+# test asserted no consumer restates a key - and none did (#165). Four
+# workflows carried their own `go-version: "1.26.7"`, including
+# deploy-infrastructure, the lane that reaches real hardware. They agreed with
+# the pin that day. Nothing kept them
 # agreeing, and the same drift had already happened once here: CI validated on
 # OpenTofu 1.10.6 for as long as the pin said 1.12.6, because a workflow
 # declared its own copy.

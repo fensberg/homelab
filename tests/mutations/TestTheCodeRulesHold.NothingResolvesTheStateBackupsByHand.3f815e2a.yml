@@ -1,0 +1,12 @@
+guard: TestTheCodeRulesHold
+file: scripts/contractor/internal/phases/teardown.go
+reads_source: true
+find: '	database, err := config.BucketByKey("database")'
+replace: "	_ = config.LatestStateBackupPath(\"x\")\n\tdatabase, err := config.BucketByKey(\"database\")"
+mentions: "building the route to the state backups itself"
+why: >
+  reads_source, for the same reason.
+
+  A third reader of the state backups, in a file neither of the two named
+  ones - which is exactly what the guard above cannot see, and why this
+  one walks every Go file.

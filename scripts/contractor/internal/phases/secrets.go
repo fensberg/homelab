@@ -24,7 +24,7 @@ import (
 // so this program cannot read it even by mistake: a restore takes it piped on
 // stdin from a person holding the estate token. BackupIdentityRef exists only
 // so the program can tell that person where it is, and no OpenTofu file may
-// name it (tests/go/repo/breakglass_test.go).
+// name it (policy/semgrep/breakglass-opentofu.yml).
 var (
 	BackupRecipientRef = "op://" + vaults.EstateShared + "/state_backup/recipient"
 	BackupIdentityRef  = "op://" + vaults.Estate + "/state_backup/identity"
