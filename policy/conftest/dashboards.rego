@@ -15,6 +15,7 @@
 # monitoring becomes decoration - this epoch's own words for it.
 package rules.dashboards
 
+import data.lib
 import rego.v1
 
 substituted := `\$(\{|[A-Za-z_])\w*`
@@ -22,8 +23,7 @@ substituted := `\$(\{|[A-Za-z_])\w*`
 # A dashboard is a JSON file Flux applies that has panels and a schema
 # version.
 dashboards contains f if {
-	some f in input
-	startswith(f.path, "clusters/")
+	some f in lib.under("clusters/")
 	endswith(f.path, ".json")
 	is_object(f.contents)
 	f.contents.panels
@@ -100,8 +100,7 @@ deny contains msg if {
 # The kustomization beside a dashboard's directory lists it, and labels what
 # it generates for the sidecar that hands dashboards to Grafana.
 listing(f) := k if {
-	some k in input
-	k.path == sprintf("%s/kustomization.yaml", [dir(dir(f.path))])
+	some k in lib.at(sprintf("%s/kustomization.yaml", [dir(dir(f.path))]))
 }
 
 deny contains msg if {

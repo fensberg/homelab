@@ -15,7 +15,7 @@ package rules.suppliers
 import data.lib
 import rego.v1
 
-list := [f.contents | some f in input; f.path == "scripts/approved-suppliers.yml"][0]
+list := [f.contents | some f in lib.at("scripts/approved-suppliers.yml")][0]
 
 deny contains msg if {
 	count(object.get(list, "registries", [])) == 0
@@ -79,8 +79,7 @@ deny contains msg if {
 dir(path) := concat("/", array.slice(parts, 0, count(parts) - 1)) if parts := split(path, "/")
 
 flux contains f if {
-	some f in input
-	startswith(f.path, "clusters/")
+	some f in lib.under("clusters/")
 	endswith(f.path, ".yaml")
 }
 
@@ -111,8 +110,7 @@ remote contains [path, ref] if {
 }
 
 overlay_pins(at, name) if {
-	some k in input
-	k.path == sprintf("%s/kustomization.yaml", [at])
+	some k in lib.at(sprintf("%s/kustomization.yaml", [at]))
 	some image in object.get(k.contents, "images", [])
 	image.name == name
 	startswith(object.get(image, "digest", ""), "sha256:")
@@ -158,7 +156,7 @@ deny contains msg if {
 
 # The repository's own address, from the source its Flux reads it from.
 own := sprintf("%s/%s", [m[1], m[2]]) if {
-	some f in input
+	some f in lib.objects
 	f.contents.kind == "GitRepository"
 	f.contents.metadata.name == "flux-system"
 	some m in regex.find_all_string_submatch_n(`^https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?$`, f.contents.spec.url, 1)
@@ -235,7 +233,7 @@ deny contains msg if {
 # would look exactly like the seven that belong; the only reason this was ever
 # looked at is that somebody saw a strange directory and asked.
 
-hook_repos := [r | some f in input; f.path == ".pre-commit-config.yaml"; some r in object.get(f.contents, "repos", []); r.repo != "local"]
+hook_repos := [r | some f in lib.at(".pre-commit-config.yaml"); some r in object.get(f.contents, "repos", []); r.repo != "local"]
 
 declared_hooks := {h.repo: object.get(h, "reason", "") | some h in object.get(list, "hooks", [])}
 
@@ -298,8 +296,7 @@ deny contains msg if {
 # required; a local module's "./x" and a registry module's three parts are
 # not one.
 required contains [f.path, source] if {
-	some f in input
-	endswith(f.path, ".tf")
+	some f in lib.opentofu
 	walk(f.contents, [path, source])
 	count(path) > 0
 	path[count(path) - 1] == "source"

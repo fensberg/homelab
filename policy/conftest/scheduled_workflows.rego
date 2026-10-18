@@ -38,7 +38,7 @@ scheduled contains basename(file) if {
 	"schedule" in lib.triggers(doc)
 }
 
-object_of(kind) := [f | some f in input; f.contents.kind == kind; f.contents.metadata.name == name]
+object_of(kind) := [f | some f in lib.objects; f.contents.kind == kind; f.contents.metadata.name == name]
 
 scrape := object_of("ScrapeConfig")
 

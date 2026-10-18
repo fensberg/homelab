@@ -18,8 +18,7 @@ declared := "required_checks"
 # lists is every list declared under that name in a locals block; one worked
 # out from something else is not a list here, and is not read.
 lists contains [f.path, list] if {
-	some f in input
-	endswith(f.path, ".tf")
+	some f in lib.opentofu
 	some block in object.get(f.contents, "locals", [])
 	list := block[declared]
 	is_array(list)

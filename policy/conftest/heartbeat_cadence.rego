@@ -15,11 +15,12 @@
 # refused, because a look landing a moment early waits a whole look more.
 package rules.heartbeat_cadence
 
+import data.lib
 import rego.v1
 
 receiver := "watchman"
 
-stacks := [f | some f in input; f.contents.kind == "HelmRelease"; f.contents.metadata.name == "kube-prometheus-stack"]
+stacks := [f | some f in lib.objects; f.contents.kind == "HelmRelease"; f.contents.metadata.name == "kube-prometheus-stack"]
 
 routes contains [f.path, r] if {
 	some f in stacks
@@ -28,8 +29,7 @@ routes contains [f.path, r] if {
 }
 
 declared contains [f.path, n] if {
-	some f in input
-	endswith(f.path, ".tf")
+	some f in lib.opentofu
 	some block in object.get(f.contents, "locals", [])
 	n := block.looks_every_minutes
 }

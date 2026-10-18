@@ -14,13 +14,13 @@
 # or tears an estate down - which is to say, at the two worst moments.
 package rules.health_gate
 
+import data.lib
 import rego.v1
 
 machines := "proxmox_virtual_environment_vm.talos_cp"
 
 gates contains [f.path, name, block] if {
-	some f in input
-	endswith(f.path, ".tf")
+	some f in lib.opentofu
 	some name, blocks in object.get(object.get(f.contents, "data", {}), "talos_cluster_health", {})
 	some block in blocks
 }

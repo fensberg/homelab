@@ -16,11 +16,12 @@
 # (docs/epochs/11-black-box-white-glove.md).
 package rules.served_in_the_clear
 
+import data.lib
 import rego.v1
 
 # What a device reaches: a Service that sets its own address.
 served contains [f.path, f.contents.metadata.name, object.get(f.contents.spec, "ports", [])] if {
-	some f in input
+	some f in lib.objects
 	f.contents.kind == "Service"
 	address := object.get(f.contents.spec, "clusterIP", "")
 	not address in {"", "None"}

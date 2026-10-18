@@ -18,10 +18,11 @@
 # quietly and shows as a sustained Ready=False, which monitoring can see.
 package rules.helmrelease_remediation
 
+import data.lib
 import rego.v1
 
 releases contains f if {
-	some f in input
+	some f in lib.objects
 	f.contents.kind == "HelmRelease"
 }
 

@@ -28,13 +28,12 @@ package rules.runners
 import data.lib
 import rego.v1
 
-releases(name) := [f | some f in input; f.contents.kind == "HelmRelease"; f.contents.metadata.name == name]
+releases(name) := [f | some f in lib.objects; f.contents.kind == "HelmRelease"; f.contents.metadata.name == name]
 
-sets := [f | some f in input; f.contents.kind == "HelmRelease"; object.get(f.contents, ["spec", "chart", "spec", "chart"], "") == "gha-runner-scale-set"]
+sets := [f | some f in lib.objects; f.contents.kind == "HelmRelease"; object.get(f.contents, ["spec", "chart", "spec", "chart"], "") == "gha-runner-scale-set"]
 
 local(name) := {[f.path, v] |
-	some f in input
-	endswith(f.path, ".tf")
+	some f in lib.opentofu
 	some block in object.get(f.contents, "locals", [])
 	v := block[name]
 	is_string(v)
@@ -42,8 +41,7 @@ local(name) := {[f.path, v] |
 
 # What one file says, in every document of it.
 says(path, want) if {
-	some f in input
-	f.path == path
+	some f in lib.at(path)
 	walk(f.contents, [_, v])
 	is_string(v)
 	contains(v, want)

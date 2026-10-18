@@ -13,9 +13,10 @@
 # follows it.
 package rules.toolshed
 
+import data.lib
 import rego.v1
 
-taskfile := [f | some f in input; f.path == "taskfile.yml"]
+taskfile := [f | some f in lib.at("taskfile.yml")]
 
 targets contains m[1] if {
 	some f in taskfile
@@ -37,8 +38,7 @@ deny contains msg if {
 }
 
 ignored contains entry.Value if {
-	some f in input
-	f.path == ".gitignore"
+	some f in lib.at(".gitignore")
 	some entry in f.contents
 	entry.Kind == "Path"
 }

@@ -12,9 +12,10 @@
 # by management/estate's own suite.
 package rules.one_owner_per_layer
 
+import data.lib
 import rego.v1
 
-object_named(kind, name) := [f | some f in input; f.contents.kind == kind; f.contents.metadata.name == name]
+object_named(kind, name) := [f | some f in lib.objects; f.contents.kind == kind; f.contents.metadata.name == name]
 
 # The network does not route the web.
 

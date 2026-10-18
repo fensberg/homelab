@@ -16,13 +16,13 @@
 # so a root or a module at any depth is held to it without being named.
 package rules.root_paths
 
+import data.lib
 import rego.v1
 
 dir_depth(path) := count(split(path, "/")) - 1
 
 climbs contains [f.path, m[0], count(split(m[1], "/..")) - 1] if {
-	some f in input
-	endswith(f.path, ".tf")
+	some f in lib.opentofu
 	walk(f.contents, [_, v])
 	is_string(v)
 	some m in regex.find_all_string_submatch_n(`\$\{path\.module\}((?:/\.\.)+)`, v, -1)

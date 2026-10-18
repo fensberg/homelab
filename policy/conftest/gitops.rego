@@ -20,10 +20,11 @@
 # indented into some other block cannot pass by not matching a regexp.
 package rules.gitops
 
+import data.lib
 import rego.v1
 
 sources contains f if {
-	some f in input
+	some f in lib.objects
 	f.contents.kind == "GitRepository"
 	not endswith(f.path, "gotk-components.yaml")
 }
@@ -53,7 +54,7 @@ deny contains msg if {
 # whose name suggests a credential is refused, whatever the reference behind
 # it looks like.
 
-template := [f | some f in input; f.path == "config/management.tpl.json"]
+template := [f | some f in lib.at("config/management.tpl.json")]
 
 deny contains msg if {
 	not template[0].contents.source_control

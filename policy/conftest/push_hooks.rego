@@ -26,11 +26,12 @@
 # verdict, which is a guard broken in the direction of noise.
 package rules.push_hooks
 
+import data.lib
 import rego.v1
 
 guard := "enforce-push"
 
-config := [f | some f in input; f.path == ".pre-commit-config.yaml"]
+config := [f | some f in lib.at(".pre-commit-config.yaml")]
 
 hooks := [hook | some f in config; some repo in object.get(f.contents, "repos", []); some hook in object.get(repo, "hooks", [])]
 
@@ -67,7 +68,7 @@ deny contains msg if {
 	msg := sprintf("pre-push hooks run in order %v; %s should be first so a doomed push fails fast instead of after validate and test", [pre_push, guard])
 }
 
-tasks := object.get([f | some f in input; f.path == "taskfile.yml"][0].contents, "tasks", {})
+tasks := object.get([f | some f in lib.at("taskfile.yml")][0].contents, "tasks", {})
 
 invoked contains [hook.id, fields[1]] if {
 	some hook in hooks

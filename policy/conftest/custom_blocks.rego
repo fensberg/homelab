@@ -15,6 +15,7 @@
 # are guards in tests/go/repo.)
 package rules.custom_blocks
 
+import data.lib
 import rego.v1
 
 declarations := "tests/custom-blocks.yml"
@@ -22,9 +23,7 @@ declarations := "tests/custom-blocks.yml"
 dir(path) := concat("/", array.slice(parts, 0, count(parts) - 1)) if parts := split(path, "/")
 
 tofu contains f if {
-	some f in input
-	endswith(f.path, ".tf")
-	not contains(f.path, "/tests/")
+	some f in lib.opentofu_outside_tests
 }
 
 roots contains dir(f.path) if {
@@ -39,7 +38,7 @@ found contains sprintf("%s.%s", [type, name]) if {
 	some name, _ in named
 }
 
-declared := [d | some f in input; f.path == declarations; some d in object.get(f.contents, "opentofu", [])]
+declared := [d | some f in lib.at(declarations); some d in object.get(f.contents, "opentofu", [])]
 
 deny contains msg if {
 	count(roots) < 3

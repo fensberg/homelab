@@ -24,12 +24,12 @@
 # written as a reference.
 package rules.flux_source_secret
 
+import data.lib
 import rego.v1
 
 # The Flux tree, without Flux's own definitions, which are vendored verbatim.
 manifests contains f if {
-	some f in input
-	startswith(f.path, "clusters/")
+	some f in lib.under("clusters/")
 	not endswith(f.path, "gotk-components.yaml")
 	is_object(f.contents)
 }
@@ -43,8 +43,7 @@ named contains [f.path, ref.name] if {
 }
 
 created contains name if {
-	some f in input
-	endswith(f.path, ".tf")
+	some f in lib.opentofu
 	some _, blocks in object.get(object.get(f.contents, "resource", {}), "kubernetes_secret", {})
 	some block in blocks
 	some m in block.metadata

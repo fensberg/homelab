@@ -4,9 +4,58 @@
 # {path, contents}, with each document of a multi-document YAML file an entry
 # of its own under the same path. What a rule needs is found here by what a
 # file is, not by a list of paths.
+#
+# THE ONLY READER OF THE INPUT. A rule reads its files through the selectors
+# here and touches the input nowhere else, so every place a rule reads is a
+# selector a guard can name and prove (TestOnlyTheSelectorsReadTheInput,
+# agreed 2026-10-18).
 package lib
 
 import rego.v1
+
+# objects is every Kubernetes object: each document that is a mapping with a
+# kind, wherever it was read from.
+objects contains f if {
+	some f in input
+	is_object(f.contents)
+	is_string(f.contents.kind)
+}
+
+# opentofu is every OpenTofu file.
+opentofu contains f if {
+	some f in input
+	endswith(f.path, ".tf")
+}
+
+# opentofu_outside_tests is every OpenTofu file but those inside a directory
+# named tests: a module's tofu tests and their fixtures, which declare things
+# to be refused.
+opentofu_outside_tests contains f if {
+	some f in opentofu
+	not contains(f.path, "/tests/")
+}
+
+# dockerfiles is every Dockerfile, as Conftest reads one: its instructions in
+# order, each with the stage it is in.
+dockerfiles contains f if {
+	some f in input
+	is_array(f.contents)
+	count(f.contents) > 0
+	every i in f.contents {
+		is_object(i)
+		i.Cmd
+	}
+}
+
+# at is every document of the file at a path, from the repository's top.
+at(path) := [f | some f in input; f.path == path]
+
+# under is every document of every file beneath a directory, given with its
+# trailing slash.
+under(prefix) := [f | some f in input; startswith(f.path, prefix)]
+
+# named is every document of every file of one name, in whatever directory.
+named(name) := [f | some f in input; endswith(f.path, sprintf("/%s", [name]))]
 
 # workflows is every workflow, by its path: a YAML file directly under
 # .github/workflows.

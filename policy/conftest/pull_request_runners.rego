@@ -27,14 +27,13 @@ import data.lib
 import rego.v1
 
 pools := {sprintf("pr-%s-${{ vars.pull_request_runners_site }}", [name]) |
-	some f in input
-	f.path == "scripts/approved-suppliers.yml"
+	some f in lib.at("scripts/approved-suppliers.yml")
 	some name in f.contents.pull_request_pools.names
 }
 
 # The management pool, by the runner scale set that is it, for the message.
 management_pool := name if {
-	some f in input
+	some f in lib.objects
 	f.contents.kind == "HelmRelease"
 	f.contents.metadata.name == "self-hosted"
 	name := f.contents.spec.values.runnerScaleSetName
