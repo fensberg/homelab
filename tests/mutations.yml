@@ -151,6 +151,8 @@ unprovable:
     reason: table
   - test: TestAcceptedInReadsSemgrepsOkMark
     reason: table
+  - test: TestOutputOfKeepsOneTestsLinesFromAnInterleavedRun
+    reason: table
   # The reader behind TestNoCodePicksASiteByName, whose own ledger entry
   # proves the guard. Its table holds the values it must find and the prose it
   # must leave.

@@ -551,6 +551,69 @@ func allVerdicts(bin, root string) (map[string]bool, []byte) {
 	return verdicts, out
 }
 
+// outputOf is what one test said in a verbose run of many. Tests that run
+// beside each other are interleaved, and Go says whose each stretch is with a
+// line of its own - === RUN, CONT, NAME or PAUSE, and the verdict - so a line
+// belongs to the test the last such line named, or to one of its subtests.
+func outputOf(out []byte, name string) string {
+	var said []string
+	current := ""
+	for _, line := range strings.Split(string(out), "\n") {
+		if named, ok := testNamedBy(strings.TrimSpace(line)); ok {
+			current = named
+		}
+		if current == name || strings.HasPrefix(current, name+"/") {
+			said = append(said, line)
+		}
+	}
+	return strings.Join(said, "\n")
+}
+
+// testNamedBy is the test a line of Go's verbose output hands the stretch
+// after it to, if it is such a line.
+func testNamedBy(line string) (string, bool) {
+	for _, marker := range []string{"=== RUN", "=== CONT", "=== NAME", "=== PAUSE", "--- FAIL:", "--- PASS:", "--- SKIP:"} {
+		if rest, ok := strings.CutPrefix(line, marker); ok {
+			name, _, _ := strings.Cut(strings.TrimSpace(rest), " ")
+			return name, name != ""
+		}
+	}
+	return "", false
+}
+
+func TestOutputOfKeepsOneTestsLinesFromAnInterleavedRun(t *testing.T) {
+	out := []byte(strings.Join([]string{
+		"=== RUN   TestA",
+		"=== PAUSE TestA",
+		"=== RUN   TestB",
+		"    b_test.go:1: from B",
+		"=== CONT  TestA",
+		"    a_test.go:1: from A",
+		"=== RUN   TestA/sub",
+		"    a_test.go:2: from A's subtest",
+		"=== NAME  TestB",
+		"    b_test.go:2: from B again",
+		"--- FAIL: TestA (0.01s)",
+		"    --- FAIL: TestA/sub (0.00s)",
+		"--- PASS: TestB (0.02s)",
+		"FAIL",
+	}, "\n"))
+	got := outputOf(out, "TestA")
+	for _, want := range []string{"from A", "from A's subtest", "--- FAIL: TestA (0.01s)", "--- FAIL: TestA/sub"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("TestA's lines lack %q:\n%s", want, got)
+		}
+	}
+	for _, not := range []string{"from B", "--- PASS: TestB"} {
+		if strings.Contains(got, not) {
+			t.Errorf("TestA's lines hold TestB's %q:\n%s", not, got)
+		}
+	}
+	if outputOf(out, "TestC") != "" {
+		t.Error("a test that never ran said something")
+	}
+}
+
 func field(line, prefix string) string {
 	rest := strings.TrimPrefix(line, prefix)
 	if i := strings.Index(rest, " "); i > 0 {

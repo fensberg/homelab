@@ -92,7 +92,10 @@ func TestAnApplicationIsRemovedByDeletingItsDirectoryAndItsBlocks(t *testing.T) 
 				}
 				t.Errorf("with %s removed, %s\n\nA proof about the estate breaks a file of the estate's, or plants one; a proof that needs an application's file belongs in that application's own ledger.", a.Name, problem)
 			}
-			after := runAll(t, bin, scratch)
+			after, afterOutput := allVerdicts(bin, scratch)
+			if len(after) == 0 {
+				t.Fatalf("no test verdict was parsed from the run against the copy without %s:\n%s", a.Name, afterOutput)
+			}
 			was := <-asItIs
 			if len(was.verdicts) == 0 {
 				t.Fatalf("no test verdict was parsed from the run against the copy as it is:\n%s", was.output)
@@ -105,11 +108,16 @@ func TestAnApplicationIsRemovedByDeletingItsDirectoryAndItsBlocks(t *testing.T) 
 				}
 			}
 			sort.Strings(broke)
+			// What the test said in the run that failed it, and then alone in
+			// the same copy. Only the second was shown, and on #779 it was a
+			// pass: the failure had been said in a run whose output was thrown
+			// away, so the report named a broken test and showed it passing.
 			for _, name := range broke {
-				_, out := runGuard(t, bin, scratch, strings.SplitN(name, "/", 2)[0])
+				_, alone := runGuard(t, bin, scratch, strings.SplitN(name, "/", 2)[0])
 				t.Errorf("%s passes with %s in the repository and fails with only its directory and its sites' blocks removed.\n\n"+
 					"Something outside %s depends on it. Move that into the application's directory, or make it read what "+
-					"applications declare instead of knowing this one.\n\n%s", name, a.Name, a.Root, out)
+					"applications declare instead of knowing this one.\n\nBeside every other test, it said:\n\n%s\n\nRun alone in the same copy, it said:\n\n%s",
+					name, a.Name, a.Root, outputOf(afterOutput, name), alone)
 			}
 		})
 	}
