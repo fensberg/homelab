@@ -1,4 +1,5 @@
 guard: TestTheCodeRulesHold
+rule: the-vault-check-never-fetches-or-writes-a-secret
 file: scripts/contractor/internal/phases/checkvault.go
 reads_source: true
 find: "	if !onepassword.SignedIn() {"

@@ -1,4 +1,5 @@
 guard: TestTheCodeRulesHold
+rule: no-program-picks-a-site-by-name
 file: policy/semgrep/site-names-code.yml
 find: "          regex: .*\\bsite0\\b\n    paths:\n      exclude: [\"*_test.go\"]\n"
 replace: "          regex: .*\\bsite0\\b\n"

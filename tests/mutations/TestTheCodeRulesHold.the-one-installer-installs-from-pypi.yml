@@ -1,4 +1,5 @@
 guard: TestTheCodeRulesHold
+rule: nothing-installs-from-pypi-outside-take-delivery
 file: policy/semgrep/deliveries.yml
 find: "        - /scripts/take-delivery.sh\n        - /tests/mutations/\n"
 replace: "        - /tests/mutations/\n"

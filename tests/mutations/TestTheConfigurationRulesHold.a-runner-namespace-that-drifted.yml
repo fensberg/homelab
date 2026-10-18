@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: runners
 file: modules/infrastructure/platform/variables.tf
 find: '  runners_namespace       = "arc-runners"'
 replace: '  runners_namespace       = "arc-runners-moved"'

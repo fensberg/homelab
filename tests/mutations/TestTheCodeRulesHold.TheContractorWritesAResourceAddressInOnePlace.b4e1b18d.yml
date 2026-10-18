@@ -1,4 +1,5 @@
 guard: TestTheCodeRulesHold
+rule: the-contractor-writes-a-resource-address-in-one-place
 file: scripts/contractor/internal/phases/overlay.go
 find: "const overlayKeyAddress = steps.OverlayKey"
 replace: 'const overlayKeyAddress = "tailscale_tailnet_key.hypervisor[0]"'

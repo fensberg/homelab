@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: coverage_shim
 file: tests/coverage-baseline.json
 # Anchored on the KEY, not on its number - the third entry this session to
 # break because a coverage figure improved, which is #328's complaint in

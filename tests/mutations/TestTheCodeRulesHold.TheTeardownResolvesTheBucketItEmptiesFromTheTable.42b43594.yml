@@ -1,4 +1,5 @@
 guard: TestTheCodeRulesHold
+rule: the-teardown-resolves-the-bucket-it-empties-from-the-table
 file: scripts/contractor/internal/phases/teardown.go
 reads_source: true
 find: 'database, err := config.BucketByKey("database")'

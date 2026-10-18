@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: sensitive_paths
 file: .github/workflows/sensitive-paths.yml
 find: "          FILES: ${{ steps.sensor.outputs.files }}\n"
 replace: "          FILES: \"\"\n"

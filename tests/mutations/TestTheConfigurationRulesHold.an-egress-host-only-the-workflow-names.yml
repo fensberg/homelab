@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: suppliers
 file: .github/workflows/sensitive-paths.yml
 find: "          allowed-endpoints: >\n            api.github.com:443\n"
 replace: "          allowed-endpoints: >\n            api.github.com:443\n            exfil.example.invalid:443\n"

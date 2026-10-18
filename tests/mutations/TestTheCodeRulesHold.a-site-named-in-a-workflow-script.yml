@@ -1,4 +1,5 @@
 guard: TestTheCodeRulesHold
+rule: no-workflow-or-task-picks-a-site-by-name
 file: .github/workflows/github-script/env-reaches-script.js
 find: "module.exports = async ({ core }) => {\n"
 replace: "const site = 'site0';\nmodule.exports = async ({ core }) => {\n"

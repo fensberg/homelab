@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -48,7 +49,13 @@ type mutation struct {
 	Replace  string `yaml:"replace"`
 	Create   string `yaml:"create"`
 	Mentions string `yaml:"mentions"`
-	Why      string `yaml:"why"`
+	// Rule is, for a proof of the code or the configuration rules, the rule
+	// that must be among those refusing: a Semgrep rule's id, or the package
+	// of a Conftest rule under rules. Those harnesses run every rule at once,
+	// so a failure that mentions the right words could still be another
+	// rule's (#780).
+	Rule string `yaml:"rule"`
+	Why  string `yaml:"why"`
 	// ReadsSource opts a Go target in, for the one kind of guard the blanket
 	// refusal below gets wrong. See the refusal for why the default stays no.
 	ReadsSource bool `yaml:"reads_source"`
@@ -415,6 +422,11 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 					m.Guard, m.File, strings.TrimSpace(m.Find), strings.TrimSpace(m.Why))
 				return
 			}
+			if m.Rule != "" && !refusedBy(out, m.Guard, m.Rule) {
+				t.Errorf("%s failed, but %s is not among the rules that refused, and this entry "+
+					"names it.\n\nA proof of one rule that another satisfies shows nothing about "+
+					"the one it names.\n\n%s", m.Guard, m.Rule, out)
+			}
 			if !strings.Contains(out, m.Mentions) {
 				t.Errorf("%s failed, but not for the reason this entry claims: its "+
 					"output never mentions %q.\n\n"+
@@ -428,6 +440,117 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 				t.Errorf("%s failed with %s broken, but %s is not the test that failed.\n\n%s", m.Guard, m.File, m.Test, out)
 			}
 		})
+	}
+}
+
+// The harnesses that run many rules at once, and where each keeps them.
+const (
+	codeRulesHarness          = "TestTheCodeRulesHold"
+	configurationRulesHarness = "TestTheConfigurationRulesHold"
+)
+
+// ruleHarness is where the rules a guard runs are kept, or "" when the guard
+// runs none.
+func ruleHarness(guard string) string {
+	switch guard {
+	case codeRulesHarness:
+		return semgrepRules
+	case configurationRulesHarness:
+		return conftestRules
+	}
+	return ""
+}
+
+// rulesDeclaredIn is every rule a tree declares in one harness's directory,
+// by the name a proof gives it: a Semgrep rule's id, or a Conftest rule's
+// package under rules.
+func rulesDeclaredIn(root, dir string) (map[string]bool, error) {
+	declared := map[string]bool{}
+	entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(dir)))
+	if err != nil {
+		return nil, fmt.Errorf("%s cannot be read, so no proof's rule can be found there: %v", dir, err)
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue // the examples, which declare no rule
+		}
+		file := e.Name()
+		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(dir), file))
+		if err != nil {
+			return nil, fmt.Errorf("reading %s/%s: %v", dir, file, err)
+		}
+		switch {
+		case strings.HasSuffix(file, ".yml"):
+			var doc struct {
+				Rules []struct {
+					ID string `yaml:"id"`
+				} `yaml:"rules"`
+			}
+			if err := yaml.Unmarshal(body, &doc); err != nil {
+				return nil, fmt.Errorf("%s is not a rule file that can be read: %v", file, err)
+			}
+			for _, r := range doc.Rules {
+				declared[r.ID] = true
+			}
+		case strings.HasSuffix(file, ".rego") && !strings.HasSuffix(file, "_test.rego"):
+			if m := packageClause.FindStringSubmatch(string(body)); m != nil {
+				if name, ok := strings.CutPrefix(m[1], "rules."); ok {
+					declared[name] = true
+				}
+			}
+		}
+	}
+	if len(declared) == 0 {
+		return nil, fmt.Errorf("no rule was read from %s, so no proof's rule can be found there", dir)
+	}
+	return declared, nil
+}
+
+// refusedBy reports whether a rule harness's report says the named rule
+// refused. Each harness writes a refusal with the rule's name in a place of
+// its own: the code rules as `<file>:<line>: <id>: <message>`, or as
+// `<id> found nothing` for a rule whose finds are expected; the configuration
+// rules as Conftest's `FAIL - <file> - main - <package>: <message>`.
+func refusedBy(out, guard, rule string) bool {
+	r := regexp.QuoteMeta(rule)
+	var forms []string
+	switch guard {
+	case codeRulesHarness:
+		forms = []string{`(?m)^\s+\S+:\d+: ` + r + `: `, `(?m)^\s+\S+:\d+: ` + r + ` found nothing, `}
+	case configurationRulesHarness:
+		forms = []string{`(?m)^\s*FAIL - .* - main - ` + r + `: `}
+	}
+	for _, f := range forms {
+		if regexp.MustCompile(f).MatchString(out) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestRefusedByReadsTheRuleFromEachHarnesssReport(t *testing.T) {
+	semgrep := "    code_rules_test.go:169: a code rule refuses the repository:\n\n" +
+		"          taskfile.yml:130: no-workflow-or-task-picks-a-site-by-name: names a site as a value.\n" +
+		"    code_rules_test.go:154: the-teardown-resolves-the-bucket found nothing, and teardown.go does not\n"
+	conftest := "    configuration_rules_test.go:101: a configuration rule refuses the repository:\n\n" +
+		"          FAIL - Combined - main - suppliers: clusters/x.yaml: chart source is not an approved supplier\n"
+	for _, c := range []struct {
+		out, guard, rule string
+		want             bool
+	}{
+		{semgrep, codeRulesHarness, "no-workflow-or-task-picks-a-site-by-name", true},
+		{semgrep, codeRulesHarness, "the-teardown-resolves-the-bucket", true},
+		{semgrep, codeRulesHarness, "no-program-picks-a-site-by-name", false},
+		{semgrep, codeRulesHarness, "site", false},
+		{conftest, configurationRulesHarness, "suppliers", true},
+		{conftest, configurationRulesHarness, "flux_source_secret", false},
+		{conftest, configurationRulesHarness, "approved", false},
+		{conftest, codeRulesHarness, "suppliers", false},
+		{semgrep, "TestSomethingElse", "no-workflow-or-task-picks-a-site-by-name", false},
+	} {
+		if got := refusedBy(c.out, c.guard, c.rule); got != c.want {
+			t.Errorf("refusedBy(%s, %q) = %v, want %v", c.guard, c.rule, got, c.want)
+		}
 	}
 }
 
@@ -747,6 +870,13 @@ func placeProblems(root string, m mutation) []string {
 			struct{ field, value string }{"find", m.Find},
 			struct{ field, value string }{"replace", m.Replace})
 	}
+	harness := ruleHarness(m.Guard)
+	if harness != "" {
+		required = append(required, struct{ field, value string }{"rule", m.Rule})
+	} else if m.Rule != "" {
+		return []string{fmt.Sprintf("this entry names the rule %s, and %s runs no rules; only a proof of %s or %s names one",
+			m.Rule, m.Guard, codeRulesHarness, configurationRulesHarness)}
+	}
 	for _, missing := range required {
 		if strings.TrimSpace(missing.value) == "" {
 			return []string{fmt.Sprintf("this entry has no %s, so it proves nothing", missing.field)}
@@ -783,6 +913,18 @@ func placeProblems(root string, m mutation) []string {
 			"with `reads_source: true` - the scratch tree does reach a guard that "+
 			"opens source and inspects its text.",
 			m.File)}
+	}
+
+	if harness != "" {
+		declared, err := rulesDeclaredIn(root, harness)
+		if err != nil {
+			return []string{err.Error()}
+		}
+		if !declared[m.Rule] {
+			return []string{fmt.Sprintf("this entry names the rule %s, which %s does not declare. "+
+				"A rule renamed or retired leaves its proofs naming nothing: point each at the rule that refuses "+
+				"what it breaks.", m.Rule, harness)}
+		}
 	}
 
 	if m.creates() {

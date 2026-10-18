@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: image_bases
 file: .github/runner-image/Dockerfile
 find: "FROM ghcr.io/actions/actions-runner:${RUNNER_VERSION}@sha256:"
 replace: "FROM ghcr.io/actions/actions-runner:${RUNNER_VERSION}-sha256-"

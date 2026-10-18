@@ -1,4 +1,5 @@
 guard: TestTheCodeRulesHold
+rule: no-workflow-or-task-picks-a-site-by-name
 file: taskfile.yml
 find: '    desc: "Publish the current branch as GitHub-signed commits"'
 replace: '    desc: "Publish the current branch as GitHub-signed commits for site0"'

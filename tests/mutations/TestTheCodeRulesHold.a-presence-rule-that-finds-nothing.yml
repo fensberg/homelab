@@ -1,4 +1,5 @@
 guard: TestTheCodeRulesHold
+rule: a-connection-string-with-a-user-part-is-written-somewhere
 file: policy/semgrep/credentials.yml
 find: "    pattern-regex: (?m)^(?![ \\t]*(?:#|//)).*?[a-z][a-z0-9+.-]*://(?:%[sdvq]|\\$\\{[^}]+\\})"
 replace: "    pattern-regex: (?m)^(?![ \\t]*(?:#|//)).*?nothing-is-written-like-this://(?:%[sdvq]|\\$\\{[^}]+\\})"

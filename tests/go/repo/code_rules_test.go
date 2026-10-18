@@ -29,8 +29,8 @@ import (
 //
 // WHY THIS RUNS THEM. The mutation ledger proves every guard fails when what
 // it guards is broken, on a copy of the real tree. Running Semgrep from here
-// keeps that proof for every rule moved: a ledger entry names this test, and
-// the message of the rule that must refuse the mutation.
+// keeps that proof for every rule moved: a ledger entry names this test and
+// the rule that must refuse the mutation.
 //
 // NOT SILENCEABLE FROM INSIDE A FILE. Semgrep honours an inline ignore
 // comment, which the Logic Scan lane's registry rules are silenced with, each
@@ -289,10 +289,10 @@ func codeRules(t *testing.T) []codeRule {
 //     find what they read by its kind and its place, never from a list of the
 //     files there today, and only a new file shows it.
 //
-// A proof is the rule's when what it requires the failure to mention is part
-// of that rule's message and of no other's. The two site-name rules open with
-// the same words, and the rule over programs had no proof of its own: one
-// over a workflow said those words, and stood for both.
+// A proof is the rule's when it names the rule (rule:), and the ledger holds
+// it to that rule refusing. It was linked by its words once, and the two
+// site-name rules open with the same ones: the rule over programs had no
+// proof of its own, and one over a workflow stood for both (#780).
 func TestEveryPlaceACodeRuleReadsIsProved(t *testing.T) {
 	const harness = "TestTheCodeRulesHold"
 	var proofs []mutation
@@ -307,18 +307,7 @@ func TestEveryPlaceACodeRuleReadsIsProved(t *testing.T) {
 	rules := codeRules(t)
 	owned := map[string][]mutation{}
 	for _, m := range proofs {
-		var named []string
-		for _, r := range rules {
-			if r.Presence == "" && strings.TrimSpace(m.Mentions) != "" && strings.Contains(r.Message, m.Mentions) {
-				named = append(named, r.ID)
-			}
-		}
-		switch {
-		case len(named) > 1:
-			t.Errorf("the proof that breaks %s requires %q, which %s all say, so it shows none of them reads the file", m.File, m.Mentions, strings.Join(named, " and "))
-		case len(named) == 1:
-			owned[named[0]] = append(owned[named[0]], m)
-		}
+		owned[m.Rule] = append(owned[m.Rule], m)
 	}
 	for _, r := range rules {
 		if r.Presence != "" {

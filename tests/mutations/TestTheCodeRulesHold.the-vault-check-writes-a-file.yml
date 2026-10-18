@@ -1,4 +1,5 @@
 guard: TestTheCodeRulesHold
+rule: the-vault-check-writes-no-files
 file: scripts/contractor/config/vaultrefs.go
 reads_source: true
 find: "	leaves, err := flattenFile(templatePath)"

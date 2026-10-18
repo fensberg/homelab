@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: versions
 file: scripts/versions.env
 find: "RCLONE_DEB_VERSION=1.75.0"
 replace: "RCLONE_VERSION=1.75.0"

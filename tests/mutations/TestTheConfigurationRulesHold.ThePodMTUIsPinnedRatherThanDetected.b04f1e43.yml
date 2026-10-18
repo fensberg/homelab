@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: cni
 file: clusters/bootstrap/cilium-values.yaml
 find: "MTU: 1450"
 replace: "MTU: 1280"

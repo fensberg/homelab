@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: workflow_shape
 file: .github/workflows/zz-no-pipefail-shell.yml
 create: |
   name: planted

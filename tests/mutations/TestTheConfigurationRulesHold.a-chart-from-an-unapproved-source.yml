@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: suppliers
 file: clusters/core/infrastructure/controllers/cert-manager.yaml
 find: "  url: https://charts.jetstack.io"
 replace: "  url: https://charts.example.invalid"

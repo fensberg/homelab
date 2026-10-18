@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: root_paths
 file: modules/infrastructure/applications/declarations.tf
 find: '"${path.module}/../../../modules/applications/*/application.json"'
 replace: '"${path.module}/../../modules/applications/*/application.json"'

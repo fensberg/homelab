@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: gitops
 file: config/management.tpl.json
 find: "  \"source_control\": {\n"
 replace: "  \"source_control\": {\n    \"token\": \"{{ op://estate/source-control/token }}\",\n"

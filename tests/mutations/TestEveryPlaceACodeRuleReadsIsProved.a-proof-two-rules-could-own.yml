@@ -1,9 +1,0 @@
-guard: TestEveryPlaceACodeRuleReadsIsProved
-file: tests/mutations/TestTheCodeRulesHold.a-site-named-in-a-composite-action.yml
-find: 'mentions: "names a site as a value. Take the site from the config template instead - a workflow"'
-replace: 'mentions: "names a site as a value"'
-mentions: "all say, so it shows none of them reads the file"
-why: >
-  Both site-name rules open with these words. A proof that requires only
-  them is satisfied by either, and was how the rule over programs went
-  without a proof of its own.

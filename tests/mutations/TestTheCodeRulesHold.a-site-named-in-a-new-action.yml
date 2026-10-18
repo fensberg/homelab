@@ -1,4 +1,5 @@
 guard: TestTheCodeRulesHold
+rule: no-workflow-or-task-picks-a-site-by-name
 file: .github/workflows/a-new-action/action.yaml
 create: |
   name: "A new action"

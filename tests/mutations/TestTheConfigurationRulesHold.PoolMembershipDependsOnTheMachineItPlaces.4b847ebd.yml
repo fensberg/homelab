@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: pools
 file: modules/infrastructure/cluster/pools.tf
 find: "vm_id   = proxmox_virtual_environment_vm.talos_worker[each.key].vm_id"
 replace: "vm_id   = each.value.vm_id"

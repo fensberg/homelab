@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: action_commits
 file: .github/workflows/zz-second-copy-of-checkout.yml
 create: |
   name: planted

@@ -1,4 +1,5 @@
 guard: TestTheCodeRulesHold
+rule: the-break-glass-identity-is-read-only-by-the-restore-path
 file: scripts/contractor/internal/phases/hardware.go
 reads_source: true
 find: "	authority, err := onepassword.Read(hypervisorapi.AuthorityRef(ctx.Site))"

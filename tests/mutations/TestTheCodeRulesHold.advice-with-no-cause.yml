@@ -1,4 +1,5 @@
 guard: TestTheCodeRulesHold
+rule: no-phase-swallows-an-error-it-handles
 file: scripts/contractor/internal/phases/sterilize.go
 reads_source: true
 find: '			run.Warn("Could not migrate state back to local: " + err.Error())'

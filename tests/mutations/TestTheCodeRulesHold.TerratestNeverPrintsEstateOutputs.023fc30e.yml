@@ -1,4 +1,5 @@
 guard: TestTheCodeRulesHold
+rule: the-harness-silences-terratests-logger
 file: tests/go/harness/tofu.go
 reads_source: true
 find: "\t\tLogger: logger.Discard,"

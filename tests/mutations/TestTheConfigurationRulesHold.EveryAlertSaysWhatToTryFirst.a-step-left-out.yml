@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: alerts
 file: clusters/core/infrastructure/configs/host-metrics.yaml
 find: "            first_step: >-\n              Check that the fans turn and the vents are clear.\n"
 replace: "            first_step: \"\"\n"

@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: custom_blocks
 file: management/cluster/root.tf
 find: 'module "cluster" {'
 replace: "resource \"terraform_data\" \"one_off\" {}\n\nmodule \"cluster\" {"

@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: suppliers
 file: management/platform/versions.tf
 find: 'kubernetes = { source = "hashicorp/kubernetes"'
 replace: 'kubernetes = { source = "evilcorp/kubernetes"'

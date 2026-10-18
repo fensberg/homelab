@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: served_in_the_clear
 file: clusters/core/infrastructure/configs/private-access.yaml
 find: "    - name: https\n"
 replace: "    - name: http\n"

@@ -1,4 +1,5 @@
 guard: TestTheCodeRulesHold
+rule: the-vault-check-never-fetches-or-writes-a-secret
 file: scripts/details/onepassword/probe.go
 reads_source: true
 find: "\tout, err := exec.Command(\"op\", \"read\", ref).Output()\n"

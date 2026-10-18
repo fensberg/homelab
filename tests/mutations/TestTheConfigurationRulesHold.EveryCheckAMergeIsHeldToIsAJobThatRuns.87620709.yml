@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: required_checks
 file: management/estate/repository/rulesets.tf
 find: "    \"Plan\",\n"
 replace: "    \"The Plan\",\n"

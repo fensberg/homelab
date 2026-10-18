@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: helmrelease_remediation
 file: clusters/core/infrastructure/controllers/kube-prometheus-stack.yaml
 find: "  install:\n    crds: Create\n    strategy:\n      name: RetryOnFailure"
 replace: "  install:\n    crds: Create\n    strategy:\n      name: RemediateOnFailure"

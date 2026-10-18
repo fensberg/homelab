@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: cni
 file: modules/infrastructure/cluster/talos.tf
 find: "    terraform_data.cilium,"
 replace: "    talos_cluster_kubeconfig.this,"

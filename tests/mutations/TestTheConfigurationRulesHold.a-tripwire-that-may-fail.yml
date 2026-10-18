@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: sensitive_paths
 file: .github/workflows/sensitive-paths.yml
 find: "      - name: Require an acknowledgement nobody gave themselves\n"
 replace: "      - name: Require an acknowledgement nobody gave themselves\n        continue-on-error: true\n"

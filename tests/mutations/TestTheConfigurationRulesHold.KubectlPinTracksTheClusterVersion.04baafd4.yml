@@ -1,4 +1,5 @@
 guard: TestTheConfigurationRulesHold
+rule: versions
 file: scripts/versions.env
 find: "KUBECTL_VERSION=v1.36.4"
 replace: "KUBECTL_VERSION=v1.31.1"
