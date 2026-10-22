@@ -1,0 +1,209 @@
+diff --git a/.github/workflows/inspector.yml b/.github/workflows/inspector.yml
+index 4e39dd9b..d188ea39 100644
+--- a/.github/workflows/inspector.yml
++++ b/.github/workflows/inspector.yml
+@@ -51,7 +51,7 @@ defaults:
+ jobs:
+   tally:
+     name: What this change takes away
+-    runs-on: ubuntu-latest
++    runs-on: pr-packages-${{ vars.pull_request_runners_site }}
+     timeout-minutes: 5
+     steps:
+       # Full history: the tally compares two commits, and a shallow clone has
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index 2df02403..40f25f07 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -21,11 +21,12 @@ on:
+   # this workflow again on each pull request as it would land, on top of
+   # whatever is ahead of it, and merges it only if that passes.
+   merge_group:
+-  # The heavy lanes, tried on the estate's own pools while nobody is waiting
+-  # on them, so that how long each takes there and what it uses are known
+-  # before pull requests are moved onto them (docs/epochs/08-agent-roles.md).
+-  # Only the lanes written in the nightly form change runner; everything
+-  # else runs where it always does.
++  # Every lane, nightly, on main. It was where the lanes were first tried on
++  # the estate's pools, before pull requests moved onto them. It stays so that
++  # a lane that breaks with nothing merged - a supplier's file moved, a host
++  # that stopped answering - is found at night, and not on the next pull
++  # request. clusters/core/infrastructure/configs/scheduled-workflows.yaml
++  # holds it to a deadline.
+   schedule:
+     - cron: "17 3 * * *"
+ 
+@@ -100,7 +101,7 @@ jobs:
+   already-tested:
+     name: "Already tested (merge queue)"
+     if: github.event_name == 'merge_group'
+-    runs-on: ubuntu-latest
++    runs-on: pr-source-${{ vars.pull_request_runners_site }}
+     timeout-minutes: 5
+     permissions:
+       contents: read
+@@ -122,7 +123,7 @@ jobs:
+       - name: Compare what the queue would land with what the pull request tested
+         id: compare
+         env:
+-          GH_TOKEN: ${{ github.token }}
++          GITHUB_TOKEN: ${{ github.token }}
+           REPO: ${{ github.repository }}
+           QUEUED: ${{ github.event.merge_group.head_ref }}
+         run: |
+@@ -138,7 +139,11 @@ jobs:
+             if [ "$(git rev-parse 'HEAD^{tree}')" != "$(git rev-parse 'FETCH_HEAD^{tree}')" ]; then
+               echo "::notice::what would land differs from pull request ${number} as it was tested, so everything runs"
+             else
+-              passed="$(gh api "repos/${REPO}/actions/workflows/pr-validation.yml/runs?head_sha=${tested}&event=pull_request&status=success&per_page=1" --jq '.total_count')"
++              # curl and jq rather than gh, which the pull-request pools'
++              # image does not carry.
++              passed="$(curl --proto '=https' -fsS -H "Authorization: Bearer ${GITHUB_TOKEN}" -H 'Accept: application/vnd.github+json' \
++                "https://api.github.com/repos/${REPO}/actions/workflows/pr-validation.yml/runs?head_sha=${tested}&event=pull_request&status=success&per_page=1" |
++                jq '.total_count')"
+               if [ "${passed}" -ge 1 ]; then
+                 identical=true
+                 echo "::notice::what would land is, file for file, pull request ${number} at ${tested}, which passed. Nothing is run again."
+@@ -354,7 +359,7 @@ jobs:
+     needs: already-tested
+     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
+     name: "Validate (tofu, kustomize, kubeconform, go)"
+-    runs-on: ${{ github.event_name == 'schedule' && format('pr-builds-{0}', vars.pull_request_runners_site) || 'ubuntu-latest' }}
++    runs-on: pr-builds-${{ vars.pull_request_runners_site }}
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows.
+     timeout-minutes: 20
+@@ -620,10 +625,13 @@ jobs:
+     needs: already-tested
+     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
+     name: "Test (Go modules, OpenTofu)"
+-    runs-on: ${{ github.event_name == 'schedule' && format('pr-builds-{0}', vars.pull_request_runners_site) || 'ubuntu-latest' }}
++    runs-on: pr-builds-${{ vars.pull_request_runners_site }}
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows.
+-    timeout-minutes: 15
++    # Thirty on the builds pool, where it took past fifteen at a quarter of a
++    # processor (the nightly runs before 2026-10-22). Set again from what it
++    # takes there now.
++    timeout-minutes: 30
+     permissions:
+       contents: read
+     env:
+@@ -742,10 +750,13 @@ jobs:
+     needs: already-tested
+     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
+     name: "Vet (every tier)"
+-    runs-on: ${{ github.event_name == 'schedule' && format('pr-builds-{0}', vars.pull_request_runners_site) || 'ubuntu-latest' }}
++    runs-on: pr-builds-${{ vars.pull_request_runners_site }}
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows.
+-    timeout-minutes: 15
++    # Thirty on the builds pool, where it took past fifteen at a quarter of a
++    # processor (the nightly runs before 2026-10-22). Set again from what it
++    # takes there now.
++    timeout-minutes: 30
+     permissions:
+       contents: read
+     steps:
+@@ -799,7 +810,7 @@ jobs:
+     needs: already-tested
+     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
+     name: "Repository invariants"
+-    runs-on: ${{ github.event_name == 'schedule' && format('pr-builds-{0}', vars.pull_request_runners_site) || 'ubuntu-latest' }}
++    runs-on: pr-builds-${{ vars.pull_request_runners_site }}
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows.
+     timeout-minutes: 15
+@@ -873,18 +884,20 @@ jobs:
+     needs: already-tested
+     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
+     name: "Meta-tests (${{ matrix.part == 0 && 'comment stripping' || format('mutation ledger, part {0}', matrix.part) }})"
+-    runs-on: ${{ github.event_name == 'schedule' && format('pr-builds-{0}', vars.pull_request_runners_site) || 'ubuntu-latest' }}
+-    # Wide, on GitHub's runners: part 0 runs the comment test and the others
+-    # share the ledger's proofs, each in a job of its own. One job, it ran
+-    # past ten minutes. Each job learns which part it is from GitHub's own
+-    # count (META_PART, below), so no number written here can come to
+-    # disagree with how many parts there are, and a proof falls in exactly
+-    # one of them. The nightly run is on the estate's own runners, where a
+-    # job is not free, and stays one job doing all of it.
++    runs-on: pr-builds-${{ vars.pull_request_runners_site }}
++    # Part 0 runs the comment test and the others share the ledger's proofs,
++    # each in a job of its own. One job, it ran past ten minutes. Each job
++    # learns which part it is from GitHub's own count (META_PART, below), so
++    # no number written here can come to disagree with how many parts there
++    # are, and a proof falls in exactly one of them.
++    #
++    # Four ledger parts, not sixteen. On GitHub's runners a part was free and
++    # sixteen ran at once. In the builds pool four run at once, so more parts
++    # only queue, and each pays its own setup before it proves anything.
+     strategy:
+       fail-fast: false
+       matrix:
+-        part: ${{ fromJSON(github.event_name == 'schedule' && '[0]' || '[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]') }}
++        part: [0, 1, 2, 3, 4]
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows. Above the tests' own
+     # bound below, so that a slow run is reported by Go, naming the test,
+@@ -964,7 +977,7 @@ jobs:
+     needs: already-tested
+     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
+     name: "Test (vitest)"
+-    runs-on: ${{ github.event_name == 'schedule' && format('pr-packages-{0}', vars.pull_request_runners_site) || 'ubuntu-latest' }}
++    runs-on: pr-packages-${{ vars.pull_request_runners_site }}
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows.
+     timeout-minutes: 15
+@@ -1030,7 +1043,7 @@ jobs:
+     # always(), or a failed lane would SKIP this job - and a skipped required
+     # check counts as passing. The result is read explicitly instead.
+     if: always()
+-    runs-on: ubuntu-latest
++    runs-on: pr-source-${{ vars.pull_request_runners_site }}
+     timeout-minutes: 5
+     permissions:
+       contents: read
+diff --git a/.github/workflows/sensitive-paths.yml b/.github/workflows/sensitive-paths.yml
+index 9d09e1ea..e3a2a032 100644
+--- a/.github/workflows/sensitive-paths.yml
++++ b/.github/workflows/sensitive-paths.yml
+@@ -65,7 +65,7 @@ jobs:
+   tripwire:
+     name: Sensitive Paths
+     if: github.event_name == 'pull_request'
+-    runs-on: ubuntu-latest
++    runs-on: pr-packages-${{ vars.pull_request_runners_site }}
+     permissions:
+       contents: read
+       pull-requests: write
+diff --git a/scripts/approved-suppliers.yml b/scripts/approved-suppliers.yml
+index 5a741e04..bcfa000a 100644
+--- a/scripts/approved-suppliers.yml
++++ b/scripts/approved-suppliers.yml
+@@ -1731,8 +1731,26 @@ work:
+ 
+   - job: pr-validation.yml/meta
+     kind: cannot-wait
+-    takes: 6m
++    # A quarter of the ledger each, in the builds pool (2026-10-22); read
++    # again from what the parts take there.
++    takes: 10m
+ 
+   - job: pr-validation.yml/test-js
+     kind: cannot-wait
+     takes: 1m
++
++  - job: pr-validation.yml/already-tested
++    kind: cannot-wait
++    takes: 1m
++
++  - job: pr-validation.yml/test
++    kind: cannot-wait
++    takes: 1m
++
++  - job: sensitive-paths.yml/tripwire
++    kind: cannot-wait
++    takes: 1m
++
++  - job: inspector.yml/tally
++    kind: cannot-wait
++    takes: 1m
