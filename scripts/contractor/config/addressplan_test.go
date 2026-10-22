@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 
 	"homelab/details/repopath"
@@ -91,5 +92,28 @@ func TestEveryPlannedMachineHasAHypervisorAndASizeAndTheSitesIdsAreKnown(t *test
 	}
 	if planes != site.ControlPlaneCount {
 		t.Errorf("%d control planes are planned, and the site asks for %d", planes, site.ControlPlaneCount)
+	}
+}
+
+// Each zone machine is known by the key the address plan gives it, under its
+// name: the cluster module's resources for that machine are under that key,
+// and a converge that has to send one machine its configuration again names
+// it by that key.
+func TestEveryZoneMachineIsKnownByItsKeyInTheAddressPlan(t *testing.T) {
+	site := validSite()
+	site.DMZZones = map[string]DMZZone{"zone0": {}}
+	cfg := &Config{Tunnel: validTunnel(), Certificates: validCertificates(), Sites: map[string]Site{"site0": site}}
+	net, err := ResolveSiteNetwork(cfg, "site0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(net.DMZNames) == 0 || len(net.DMZKeys) != len(net.DMZNames) {
+		t.Fatalf("%d zone machines are named and %d have a key", len(net.DMZNames), len(net.DMZKeys))
+	}
+	for _, name := range net.DMZNames {
+		host := name[strings.LastIndex(name, "-")+1:]
+		if got := net.DMZKeys[name]; got != "zone0-"+host {
+			t.Errorf("%s is under %q, and the address plan keys it zone0-%s", name, got, host)
+		}
 	}
 }

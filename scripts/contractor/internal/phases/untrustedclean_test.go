@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"homelab/contractor/config"
+	"homelab/contractor/steps"
 	"homelab/details/capacity"
 	"homelab/details/hypervisorapi"
 )
@@ -173,5 +175,84 @@ func TestTheConvergeReadsOpensAndForgetsANodeThroughKubectl(t *testing.T) {
 		"get nodes -o name\n"
 	if string(asked) != want {
 		t.Errorf("kubectl was asked:\n%s\nwant:\n%s", asked, want)
+	}
+}
+
+// A new machine's configuration is named by the key the address plan gives
+// it, and a machine the plan does not name is an error rather than a
+// configuration nobody sends.
+func TestANewMachinesConfigurationIsNamedByItsKey(t *testing.T) {
+	keys := map[string]string{"lot-dmz-100": "zone0-100"}
+	got, err := configurationsOf([]hypervisorapi.Guest{{Name: "lot-dmz-100"}}, keys)
+	if want := steps.ZoneConfig + `["zone0-100"]`; err != nil || len(got) != 1 || got[0] != want {
+		t.Errorf("got %v (%v), want [%s]", got, err, want)
+	}
+	if _, err := configurationsOf([]hypervisorapi.Guest{{Name: "lot-dmz-101"}}, keys); err == nil {
+		t.Error("a machine the address plan does not name was given no configuration, and no error")
+	}
+}
+
+// rebuilt is a hypervisor where each of the site's untrusted workers is new
+// the first time it is looked at - the converge's step that configures them
+// - and has its snapshot by the next look, so the cluster phase's end finds
+// nothing left to snapshot.
+type rebuilt struct {
+	untrustedGuests
+	names  []string
+	looked map[string]bool
+}
+
+func (r *rebuilt) List() ([]hypervisorapi.Guest, error) {
+	var out []hypervisorapi.Guest
+	for i, n := range r.names {
+		out = append(out, hypervisorapi.Guest{ID: i + 1, Name: n, Node: "h"})
+	}
+	return out, nil
+}
+func (r *rebuilt) HasClean(g hypervisorapi.Guest) (bool, error) {
+	seen := r.looked[g.Name]
+	r.looked[g.Name] = true
+	return seen, nil
+}
+
+// A converge that finds an untrusted worker new - built again in an earlier
+// step - sends it its configuration whatever the plan says: that step's
+// apply replaces the machine's configuration by name, and no other step's
+// apply replaces anything. Planned alone, the step finds nothing changing,
+// since the machine was replaced in a step before it, and the machine waits
+// unconfigured and never joins.
+func TestARebuiltUntrustedWorkerIsSentItsConfigurationAgain(t *testing.T) {
+	f := newVerbFixture(t)
+	f.ctx.TakenOverOK = true
+	cfg, err := config.LoadRendered(f.ctx.ConfigRendered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	net, err := config.ResolveSiteNetwork(cfg, f.ctx.Site)
+	if err != nil || len(net.DMZNames) == 0 {
+		t.Fatalf("the fixture's site has no untrusted worker to rebuild (%v)", err)
+	}
+	was := untrustedHypervisor
+	t.Cleanup(func() { untrustedHypervisor = was })
+	site := &rebuilt{names: net.DMZNames, looked: map[string]bool{}}
+	untrustedHypervisor = func(*run.Context) (untrustedGuests, []string, error) { return site, net.DMZNames, nil }
+
+	if err := applySteps(f.ctx, "cluster", siteHas{workers: true, zones: true}); err != nil {
+		t.Fatal(err)
+	}
+	tofu, _ := f.calls(t)
+	want := "-replace=" + steps.ZoneConfig + `["` + net.DMZKeys[net.DMZNames[0]] + `"]`
+	replaced := 0
+	for _, c := range tofu {
+		if !strings.HasPrefix(c.args, "apply ") || !strings.Contains(c.args, "-replace=") {
+			continue
+		}
+		replaced++
+		if !strings.Contains(c.args, "-target="+steps.ZoneConfig) || !strings.Contains(c.args, want) {
+			t.Errorf("an apply replaced something, and it was not the zone step replacing the new machine's configuration (%s): %s", want, c.args)
+		}
+	}
+	if replaced != 1 {
+		t.Errorf("%d applies replaced a configuration; the zone step's, and only it, is to", replaced)
 	}
 }

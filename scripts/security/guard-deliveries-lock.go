@@ -213,6 +213,7 @@ func checkDeliveriesLock(root string) ([]string, error) {
 			}
 		}
 	}
+	findings = append(findings, disagreements(sections)...)
 	var stale []string
 	for key := range sections {
 		if !declared[key] {
@@ -224,6 +225,45 @@ func checkDeliveriesLock(root string) ([]string, error) {
 		findings = append(findings, fmt.Sprintf("the lock has a section for %s, which no tools: entry declares", key))
 	}
 	return findings, nil
+}
+
+// disagreements is every package two Python sections lock differently.
+//
+// take-delivery.sh installs every Python tool it is asked for into one
+// environment, with one pip run, so the sections it is given must be one
+// resolution: a package two tools share is locked by the same line in both.
+// Two orders made apart and merged together each pass on their own and
+// cannot be installed together, and the image that takes both never builds.
+func disagreements(sections map[string]lockSection) []string {
+	lines := map[string]map[string][]string{}
+	for _, s := range sections {
+		if s.Kind != "pypi" {
+			continue
+		}
+		for _, l := range s.Lines {
+			pkg, _, _ := strings.Cut(l, "==")
+			if lines[pkg] == nil {
+				lines[pkg] = map[string][]string{}
+			}
+			lines[pkg][l] = append(lines[pkg][l], s.Name)
+		}
+	}
+	var findings []string
+	for pkg, by := range lines {
+		if len(by) < 2 {
+			continue
+		}
+		var each []string
+		for l, tools := range by {
+			sort.Strings(tools)
+			version, _, _ := strings.Cut(strings.TrimPrefix(l, pkg+"=="), " ")
+			each = append(each, version+" for "+strings.Join(tools, ", "))
+		}
+		sort.Strings(each)
+		findings = append(findings, fmt.Sprintf("%s is locked differently by tools installed together (%s), so they cannot be installed together: they were ordered apart", pkg, strings.Join(each, "; ")))
+	}
+	sort.Strings(findings)
+	return findings
 }
 
 func explainDeliveriesLock(findings []string) string {
