@@ -234,7 +234,7 @@ func checkDeliveriesLock(root string) ([]string, error) {
 // resolution: a package two tools share is locked by the same line in both.
 // Two orders made apart and merged together each pass on their own and
 // cannot be installed together, and the image that takes both never builds.
-func disagreements(sections map[string]lockSection) []string {
+func disagreements(sections map[string]thelock.Section) []string {
 	lines := map[string]map[string][]string{}
 	for _, s := range sections {
 		if s.Kind != "pypi" {
