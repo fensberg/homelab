@@ -210,7 +210,7 @@ func runGuard(t *testing.T, bin string, tree *parsed.Tree, name string) (passed 
 	t.Helper()
 	// Judging the tree, and started outside it, so that nothing the guard
 	// names relative to where it starts is a file of the tree.
-	stdout, stderr, err := tree.Invoke(parsed.Run{Judged: true, Outside: true}, bin, "-test.run", "^"+name+"$", "-test.v")
+	stdout, stderr, err := tree.InvokeBinary(parsed.Run{Judged: true, Outside: true}, bin, "-test.run", "^"+name+"$", "-test.v")
 	text := string(stdout) + string(stderr)
 	// A -run pattern matching nothing exits 0 and is not a passing guard; it
 	// is a guard that has been renamed out from under the ledger.
@@ -629,7 +629,7 @@ func runAll(t *testing.T, bin string, tree *parsed.Tree) map[string]bool {
 // can be made side by side: a test may only be failed from its own
 // goroutine.
 func allVerdicts(bin string, tree *parsed.Tree) (map[string]bool, []byte) {
-	stdout, stderr, _ := tree.Invoke(parsed.Run{Judged: true, Outside: true}, bin, "-test.v")
+	stdout, stderr, _ := tree.InvokeBinary(parsed.Run{Judged: true, Outside: true}, bin, "-test.v")
 	out := append(stdout, stderr...)
 
 	verdicts := map[string]bool{}

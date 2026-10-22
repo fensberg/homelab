@@ -443,6 +443,17 @@ func (r *Tree) Invoke(run Run, name string, args ...string) (stdout, stderr []by
 	return out.Bytes(), errs.Bytes(), err
 }
 
+// InvokeBinary runs a program a test built itself - an absolute path under
+// the temporary directory - in the tree, as Invoke runs a named one. A guard
+// names every other program it runs, so what it runs can be read from its
+// source; a binary it built is the one program that cannot be named.
+func (r *Tree) InvokeBinary(run Run, binary string, args ...string) (stdout, stderr []byte, err error) {
+	if !filepath.IsAbs(binary) || !strings.HasPrefix(filepath.Clean(binary), filepath.Clean(os.TempDir())+string(filepath.Separator)) {
+		return nil, nil, fmt.Errorf("%s is not a binary a test built under %s; name the program instead", binary, os.TempDir())
+	}
+	return r.Invoke(run, binary, args...)
+}
+
 // Copy is a scratch copy of the tree's tracked files, in a directory of the
 // test's own, made a git repository so that it is listed as this one is.
 func (r *Tree) Copy(t testing.TB) *Tree {

@@ -157,14 +157,14 @@ governed:
   - kind: ".patch"
     optional: true
     read_by: >-
-      tests/go/repo/patches_test.go applies every outstanding patch against a
-      clean tree and requires the result to parse, and the mutation ledger
-      judges protected files as they will be once applied.
+      git apply, when the operator runs `task apply-patches`. Nothing here
+      reads one before then: everything that changes along with a workflow
+      travels inside its patch, so the tree is judged as it is.
   - kind: "sensitive-paths"
     read_by: >-
-      .github/scripts/sensitive-paths.sh in CI and
-      tests/go/repo/sensitivepaths_test.go, which requires every entry to exist
-      and carry a reason.
+      .github/scripts/sensitive-paths.sh in CI, and tests/go/parsed, whose
+      reader tests/go/repo/sensitivepaths_test.go uses to require every entry
+      to exist and carry a reason.
 
 # Interpreters an executable script here may name.
 #

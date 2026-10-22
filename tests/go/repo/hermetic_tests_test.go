@@ -51,11 +51,13 @@ func TestPackagesThatShellToGitNeutraliseUserConfig(t *testing.T) {
 				if program, ok := programOf(n); ok && program == "git" {
 					invokesGit[dir] = true
 				}
-				// gitenv.Isolate is the one place that does it.
-				if sel, ok := n.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Isolate" {
-					if id, ok := sel.X.(*ast.Ident); ok && id.Name == "gitenv" {
-						neutralises[dir] = true
-					}
+				// gitenv.Isolate is the one place that does it, and
+				// parsed.Main calls it for a package of guards.
+				switch callName(n) {
+				case "gitenv.Isolate", "parsed.Main":
+					neutralises[dir] = true
+				case "Main":
+					neutralises[dir] = neutralises[dir] || dir == readerDir
 				}
 			case *ast.BasicLit:
 				// Setting the variables directly is still accepted.

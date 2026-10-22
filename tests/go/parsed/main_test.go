@@ -3,13 +3,9 @@ package parsed
 import (
 	"os"
 	"testing"
-
-	"homelab/details/gitenv"
 )
 
-// These tests run git in trees of their own, so the developer's git
-// configuration is pointed at nothing first.
+// These tests run git in trees of their own, and start as the guards do.
 func TestMain(m *testing.M) {
-	gitenv.Isolate()
-	os.Exit(m.Run())
+	os.Exit(Main(m))
 }

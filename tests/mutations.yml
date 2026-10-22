@@ -92,7 +92,7 @@
 # entry - which is also where the comment check's own decision is proved, in
 # TestSatisfiedByProseOnlyNamesAPassToFailFlip.
 
-owed_ceiling: 24
+owed_ceiling: 23
 
 unprovable:
   # --- cannot be proved by mutation ----------------------------------------
@@ -348,8 +348,6 @@ unprovable:
   - test: TestNothingRunsTofuBeforeAttach
     owed: true
   - test: TestOnlyQuietTofuSubcommandsAreStreamed
-    owed: true
-  - test: TestParseSensitivePaths
     owed: true
   - test: TestRunnerImageCarriesEveryBinaryTheContractorInvokes
     owed: true
