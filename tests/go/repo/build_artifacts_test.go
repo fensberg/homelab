@@ -59,7 +59,12 @@ still building to this path, point it at toolshed/ instead.`, path, info.Size())
 // rule existed - which is exactly what happened to survey.
 func TestNoCompiledBinaryIsTracked(t *testing.T) {
 	tree := repository(t)
-	for _, path := range tree.Files(t) {
+	files := tree.Files(t)
+	const atLeastAHundredTracked = 100
+	if len(files) < atLeastAHundredTracked {
+		t.Fatalf("only %d tracked files were listed, so this looked at almost nothing", len(files))
+	}
+	for _, path := range files {
 		if strings.HasSuffix(path, ".go") || strings.Contains(path, ".") {
 			continue
 		}

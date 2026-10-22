@@ -43,6 +43,10 @@ func TestAnApplicationIsNamedOnlyWhereItLives(t *testing.T) {
 	tree := repository(t)
 	apps := tree.Applications(t)
 	files := tree.Files(t)
+	const atLeastAHundredFiles = 100
+	if len(files) < atLeastAHundredFiles {
+		t.Fatalf("only %d tracked files were listed, so nothing was read for the applications' names", len(files))
+	}
 	// Every line of every file that names an application, found by Semgrep
 	// from a rule this builds out of what the applications declare: the
 	// names are the estate's, so no rule written down could hold them.

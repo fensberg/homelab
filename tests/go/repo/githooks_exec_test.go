@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"homelab/tests/parsed"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -188,6 +189,15 @@ func (f *hookFixture) ran(t *testing.T) string {
 	return string(body)
 }
 
+// hook runs one of the repository's hook shims in the fixture, with the
+// fixture's environment and nothing else, and gives what it printed.
+func (f *hookFixture) hook(t *testing.T, name, stdin string, args ...string) (string, error) {
+	t.Helper()
+	run := parsed.Run{In: f.dir, Env: f.env, Bare: true, Stdin: stdin}
+	stdout, stderr, err := repository(t).Invoke(run, "bash", append([]string{parsed.Here("githooks/" + name)}, args...)...)
+	return string(stdout) + string(stderr), err
+}
+
 // The supplier guard runs before pre-commit is reached, on both shims that
 // carry it.
 //
@@ -197,22 +207,18 @@ func (f *hookFixture) ran(t *testing.T) string {
 // receipt rather than a refusal.
 func TestTheHookShimsRunTheGuardBeforeAnythingThirdParty(t *testing.T) {
 	heavy(t, "builds and runs each hook shim for real, seconds apiece")
-	root := repoRoot(t)
 	for _, hook := range []string{"pre-commit", "pre-push"} {
 		t.Run(hook, func(t *testing.T) {
 			f := newHookFixture(t, 0)
 
-			var cmd *exec.Cmd
+			var out string
+			var err error
 			switch hook {
 			case "pre-commit":
-				cmd = exec.Command("bash", root+"/githooks/pre-commit")
+				out, err = f.hook(t, "pre-commit", "")
 			case "pre-push":
-				cmd = exec.Command("bash", root+"/githooks/pre-push", "origin", "https://example.invalid/r.git")
-				cmd.Stdin = strings.NewReader("refs/heads/x 0000 refs/heads/x 1111\n")
+				out, err = f.hook(t, "pre-push", "refs/heads/x 0000 refs/heads/x 1111\n", "origin", "https://example.invalid/r.git")
 			}
-			cmd.Dir = f.dir
-			cmd.Env = f.env
-			out, err := cmd.CombinedOutput()
 			if err != nil {
 				t.Fatalf("the shim exited %v, so nothing downstream of it ran\n%s", err, out)
 			}
@@ -244,16 +250,11 @@ the vault session, which is the whole thing this ordering exists to prevent.`, h
 // failing guard is the property.
 func TestAFailingGuardStopsTheHookBeforePreCommit(t *testing.T) {
 	heavy(t, "builds and runs each hook shim for real, seconds apiece")
-	root := repoRoot(t)
 	for _, hook := range []string{"pre-commit", "pre-push"} {
 		t.Run(hook, func(t *testing.T) {
 			f := newHookFixture(t, 1)
 
-			cmd := exec.Command("bash", root+"/githooks/"+hook)
-			cmd.Dir = f.dir
-			cmd.Env = f.env
-			cmd.Stdin = strings.NewReader("")
-			out, err := cmd.CombinedOutput()
+			out, err := f.hook(t, hook, "")
 
 			if err == nil {
 				t.Errorf("githooks/%s exited 0 with a refusing guard, so the commit or push "+
@@ -278,7 +279,6 @@ The guard's whole purpose is to stop before anything third-party is installed.`,
 // it. This is the test that would have found it instead.
 func TestEveryShimPassesGitsOwnArgumentsThrough(t *testing.T) {
 	heavy(t, "builds and runs each hook shim for real, seconds apiece")
-	root := repoRoot(t)
 
 	cases := []struct {
 		hook     string
@@ -307,11 +307,7 @@ func TestEveryShimPassesGitsOwnArgumentsThrough(t *testing.T) {
 		t.Run(tc.hook, func(t *testing.T) {
 			f := newHookFixture(t, 0)
 
-			cmd := exec.Command("bash", append([]string{root + "/githooks/" + tc.hook}, tc.args...)...)
-			cmd.Dir = f.dir
-			cmd.Env = f.env
-			cmd.Stdin = strings.NewReader(tc.stdin)
-			if out, err := cmd.CombinedOutput(); err != nil {
+			if out, err := f.hook(t, tc.hook, tc.stdin, tc.args...); err != nil {
 				t.Fatalf("the shim exited %v\n%s", err, out)
 			}
 
@@ -349,7 +345,6 @@ closed without it.`, tc.hook, log)
 // same shape of problem (#257); the system Python no longer holds pre-commit,
 // and a copy that did would be one nothing locked by hash.
 func TestTheShimsFindTheDeliveredPreCommitAndSayWhenThereIsNone(t *testing.T) {
-	root := repoRoot(t)
 
 	t.Run("delivered but not on PATH", func(t *testing.T) {
 		f := newHookFixture(t, 0)
@@ -363,10 +358,7 @@ func TestTheShimsFindTheDeliveredPreCommitAndSayWhenThereIsNone(t *testing.T) {
 			t.Fatalf("writing the delivered pre-commit stub: %v", err)
 		}
 
-		cmd := exec.Command("bash", root+"/githooks/commit-msg", ".git/COMMIT_EDITMSG")
-		cmd.Dir = f.dir
-		cmd.Env = f.env
-		if out, err := cmd.CombinedOutput(); err != nil {
+		if out, err := f.hook(t, "commit-msg", "", ".git/COMMIT_EDITMSG"); err != nil {
 			t.Fatalf("the shim exited %v where pre-commit was delivered to ~/.local/bin\n%s", err, out)
 		}
 		if !strings.Contains(f.ran(t), "hook-impl") {
@@ -382,10 +374,7 @@ this repository relies on would refuse to run there.`, f.ran(t))
 		f := newHookFixture(t, 0)
 		f.isolatePATH(t, "bash", "env", "git")
 
-		cmd := exec.Command("bash", root+"/githooks/commit-msg", ".git/COMMIT_EDITMSG")
-		cmd.Dir = f.dir
-		cmd.Env = f.env
-		out, err := cmd.CombinedOutput()
+		out, err := f.hook(t, "commit-msg", "", ".git/COMMIT_EDITMSG")
 		if err == nil {
 			t.Fatal("the shim exited 0 with no pre-commit available, so every hook this " +
 				"repository relies on would be silently skipped")
