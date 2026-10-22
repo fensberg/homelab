@@ -102,9 +102,18 @@ func Tofu(ctx *Context, what string, args ...string) error {
 // that caused it. The detail is still available by re-running on a workstation,
 // which is where somebody debugging an apply already is.
 func TofuApply(ctx *Context, what string, targets ...string) error {
+	return TofuApplyReplacing(ctx, what, nil, targets...)
+}
+
+// TofuApplyReplacing is TofuApply, with each of replace planned as made
+// again whether or not anything it reads has changed.
+func TofuApplyReplacing(ctx *Context, what string, replace []string, targets ...string) error {
 	args := []string{"apply", "-input=false", "-auto-approve", "-json"}
 	for _, t := range targets {
 		args = append(args, "-target="+t)
+	}
+	for _, r := range replace {
+		args = append(args, "-replace="+r)
 	}
 	return tofuJSON(ctx, what, args)
 }

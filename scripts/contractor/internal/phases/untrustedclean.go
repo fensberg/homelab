@@ -122,15 +122,46 @@ type untrustedNodes interface {
 }
 
 // forgetReplacedUntrustedWorkers removes the node a new machine's predecessor
-// left, before the new machine is given its configuration and can join.
+// left, before the new machine is given its configuration and can join, and
+// says which configurations are to be sent again: each new machine's.
 //
 // The taint that keeps work off a machine with no snapshot is put on when
 // its node is made, and a machine that joins as a node which is already
 // there is given no taint at all. A replacement has its predecessor's name,
 // so the predecessor's node is removed first, and the machine has not
 // joined yet because it has not been configured yet.
-func forgetReplacedUntrustedWorkers(ctx *run.Context) error {
-	return withUntrusted(ctx, forgetReplaced)
+func forgetReplacedUntrustedWorkers(ctx *run.Context) ([]string, error) {
+	cfg, err := config.LoadRendered(ctx.ConfigRendered)
+	if err != nil {
+		return nil, err
+	}
+	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
+	if err != nil {
+		return nil, err
+	}
+	var replace []string
+	err = withUntrusted(ctx, func(hv untrustedGuests, fresh []hypervisorapi.Guest, nodes untrustedNodes) error {
+		if err := forgetReplaced(hv, fresh, nodes); err != nil {
+			return err
+		}
+		replace, err = configurationsOf(fresh, net.DMZKeys)
+		return err
+	})
+	return replace, err
+}
+
+// configurationsOf is the address of each new machine's configuration, by
+// the key the address plan gives it.
+func configurationsOf(fresh []hypervisorapi.Guest, keys map[string]string) ([]string, error) {
+	var out []string
+	for _, m := range fresh {
+		key, ok := keys[m.Name]
+		if !ok {
+			return nil, fmt.Errorf("an untrusted worker on the hypervisor is not one the address plan names, so which configuration is its cannot be said")
+		}
+		out = append(out, fmt.Sprintf("%s[%q]", steps.ZoneConfig, key))
+	}
+	return out, nil
 }
 
 // cleanNewUntrustedWorkers gives every untrusted worker that has no clean
