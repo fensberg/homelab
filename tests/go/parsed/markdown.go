@@ -7,6 +7,8 @@ import (
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	east "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/text"
 )
 
@@ -91,4 +93,57 @@ func MarkdownOf(src []byte) []MarkdownPart {
 		return ast.WalkContinue, nil
 	})
 	return out
+}
+
+// MarkdownTables is every table of a Markdown file, as GitHub's table
+// extension reads it: each table its rows, the header first, and each row
+// its cells. A cell is its text, with strong emphasis kept as ** so a table
+// that marks a name in bold can be read for it.
+func (r *Tree) MarkdownTables(t testing.TB, rel string) [][][]string {
+	t.Helper()
+	return MarkdownTablesOf(r.read(t, rel))
+}
+
+// MarkdownTablesOf reads the tables of Markdown a parse handed over.
+func MarkdownTablesOf(src []byte) [][][]string {
+	doc := goldmark.New(goldmark.WithExtensions(extension.Table)).Parser().Parse(text.NewReader(src))
+	var tables [][][]string
+	var cellText func(n ast.Node) string
+	cellText = func(n ast.Node) string {
+		var b strings.Builder
+		for c := n.FirstChild(); c != nil; c = c.NextSibling() {
+			switch c := c.(type) {
+			case *ast.Text:
+				b.Write(c.Segment.Value(src))
+			case *ast.Emphasis:
+				if c.Level == 2 {
+					b.WriteString("**" + cellText(c) + "**")
+				} else {
+					b.WriteString(cellText(c))
+				}
+			case *ast.CodeSpan:
+				b.WriteString("`" + cellText(c) + "`")
+			default:
+				b.WriteString(cellText(c))
+			}
+		}
+		return b.String()
+	}
+	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		table, ok := n.(*east.Table)
+		if !entering || !ok {
+			return ast.WalkContinue, nil
+		}
+		var rows [][]string
+		for row := table.FirstChild(); row != nil; row = row.NextSibling() {
+			var cells []string
+			for cell := row.FirstChild(); cell != nil; cell = cell.NextSibling() {
+				cells = append(cells, strings.TrimSpace(cellText(cell)))
+			}
+			rows = append(rows, cells)
+		}
+		tables = append(tables, rows)
+		return ast.WalkSkipChildren, nil
+	})
+	return tables
 }

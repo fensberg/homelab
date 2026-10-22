@@ -21,3 +21,18 @@ func TestMarkdownTellsProseFromCode(t *testing.T) {
 		t.Errorf("MarkdownOf read\n  %+v\nwant\n  %+v", got, want)
 	}
 }
+
+// A table comes back header first, a row at a time, with bold kept.
+func TestMarkdownTablesKeepRowsCellsAndBold(t *testing.T) {
+	src := "Intro.\n\n| Tier | Runs |\n| ---- | ---- |\n| **unit** | `go test` |\n| plain | x |\n"
+	got := MarkdownTablesOf([]byte(src))
+	want := [][][]string{{{"Tier", "Runs"}, {"**unit**", "`go test`"}, {"plain", "x"}}}
+	if len(got) != 1 || len(got[0]) != 3 {
+		t.Fatalf("read %v, want %v", got, want)
+	}
+	for i := range want[0] {
+		if !slices.Equal(got[0][i], want[0][i]) {
+			t.Errorf("row %d is %q, want %q", i, got[0][i], want[0][i])
+		}
+	}
+}
