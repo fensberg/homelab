@@ -1,9 +1,7 @@
 package repo
 
 import (
-	"errors"
-	"io"
-	"os/exec"
+	"homelab/tests/parsed"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -77,16 +75,21 @@ func globPath(pattern string) func(string) bool {
 func excludedPaths(t *testing.T) []excludedPath {
 	t.Helper()
 	var out []excludedPath
+	tree := repository(t)
 	add := func(file string, line int, pattern string, covers func(string) bool) {
-		out = append(out, excludedPath{file + ":" + strconv.Itoa(line), pattern, covers})
+		where := file
+		if line > 0 {
+			where += ":" + strconv.Itoa(line)
+		}
+		out = append(out, excludedPath{where, pattern, covers})
 	}
 
 	// Checkov: skip-path, each a regular expression searched for in a path.
 	var checkov struct {
 		SkipPath []yaml.Node `yaml:"skip-path"`
 	}
-	if err := yaml.Unmarshal([]byte(readRepoFile(t, ".checkov.yaml")), &checkov); err != nil {
-		t.Fatalf(".checkov.yaml does not parse: %v", err)
+	if err := tree.YAMLNode(t, ".checkov.yaml").Decode(&checkov); err != nil {
+		t.Fatalf(".checkov.yaml is not the shape this reads: %v", err)
 	}
 	for _, n := range checkov.SkipPath {
 		add(".checkov.yaml", n.Line, n.Value, regexPath(n.Value))
@@ -96,33 +99,37 @@ func excludedPaths(t *testing.T) []excludedPath {
 	var markdownlint struct {
 		Ignores []yaml.Node `yaml:"ignores"`
 	}
-	if err := yaml.Unmarshal([]byte(readRepoFile(t, ".markdownlint-cli2.yaml")), &markdownlint); err != nil {
-		t.Fatalf(".markdownlint-cli2.yaml does not parse: %v", err)
+	if err := tree.YAMLNode(t, ".markdownlint-cli2.yaml").Decode(&markdownlint); err != nil {
+		t.Fatalf(".markdownlint-cli2.yaml is not the shape this reads: %v", err)
 	}
 	for _, n := range markdownlint.Ignores {
 		add(".markdownlint-cli2.yaml", n.Line, n.Value, globPath(n.Value))
 	}
 
-	for i, line := range strings.Split(readRepoFile(t, ".codespellrc"), "\n") {
-		// codespell: skip, a comma-separated list of globs.
-		if list, ok := strings.CutPrefix(strings.TrimSpace(line), "skip ="); ok {
-			for _, p := range strings.Split(list, ",") {
-				add(".codespellrc", i+1, strings.TrimSpace(p), globPath(strings.TrimSpace(p)))
-			}
-		}
+	// codespell: skip, a comma-separated list of globs.
+	for _, p := range codespellList(t, "skip") {
+		add(".codespellrc", 0, p, globPath(p))
 	}
-	for i, line := range strings.Split(readRepoFile(t, ".prettierignore"), "\n") {
-		// prettier: an ignore file, a glob to a line.
-		if p := strings.TrimSpace(line); p != "" && !strings.HasPrefix(p, "#") {
+	// prettier: an ignore file, a glob to a line.
+	entries, _ := tree.Conftest(t, ".prettierignore", "ignore").([]any)
+	for i, e := range entries {
+		if entry, _ := e.(map[string]any); entry["Kind"] == "Path" {
+			p, _ := entry["Value"].(string)
 			add(".prettierignore", i+1, p, globPath(p))
 		}
 	}
-	for i, line := range strings.Split(readRepoFile(t, ".gitleaks.toml"), "\n") {
-		// gitleaks: an allowlist's paths, each a regular expression.
-		if list, ok := strings.CutPrefix(strings.TrimSpace(line), "paths ="); ok {
-			for _, m := range regexp.MustCompile(`'''(.*?)'''`).FindAllStringSubmatch(list, -1) {
-				add(".gitleaks.toml", i+1, m[1], regexPath(m[1]))
-			}
+	// gitleaks: an allowlist's paths, each a regular expression.
+	var gitleaks struct {
+		Allowlists []struct {
+			Paths []string `json:"paths"`
+		} `json:"allowlists"`
+	}
+	if err := as(tree.Conftest(t, ".gitleaks.toml", "toml"), &gitleaks); err != nil {
+		t.Fatalf(".gitleaks.toml is not the shape this reads: %v", err)
+	}
+	for _, list := range gitleaks.Allowlists {
+		for _, p := range list.Paths {
+			add(".gitleaks.toml", 0, p, regexPath(p))
 		}
 	}
 	if len(out) < 10 {
@@ -134,9 +141,7 @@ func excludedPaths(t *testing.T) []excludedPath {
 // vendoredFiles is the tracked files .gitattributes marks as somebody else's.
 func vendoredFiles(t *testing.T, files []string) map[string]bool {
 	t.Helper()
-	cmd := exec.Command("git", "-C", repoRoot(t), "check-attr", "-z", "--stdin", "linguist-vendored")
-	cmd.Stdin = strings.NewReader(strings.Join(files, "\x00") + "\x00")
-	out, err := cmd.Output()
+	out, _, err := repository(t).Invoke(parsed.Run{Stdin: strings.Join(files, "\x00") + "\x00"}, "git", "check-attr", "-z", "--stdin", "linguist-vendored")
 	if err != nil {
 		t.Fatalf("asking git which files are marked vendored: %v", err)
 	}
@@ -150,10 +155,36 @@ func vendoredFiles(t *testing.T, files []string) map[string]bool {
 	return vendored
 }
 
-var (
-	goSumLine    = regexp.MustCompile(`^\S+ v\S+ h1:[A-Za-z0-9+/]+=*$`)
-	testMaterial = regexp.MustCompile(`(^|/)(tests|fixtures|testdata)/`)
-)
+var testMaterial = regexp.MustCompile(`(^|/)(tests|fixtures|testdata)/`)
+
+// holdsAComment reports whether any node of a YAML tree carries a comment.
+func holdsAComment(n *yaml.Node) bool {
+	if n.HeadComment != "" || n.LineComment != "" || n.FootComment != "" {
+		return true
+	}
+	for _, c := range n.Content {
+		if holdsAComment(c) {
+			return true
+		}
+	}
+	return false
+}
+
+// codespellList is a comma-separated setting of .codespellrc, as Conftest's
+// INI parser reads the file.
+func codespellList(t *testing.T, key string) []string {
+	t.Helper()
+	ini, _ := repository(t).Conftest(t, ".codespellrc", "ini").(map[string]any)
+	section, _ := ini["codespell"].(map[string]any)
+	list, _ := section[key].(string)
+	var out []string
+	for _, v := range strings.Split(list, ",") {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
 
 // whyOurs says what makes a tracked file the repository's own writing, or ""
 // when it is a lockfile, vendored, an assembling kustomization or test
@@ -164,32 +195,26 @@ func whyOurs(t *testing.T, path string, vendored map[string]bool) string {
 	case vendored[path], testMaterial.MatchString(path):
 		return ""
 	case filepath.Base(path) == "go.sum":
-		for _, line := range strings.Split(strings.TrimSpace(readRepoFile(t, path)), "\n") {
-			if !goSumLine.MatchString(line) {
-				return "is a go.sum with a line Go did not write"
-			}
+		if _, err := repository(t).GoSum(t, path); err != nil {
+			return "is a go.sum with a line Go did not write"
 		}
 		return ""
 	case filepath.Base(path) == "pnpm-lock.yaml":
-		body := readRepoFile(t, path)
-		if !strings.HasPrefix(body, "lockfileVersion:") || regexp.MustCompile(`(?m)^\s*#`).MatchString(body) {
+		lock := repository(t).YAMLNode(t, path)
+		if len(lock.Content) == 0 || len(lock.Content[0].Content) == 0 || lock.Content[0].Content[0].Value != "lockfileVersion" || holdsAComment(lock) {
 			return "is a pnpm lockfile with something pnpm did not write"
 		}
 		return ""
 	case filepath.Base(path) == applications.Kustomization:
-		dec := yaml.NewDecoder(strings.NewReader(readRepoFile(t, path)))
-		for {
+		docs, isYAML := repository(t).MaybeYAML(t, path)
+		if !isYAML {
+			return "does not parse as YAML, so what it holds is not known"
+		}
+		for _, d := range docs {
 			var doc struct {
 				Kind string `yaml:"kind"`
 			}
-			err := dec.Decode(&doc)
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			if err != nil {
-				return "does not parse as YAML, so what it holds is not known"
-			}
-			if doc.Kind != flux.Kustomization {
+			if as(d, &doc) != nil || doc.Kind != flux.Kustomization {
 				return "holds a " + doc.Kind + ", and only a file that assembles others may go unread"
 			}
 		}
@@ -234,46 +259,33 @@ func TestAnExcludedPathHoldsNothingTheToolWasMeantToRead(t *testing.T) {
 // machine reads, and it is used at all - an accepted word nobody writes is an
 // exemption waiting to hide a real misspelling.
 func TestAWordCodespellAcceptsIsOnlyEverWrittenAsCode(t *testing.T) {
-	var words []string
-	for _, line := range strings.Split(readRepoFile(t, ".codespellrc"), "\n") {
-		if list, ok := strings.CutPrefix(strings.TrimSpace(line), "ignore-words-list ="); ok {
-			for _, w := range strings.Split(list, ",") {
-				if w = strings.TrimSpace(w); w != "" {
-					words = append(words, w)
-				}
-			}
-		}
-	}
+	words := codespellList(t, "ignore-words-list")
 	// Told to accept nothing, there is nothing to hold it to.
 	if len(words) == 0 {
 		return
 	}
 
-	fence := regexp.MustCompile("^\\s*(```|~~~)")
-	span := regexp.MustCompile("`[^`]*`")
+	tree := repository(t)
+	documents := map[string][]parsed.MarkdownPart{}
+	for _, rel := range trackedFiles(t) {
+		if rel != ".codespellrc" && strings.HasSuffix(rel, ".md") {
+			documents[rel] = tree.Markdown(t, rel)
+		}
+	}
 	for _, word := range words {
 		used := regexp.MustCompile(`\b` + regexp.QuoteMeta(word) + `\b`)
 		uses := 0
-		for _, rel := range trackedFiles(t) {
-			if rel == ".codespellrc" || !strings.HasSuffix(rel, ".md") {
-				continue
-			}
-			fenced := false
-			for i, line := range strings.Split(readRepoFile(t, rel), "\n") {
-				if fence.MatchString(line) {
-					fenced = !fenced
-					continue
-				}
-				if !used.MatchString(line) {
+		for rel, parts := range documents {
+			for _, part := range parts {
+				if !used.MatchString(part.Text) {
 					continue
 				}
 				uses++
-				indented := strings.HasPrefix(line, "    ") || strings.HasPrefix(line, "\t")
-				if fenced || indented || !used.MatchString(span.ReplaceAllString(line, "")) {
-					continue
+				if part.Kind != parsed.MarkdownText {
+					continue // a code block, an indented one, a code span: a quotation
 				}
 				t.Errorf("%s:%d writes %q in a sentence. codespell is told to accept it as a name a machine reads, "+
-					"and here it is prose: put it in a code span, or it is a misspelling nothing will catch.", rel, i+1, word)
+					"and here it is prose: put it in a code span, or it is a misspelling nothing will catch.", rel, part.Line, word)
 			}
 		}
 		if uses == 0 {
