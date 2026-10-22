@@ -5,6 +5,7 @@ import (
 	"go/token"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -133,47 +134,75 @@ type commentLines struct {
 	whole, marked map[int]string
 }
 
-// commentScan asks Semgrep for the comments of files, kind by kind.
+// leadersOf is how a comment starts in the file at rel, by its kind.
+func leadersOf(rel string) []string {
+	base := filepath.Base(rel)
+	for _, kind := range commentLeaders {
+		for _, glob := range kind.globs {
+			if ok, _ := filepath.Match(glob, base); ok {
+				return kind.leaders
+			}
+		}
+	}
+	if ok, _ := filepath.Match("*.patch", base); ok {
+		return nil
+	}
+	if ok, _ := filepath.Match("*.diff", base); ok {
+		return nil
+	}
+	return commentLeaders[len(commentLeaders)-1].leaders
+}
+
+// commentOn is the comment a line carries, from its first leader, or "".
+func commentOn(line string, leaders []string) string {
+	at := -1
+	for _, l := range leaders {
+		if i := strings.Index(line, l); i >= 0 && (at < 0 || i < at) {
+			at = i
+		}
+	}
+	if at < 0 {
+		return ""
+	}
+	return line[at:]
+}
+
+// commentScan asks Semgrep for the comments of files that carry a mark, in
+// two passes so that neither reads more than it must: every line holding a
+// mark, anywhere, which is few; and then the whole-line comments of only the
+// files one was found in, for the run of comment around each.
 func commentScan(t *testing.T, files []string, marks []string) map[string]*commentLines {
 	t.Helper()
+	tree := repository(t)
 	var quoted []string
 	for _, m := range marks {
 		quoted = append(quoted, regexp.QuoteMeta(m))
 	}
-	var rules []map[string]any
-	var claimed []string
-	for i, kind := range commentLeaders {
-		var alt []string
-		for _, l := range kind.leaders {
-			alt = append(alt, regexp.QuoteMeta(l))
+	rule := func(id, pattern string) map[string]any {
+		return map[string]any{
+			"id": id, "languages": []string{"generic"}, "severity": "INFO",
+			"message": "$C", "metadata": map[string]any{"about": id}, "pattern-regex": pattern,
 		}
-		leader := "(?:" + strings.Join(alt, "|") + ")"
-		paths := map[string]any{"include": kind.globs}
-		if kind.globs == nil {
-			paths = map[string]any{"exclude": append(append([]string{}, claimed...), "*.patch", "*.diff")}
-		}
-		claimed = append(claimed, kind.globs...)
-		rule := func(id, about, pattern string) map[string]any {
-			return map[string]any{
-				"id": id + strconv.Itoa(i), "languages": []string{"generic"}, "severity": "INFO",
-				"message": "$C", "metadata": map[string]any{"about": about}, "paths": paths, "pattern-regex": pattern,
-			}
-		}
-		rules = append(rules,
-			rule("whole", "whole", `(?m)^[ \t]*(?P<C>`+leader+`[^\n]*?)[ \t]*$`),
-			rule("marked", "marked", `(?m)^(?:(?!`+leader+`)[^\n])*(?P<C>`+leader+`(?=[^\n]*(?:`+strings.Join(quoted, "|")+`))[^\n]*)$`))
 	}
 	out := map[string]*commentLines{}
-	for _, f := range scanText(t, repository(t), rules, files) {
-		c := out[f.Path]
-		if c == nil {
-			c = &commentLines{whole: map[int]string{}, marked: map[int]string{}}
-			out[f.Path] = c
+	var marked []string
+	for _, f := range scanText(t, tree, []map[string]any{rule("marked", `(?m)^(?P<C>[^\n]*(?:`+strings.Join(quoted, "|")+`)[^\n]*)$`)}, files) {
+		comment := commentOn(f.Text, leadersOf(f.Path))
+		if !slices.ContainsFunc(marks, func(m string) bool { return strings.Contains(comment, m) }) {
+			continue // a mark outside a comment silences nothing
 		}
-		if f.About == "whole" {
+		if out[f.Path] == nil {
+			out[f.Path] = &commentLines{whole: map[int]string{}, marked: map[int]string{}}
+			marked = append(marked, f.Path)
+		}
+		out[f.Path].marked[f.Line] = comment
+	}
+	if len(marked) == 0 {
+		return out
+	}
+	for _, f := range scanText(t, tree, []map[string]any{rule("whole", `(?m)^[ \t]*(?P<C>(?://|/\*|<!--|#)[^\n]*?)[ \t]*$`)}, marked) {
+		if c := out[f.Path]; c != nil && slices.ContainsFunc(leadersOf(f.Path), func(l string) bool { return strings.HasPrefix(f.Text, l) }) {
 			c.whole[f.Line] = f.Text
-		} else {
-			c.marked[f.Line] = f.Text
 		}
 	}
 	return out

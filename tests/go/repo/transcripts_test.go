@@ -149,9 +149,16 @@ func isPlaceholderHost(host string) bool {
 // commentaryRules find the lines of a file that are commentary or prose, so
 // code that legitimately builds these strings is not read as a transcript:
 // whole-line comments in every language this repository writes, and every
-// line of a document. Each shape has a colon or an at sign in it, so only a
-// line that does is handed back.
+// line of a document - and of those, only a line one of the shapes could
+// match anywhere in it, each shape loosened to that: unanchored, and held to
+// one line. The shapes themselves are applied to what comes back, exactly.
 func commentaryRules() []map[string]any {
+	var loose []string
+	for _, shape := range transcriptShapes {
+		re := strings.TrimPrefix(shape.re.String(), "^")
+		loose = append(loose, strings.ReplaceAll(re, `\s`, `[ \t]`))
+	}
+	anyShape := "(?:" + strings.Join(loose, "|") + ")"
 	rule := func(id, pattern string, paths map[string]any) map[string]any {
 		r := map[string]any{
 			"id": id, "languages": []string{"generic"}, "severity": "INFO",
@@ -164,8 +171,8 @@ func commentaryRules() []map[string]any {
 	}
 	documents := []string{"*.md", "*.markdown", "*.txt"}
 	return []map[string]any{
-		rule("comment", `(?m)^[ \t]*(?:#|//|\*|--)(?P<LINE>[^\n]*[:@][^\n]*)$`, map[string]any{"exclude": documents}),
-		rule("document", `(?m)^(?P<LINE>[^\n]*[:@][^\n]*)$`, map[string]any{"include": documents}),
+		rule("comment", `(?m)^[ \t]*(?:#|//|\*|--)(?P<LINE>[^\n]*`+anyShape+`[^\n]*)$`, map[string]any{"exclude": documents}),
+		rule("document", `(?m)^(?P<LINE>[^\n]*`+anyShape+`[^\n]*)$`, map[string]any{"include": documents}),
 	}
 }
 
