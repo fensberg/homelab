@@ -65,7 +65,7 @@ jobs:
   tripwire:
     name: Sensitive Paths
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: pr-packages-${{ vars.pull_request_runners_site }}
     permissions:
       contents: read
       pull-requests: write
