@@ -4,7 +4,6 @@ import (
 	"homelab/details/capacity"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -34,7 +33,7 @@ func runnerSets(t *testing.T) []string {
 		if kind != kindHelmRelease {
 			continue
 		}
-		if regexp.MustCompile(`(?m)^\s*chart:\s*gha-runner-scale-set\s*$`).MatchString(helmReleaseDocument(t, r.file, name)) {
+		if chart, _ := scalarAt(helmReleaseDocument(t, r.file, name), "chart"); chart == "gha-runner-scale-set" {
 			sets = append(sets, name)
 		}
 	}
@@ -47,16 +46,21 @@ func runnerSets(t *testing.T) []string {
 
 // helmReleaseDocument is the one document of a manifest that declares the
 // named release, so that two releases in one file are read apart.
-func helmReleaseDocument(t *testing.T, rel, name string) string {
+func helmReleaseDocument(t *testing.T, rel, name string) any {
 	t.Helper()
-	for _, doc := range strings.Split(readRepoFile(t, rel), "\n---") {
-		if regexp.MustCompile(`(?m)^kind:\s*HelmRelease\s*$`).MatchString(doc) &&
-			regexp.MustCompile(`(?m)^  name:\s*`+regexp.QuoteMeta(name)+`\s*$`).MatchString(doc) {
+	for _, doc := range repository(t).YAMLDocuments(t, rel) {
+		var d struct {
+			Kind     string `yaml:"kind"`
+			Metadata struct {
+				Name string `yaml:"name"`
+			} `yaml:"metadata"`
+		}
+		if as(doc, &d) == nil && d.Kind == kindHelmRelease && d.Metadata.Name == name {
 			return doc
 		}
 	}
 	t.Fatalf("%s does not declare the release %s", rel, name)
-	return ""
+	return nil
 }
 
 // yamlScalar is the first `key: value` scalar anywhere in a manifest's
@@ -189,12 +193,23 @@ const versionPins = "scripts/versions.env"
 // pinned is a version scripts/versions.env pins, read as the env file it is.
 func pinned(t *testing.T, name string) string {
 	t.Helper()
-	pins, _ := repository(t).Conftest(t, versionPins, "dotenv").(map[string]any)
-	v, ok := pins[name].(string)
+	v, ok := versionsPinned(t)[name]
 	if !ok || strings.TrimSpace(v) == "" {
 		t.Fatalf("%s declares no %s.\n\nEvery version this estate takes is pinned in that one file.", versionPins, name)
 	}
 	return strings.TrimSpace(v)
+}
+
+// versionsPinned is every version scripts/versions.env pins, by key, as
+// Conftest's dotenv parser reads the file.
+func versionsPinned(t *testing.T) map[string]string {
+	t.Helper()
+	declared, _ := repository(t).Conftest(t, versionPins, "dotenv").(map[string]any)
+	pins := map[string]string{}
+	for k, v := range declared {
+		pins[k], _ = v.(string)
+	}
+	return pins
 }
 
 // header is the comment a rendered file opens with, as the YAML parser reads

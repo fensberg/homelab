@@ -2,6 +2,7 @@ package parsed
 
 import (
 	"fmt"
+	"homelab/details/deliveries"
 	"strings"
 	"sync"
 	"testing"
@@ -189,4 +190,15 @@ func (r *Tree) Work(t testing.TB) []harness.Work {
 		t.Fatal(err)
 	}
 	return w
+}
+
+// DeliveriesLock is every section of the deliveries lock, keyed "kind:name",
+// as the security guard that refuses a wrong lock reads it.
+func (r *Tree) DeliveriesLock(t testing.TB) map[string]deliveries.Section {
+	t.Helper()
+	sections, err := deliveries.Parse(string(r.read(t, deliveries.Path)))
+	if err != nil {
+		t.Fatalf("%s cannot be read: %v", deliveries.Path, err)
+	}
+	return sections
 }

@@ -27,12 +27,13 @@ import (
 	"sort"
 	"strings"
 
+	thelock "homelab/details/deliveries"
 	"homelab/details/envfile"
 	"homelab/details/suppliers"
 )
 
 const (
-	lockPath     = "scripts/deliveries.lock"
+	lockPath     = thelock.Path
 	versionsPath = "scripts/versions.env"
 )
 
@@ -50,15 +51,6 @@ type lockedDelivery struct {
 	Version    string
 }
 
-// lockSection is one delivery's section of the lock.
-type lockSection struct {
-	Kind       string
-	Name       string
-	VersionKey string
-	Version    string
-	Lines      []string
-}
-
 var pep503 = regexp.MustCompile(`[-_.]+`)
 
 // deliveryKinds are the fields a tools: entry may declare, each with how the
@@ -70,8 +62,7 @@ var deliveryKinds = map[string]func(source, spec string) string{
 }
 
 var (
-	lockHeader = regexp.MustCompile(`^# \[([a-z]+): (\S+) ([A-Z0-9_]+)=(\S+)\]$`)
-	lockHash   = regexp.MustCompile(` --hash=sha256:[0-9a-f]{64}(\s|$)`)
+	lockHash = regexp.MustCompile(` --hash=sha256:[0-9a-f]{64}(\s|$)`)
 )
 
 // declaredDeliveries reads every tools: entry that declares a kind, with its
@@ -156,38 +147,6 @@ func deliveriesIn(listed string, versions map[string]string) ([]lockedDelivery, 
 	return out, nil
 }
 
-// parseDeliveriesLock reads the lock's sections, keyed "kind:name".
-func parseDeliveriesLock(body string) (map[string]lockSection, error) {
-	out := map[string]lockSection{}
-	var cur *lockSection
-	for n, line := range strings.Split(body, "\n") {
-		switch {
-		case lockHeader.MatchString(line):
-			if cur != nil {
-				return nil, fmt.Errorf("line %d opens %q before %s is closed with # [end]", n+1, line, cur.Name)
-			}
-			m := lockHeader.FindStringSubmatch(line)
-			cur = &lockSection{Kind: m[1], Name: m[2], VersionKey: m[3], Version: m[4]}
-		case line == "# [end]":
-			if cur == nil {
-				return nil, fmt.Errorf("line %d closes a section that was never opened", n+1)
-			}
-			key := cur.Kind + ":" + cur.Name
-			if _, dup := out[key]; dup {
-				return nil, fmt.Errorf("%s has two sections", key)
-			}
-			out[key] = *cur
-			cur = nil
-		case cur != nil && strings.TrimSpace(line) != "" && !strings.HasPrefix(line, "#"):
-			cur.Lines = append(cur.Lines, line)
-		}
-	}
-	if cur != nil {
-		return nil, fmt.Errorf("the section for %s is never closed with # [end]", cur.Name)
-	}
-	return out, nil
-}
-
 // checkDeliveriesLock compares the lock with what it must have been made from.
 func checkDeliveriesLock(root string) ([]string, error) {
 	deliveries, err := declaredDeliveries(root)
@@ -201,7 +160,7 @@ func checkDeliveriesLock(root string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", lockPath, err)
 	}
-	sections, err := parseDeliveriesLock(string(body))
+	sections, err := thelock.Parse(string(body))
 	if err != nil {
 		return []string{lockPath + " cannot be read: " + err.Error()}, nil
 	}

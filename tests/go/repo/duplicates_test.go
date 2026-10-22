@@ -5,6 +5,7 @@ import (
 	"homelab/tests/parsed"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -94,4 +95,16 @@ var (
 func repository(t *testing.T) *parsed.Tree {
 	t.Helper()
 	return parsed.Repository(t)
+}
+
+// mentionedIn reports whether any piece of a Markdown document - its prose,
+// a code span, a code block - says the phrase.
+func mentionedIn(t *testing.T, rel, phrase string) bool {
+	t.Helper()
+	for _, part := range repository(t).Markdown(t, rel) {
+		if strings.Contains(part.Text, phrase) {
+			return true
+		}
+	}
+	return false
 }

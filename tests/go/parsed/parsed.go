@@ -53,6 +53,9 @@ type Tree struct {
 	scratch bool
 	// fixture is a tree a test made from nothing, holding only what it wrote.
 	fixture bool
+	// copied is every file a scratch tree holds as a copy of another tree's,
+	// whose text is never given back.
+	copied map[string]bool
 }
 
 // Repository is the tree the guards are judged against: the scratch copy a
@@ -464,7 +467,10 @@ func (r *Tree) CopyOf(t testing.TB, rels ...string) *Tree {
 			t.Fatal(err)
 		}
 	}
-	copied := &Tree{root: dir, scratch: true}
+	copied := &Tree{root: dir, scratch: true, copied: map[string]bool{}}
+	for _, rel := range rels {
+		copied.copied[filepath.ToSlash(rel)] = true
+	}
 	if _, errs, err := copied.Invoke(Run{}, "git", "init", "-q"); err != nil {
 		t.Fatalf("git init in the scratch tree: %v\n%s", err, errs)
 	}
@@ -483,12 +489,13 @@ func Empty(t testing.TB) *Tree {
 	return tree
 }
 
-// FixtureText is a fixture tree's file as text: what the test itself wrote,
-// or what a change it made left. Never the repository's, nor a copy of it.
-func (r *Tree) FixtureText(t testing.TB, rel string) string {
+// OwnText is a file of a tree a test made, as text: what the test wrote, or
+// what a program it ran there wrote. Never the repository's, nor a copy of
+// one of its files, changed or not.
+func (r *Tree) OwnText(t testing.TB, rel string) string {
 	t.Helper()
-	if !r.fixture {
-		t.Fatalf("asked for the text of %s in %s; text is given only for a fixture a test made", rel, r)
+	if !r.scratch || r.copied[filepath.ToSlash(rel)] {
+		t.Fatalf("asked for the text of %s in %s; text is given only for a file a test or what it ran wrote", rel, r)
 	}
 	return string(r.read(t, rel))
 }
@@ -556,6 +563,16 @@ func (r *Tree) Write(t testing.TB, rel, body string) {
 	}
 	if err := os.WriteFile(target, []byte(body), 0o644); err != nil {
 		t.Fatalf("writing %s: %v", rel, err)
+	}
+	delete(r.copied, filepath.ToSlash(rel))
+}
+
+// WriteExecutable writes a file into a scratch tree that may be run.
+func (r *Tree) WriteExecutable(t testing.TB, rel, body string) {
+	t.Helper()
+	r.Write(t, rel, body)
+	if err := os.Chmod(r.path(rel), 0o755); err != nil {
+		t.Fatalf("making %s executable: %v", rel, err)
 	}
 }
 

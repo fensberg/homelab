@@ -2,7 +2,6 @@ package repo
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -82,9 +81,12 @@ func asksFor(n *yaml.Node) whose {
 
 // onTheEstatesRunners is whether any job of a workflow asks for one of the
 // estate's own runners, and whether any asks for a pull-request pool.
-func onTheEstatesRunners(body []byte) (own, pools bool, err error) {
+func onTheEstatesRunners(docs []any) (own, pools bool, err error) {
 	var wf workflowFile
-	if err := yaml.Unmarshal(body, &wf); err != nil {
+	if len(docs) != 1 {
+		return false, false, fmt.Errorf("a workflow is one document, and this is %d", len(docs))
+	}
+	if err := as(docs[0], &wf); err != nil {
 		return false, false, err
 	}
 	for _, job := range wf.Jobs {
@@ -103,14 +105,14 @@ func onTheEstatesRunners(body []byte) (own, pools bool, err error) {
 // names, sorted; what stops any group being a wall; and the name of every
 // group that takes any workflow, which the caller holds to being the
 // pull-request pools'.
-func admittedBy(sources map[string]string) (names []string, wrong []string, open []string, groups int, err error) {
+func admittedBy(sources map[string]*hcl.File) (names []string, wrong []string, open []string, groups int, err error) {
 	seen := map[string]bool{}
-	for path, body := range sources {
-		file, diags := hclsyntax.ParseConfig([]byte(body), path, hcl.InitialPos)
-		if diags.HasErrors() {
-			return nil, nil, nil, 0, fmt.Errorf("%s does not parse: %s", path, diags.Error())
+	for path, file := range sources {
+		body, ok := file.Body.(*hclsyntax.Body)
+		if !ok {
+			return nil, nil, nil, 0, fmt.Errorf("%s is not native OpenTofu syntax", path)
 		}
-		for _, block := range file.Body.(*hclsyntax.Body).Blocks {
+		for _, block := range body.Blocks {
 			for _, given := range []string{"workflows", "selected_workflows"} {
 				attr, has := block.Body.Attributes[given]
 				if !has {
@@ -214,12 +216,12 @@ func notTheSame(asking, admitted []string) []string {
 }
 
 func TestEveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits(t *testing.T) {
-	root := repoRoot(t)
+	tree := repository(t)
 
-	sources := map[string]string{}
+	sources := map[string]*hcl.File{}
 	var asking []string
 	workflows, usesAPool := 0, false
-	for _, rel := range trackedFilesIn(t, root) {
+	for _, rel := range tree.Files(t) {
 		if !authoredHere(t, rel) {
 			continue
 		}
@@ -228,16 +230,12 @@ func TestEveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits(t *testing.T) {
 		if !isTofu && !isWorkflow {
 			continue
 		}
-		body, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatalf("reading %s: %v", rel, err)
-		}
 		if isTofu {
-			sources[rel] = string(body)
+			sources[rel] = tree.HCL(t, rel)
 			continue
 		}
 		workflows++
-		own, pools, err := onTheEstatesRunners(body)
+		own, pools, err := onTheEstatesRunners(tree.YAMLDocuments(t, rel))
 		if err != nil {
 			t.Fatalf("%s does not parse: %v", rel, err)
 		}
@@ -308,7 +306,7 @@ resource "something_else" "ignored" { visibility = "all" }
 		"restriction left unsaid": {func(s string) string { return strings.Replace(s, "  restricted_to_workflows = true\n", "", 1) }, "admits any workflow"},
 		"no workflows given":      {func(s string) string { return strings.Replace(s, "  selected_workflows      = var.workflows\n", "", 1) }, "names no workflow"},
 	} {
-		names, wrong, _, groups, err := admittedBy(map[string]string{"made-up.tf": c.change(group)})
+		names, wrong, _, groups, err := admittedBy(fixtureHCL(t, map[string]string{"made-up.tf": c.change(group)}))
 		if err != nil || groups != 1 {
 			t.Fatalf("%s: read %d group(s), %v", name, groups, err)
 		}
@@ -320,13 +318,10 @@ resource "something_else" "ignored" { visibility = "all" }
 			t.Errorf("%s: want %q, got\n%s", name, c.says, said)
 		}
 	}
-	if _, _, _, _, err := admittedBy(map[string]string{"broken.tf": `resource "x" {`}); err == nil {
-		t.Error("OpenTofu that does not parse was read as declaring nothing")
-	}
 
 	// A group written as taking any workflow is not judged as a wall here;
 	// it is named, for the caller to hold to being the pull-request pools'.
-	_, wrong, open, _, err := admittedBy(map[string]string{"made-up.tf": `
+	_, wrong, open, _, err := admittedBy(fixtureHCL(t, map[string]string{"made-up.tf": `
 resource "github_actions_runner_group" "any" {
   name                    = "for-pull-requests"
   visibility              = "selected"
@@ -337,7 +332,7 @@ resource "github_actions_runner_group" "unnamed" {
   visibility              = "selected"
   restricted_to_workflows = false
 }
-`})
+`}))
 	if err != nil || len(open) != 1 || open[0] != "for-pull-requests" || len(wrong) != 1 || !strings.Contains(wrong[0], "its name is worked out") {
 		t.Errorf("the groups that take any workflow were read as %v, with %v, %v", open, wrong, err)
 	}
@@ -372,17 +367,28 @@ resource "github_actions_runner_group" "unnamed" {
 		"a pull-request pool": {"jobs:\n  a:\n    runs-on: " + pool + "\n", false, true},
 		"a pool and its own":  {"jobs:\n  a:\n    runs-on: " + pool + "\n  b:\n    runs-on: some-set\n", true, true},
 	} {
-		own, pools, err := onTheEstatesRunners([]byte(c.yaml))
+		own, pools, err := onTheEstatesRunners(fixtureDocuments(t, c.yaml))
 		if err != nil || own != c.own || pools != c.pools {
 			t.Errorf("%s: got %v, %v, %v", name, own, pools, err)
 		}
-	}
-	if _, _, err := onTheEstatesRunners([]byte("jobs: [")); err == nil {
-		t.Error("a workflow that does not parse was read as asking for nothing")
 	}
 
 	got := strings.Join(notTheSame([]string{"builds.yml", "moved.yml"}, []string{"builds.yml", "stale.yml"}), "\n")
 	if !strings.Contains(got, "moved.yml asks for the estate's runner and no group admits it") || !strings.Contains(got, "stale.yml is admitted") || strings.Contains(got, "builds.yml") {
 		t.Errorf("the difference was said as\n%s", got)
 	}
+}
+
+// fixtureHCL is OpenTofu a test writes out, parsed as the tree parses its own.
+func fixtureHCL(t *testing.T, files map[string]string) map[string]*hcl.File {
+	t.Helper()
+	out := map[string]*hcl.File{}
+	for path, body := range files {
+		file, diags := hclsyntax.ParseConfig([]byte(body), path, hcl.InitialPos)
+		if diags.HasErrors() {
+			t.Fatalf("a fixture is not OpenTofu: %s", diags.Error())
+		}
+		out[path] = file
+	}
+	return out
 }
