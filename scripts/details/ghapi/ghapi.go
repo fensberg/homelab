@@ -34,6 +34,10 @@ const OrganisationSettingsType = "github_organization_settings"
 // estate, and read by the guard on which workflows a group admits.
 const RunnerGroupType = "github_actions_runner_group"
 
+// RunnerScaleSetChart is the chart a set of self-hosted runners is
+// installed with: what makes a release a set of runners.
+const RunnerScaleSetChart = "gha-runner-scale-set"
+
 // ConvergeWorkflow is the workflow file whose runs on main are the converge
 // of a merge. The contractor asks whether one is queued before it breaks
 // ground, and security's patrol asks whether the last one failed; both ask

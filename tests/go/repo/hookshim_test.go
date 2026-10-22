@@ -80,7 +80,7 @@ func TestTheHookShimsAreExecutable(t *testing.T) {
 // .git/hooks - which pre-commit owns and overwrites - and the guard is a file
 // nobody runs.
 func TestSetupPointsGitAtTheShims(t *testing.T) {
-	setup := parsed.Commands(repository(t).Shell(t, "scripts/install-dependencies.sh"))
+	setup := parsed.Commands(repository(t).Shell(t, installDependencies))
 	points := slices.ContainsFunc(setup, func(c parsed.Command) bool {
 		i := slices.Index(c.Words, "core.hooksPath")
 		return len(c.Words) > 0 && c.Words[0] == "git" && i >= 0 && i+1 < len(c.Words) && c.Words[i+1] == "githooks"
@@ -106,7 +106,7 @@ func readShim(t *testing.T, hook string) []parsed.Command {
 // runsTheDeliveryGuard reports whether a command is the security program's
 // guard-deliveries verb.
 func runsTheDeliveryGuard(c parsed.Command) bool {
-	return len(c.Words) > 1 && filepath.Base(c.Words[0]) == "security" && c.Words[1] == "guard-deliveries"
+	return len(c.Words) > 1 && filepath.Base(c.Words[0])+" "+c.Words[1] == "security guard-deliveries"
 }
 
 // The Format lane runs the same .pre-commit-config.yaml a developer runs, and

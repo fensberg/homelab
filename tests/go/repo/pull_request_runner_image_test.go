@@ -3,6 +3,7 @@ package repo
 import (
 	"homelab/tests/parsed"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -36,13 +37,25 @@ const takeDelivery = "scripts/take-delivery.sh"
 // and its Dockerfile is the one the work order of that name builds. The jobs
 // are the ones the suppliers list says are of a pool.
 
-var deliveriesTaken = regexp.MustCompile(`take-delivery\.sh((?:\s+(?:\\\n\s*)?[a-z0-9][a-z0-9-]*)+)`)
-
-// takes is every delivery a script asks take-delivery.sh for.
+// takes is every delivery a script asks take-delivery.sh for: the words
+// after it, in every command that runs it, as the shell parser reads them.
 func takes(script string) []string {
+	commands, err := parsed.WorkflowCommands("a script", script)
+	if err != nil {
+		return []string{"(a script that is not shell that can be read: " + err.Error() + ")"}
+	}
+	delivery := regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 	var out []string
-	for _, m := range deliveriesTaken.FindAllStringSubmatch(script, -1) {
-		out = append(out, strings.Fields(strings.ReplaceAll(m[1], `\`, " "))...)
+	for _, c := range commands {
+		at := slices.IndexFunc(c.Words, func(w string) bool { return strings.HasSuffix(w, "take-delivery.sh") })
+		if at < 0 {
+			continue
+		}
+		for _, w := range c.Words[at+1:] {
+			if delivery.MatchString(w) {
+				out = append(out, w)
+			}
+		}
 	}
 	return out
 }

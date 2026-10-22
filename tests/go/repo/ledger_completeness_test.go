@@ -78,7 +78,8 @@ func TestEveryGuardIsProvedOrDeclaredUnprovable(t *testing.T) {
 		file := filepath.Base(rel)
 		for _, d := range tree.Go(t, fset, rel).Decls {
 			fn, ok := d.(*ast.FuncDecl)
-			if !ok || fn.Recv != nil || !strings.HasPrefix(fn.Name.Name, "Test") {
+			// TestMain starts the package and is no test of anything.
+			if !ok || fn.Recv != nil || !strings.HasPrefix(fn.Name.Name, "Test") || fn.Name.Name == "TestMain" {
 				continue
 			}
 			name := fn.Name.Name

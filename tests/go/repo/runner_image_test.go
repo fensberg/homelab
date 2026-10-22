@@ -2,6 +2,7 @@ package repo
 
 import (
 	"homelab/tests/parsed"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -24,7 +25,7 @@ func TestVersionsAreDeclaredOnceAndSharedByBoth(t *testing.T) {
 	}
 
 	// The provisioning script must source the file rather than assign its own.
-	script := parsed.Commands(tree.Shell(t, "scripts/install-dependencies.sh"))
+	script := parsed.Commands(tree.Shell(t, installDependencies))
 	sources := slices.ContainsFunc(script, func(c parsed.Command) bool {
 		return len(c.Words) > 1 && (c.Words[0] == "source" || c.Words[0] == ".") &&
 			slices.ContainsFunc(c.Words[1:], func(w string) bool { return strings.Contains(w, "versions.env") })
@@ -123,7 +124,7 @@ func TestRunnerImageCarriesEveryBinaryTheContractorInvokes(t *testing.T) {
 }
 
 // runnerImageDockerfile is the estate runner's image.
-const runnerImageDockerfile = ".github/runner-image/Dockerfile"
+var runnerImageDockerfile = filepath.ToSlash(filepath.Join(".github", "runner-image", "Dockerfile"))
 
 // contractorInvokes is what the contractor shells out to: the vault's
 // client, OpenTofu, the backups' key and copier, and the cluster's and the

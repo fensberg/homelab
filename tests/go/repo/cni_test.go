@@ -138,6 +138,7 @@ func TestKubePrismIsDeclaredRatherThanAssumed(t *testing.T) {
 // actually gets deployed, so both are checked and the tags are what would catch
 // a bumped version and a forgotten re-render.
 func TestTheRenderedCNIManifestMatchesThePinnedChartVersion(t *testing.T) {
+	heavy(t, "semgrep reads the rendered file's header, a few seconds")
 	want := pinned(t, cniVersion)
 
 	if !strings.Contains(header(t, cniPath(t)), "cilium "+want) {

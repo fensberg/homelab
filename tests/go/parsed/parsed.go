@@ -317,7 +317,9 @@ func (r *Tree) Conftest(t testing.TB, rel, kind string) any {
 	if _, err := exec.LookPath("conftest"); err != nil {
 		t.Fatal("conftest is not on PATH; take delivery of it: scripts/take-delivery.sh conftest")
 	}
-	out, errs, err := r.Invoke(Run{}, "conftest", "parse", "--parser", kind, rel)
+	// Combined, whatever the tree's own conftest.toml says: one file, as its
+	// path and its contents.
+	out, errs, err := r.Invoke(Run{}, "conftest", "parse", "--combine", "--parser", kind, rel)
 	if err != nil {
 		t.Fatalf("conftest could not read %s as %s: %v\n%s", rel, kind, err, errs)
 	}
@@ -416,7 +418,9 @@ func (r *Tree) Invoke(run Run, name string, args ...string) (stdout, stderr []by
 	for i, a := range args {
 		expanded[i] = r.expand(a)
 	}
-	cmd := exec.Command(r.expand(name), expanded...)
+	// The program as it is named: a guard names what it runs, and a file of
+	// the tree it runs is an argument to the program that runs it.
+	cmd := exec.Command(name, expanded...)
 	cmd.Dir = r.path(run.Dir)
 	switch {
 	case run.Outside:

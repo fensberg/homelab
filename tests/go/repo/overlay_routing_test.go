@@ -115,7 +115,7 @@ func readHypervisorPlaybook(t *testing.T) string {
 // computer can do is not a step to ask somebody for, and an instruction that
 // lives only in a reply is lost at the next context refresh.
 func TestSetupConfiguresCommitSigning(t *testing.T) {
-	setup := parsed.Commands(repository(t).Shell(t, "scripts/install-dependencies.sh"))
+	setup := parsed.Commands(repository(t).Shell(t, installDependencies))
 	configures := func(setting string) []parsed.Command {
 		var out []parsed.Command
 		for _, c := range setup {

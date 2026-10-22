@@ -2,6 +2,7 @@ package repo
 
 import (
 	"homelab/details/capacity"
+	"homelab/details/ghapi"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,7 +34,7 @@ func runnerSets(t *testing.T) []string {
 		if kind != kindHelmRelease {
 			continue
 		}
-		if chart, _ := scalarAt(helmReleaseDocument(t, r.file, name), "chart"); chart == "gha-runner-scale-set" {
+		if chart, _ := scalarAt(helmReleaseDocument(t, r.file, name), "chart"); chart == ghapi.RunnerScaleSetChart {
 			sets = append(sets, name)
 		}
 	}
@@ -212,17 +213,21 @@ func versionsPinned(t *testing.T) map[string]string {
 	return pins
 }
 
-// header is the comment a rendered file opens with, as the YAML parser reads
-// it: who rendered it, and from what. It is the subject of the checks that
-// read it, so it is read where a parser keeps it and nowhere else.
+// header is the comment a rendered file opens with: who rendered it, and
+// from what. It sits before the first document, where no YAML parser keeps
+// a comment, so Semgrep reads it: the run of comment lines the file starts
+// with.
 func header(t *testing.T, rel string) string {
 	t.Helper()
-	node := repository(t).YAMLNode(t, rel)
-	out := node.HeadComment
-	if len(node.Content) > 0 {
-		out += "\n" + node.Content[0].HeadComment
+	rule := map[string]any{
+		"id": "a-header", "languages": []string{"generic"}, "severity": "INFO",
+		"message": "$HEADER", "metadata": map[string]any{"about": "header"},
+		"pattern-regex": `\A(?P<HEADER>(?:#[^\n]*\n)+)`,
 	}
-	return out
+	for _, f := range scanText(t, repository(t), []map[string]any{rule}, []string{rel}) {
+		return f.Text
+	}
+	return ""
 }
 
 // mappings is every document of a YAML file that is a mapping.

@@ -22,6 +22,7 @@ import (
 // alone (docs/epochs/04-observability.md): a definition of another group
 // here is a second way of telling it.
 func TestTheRenderedGatewayAPIDefinitionsMatchTheirPins(t *testing.T) {
+	heavy(t, "semgrep reads the rendered file's header, a few seconds")
 	const group = "gateway.networking.k8s.io"
 	path, body := fluxObject(t, "CustomResourceDefinition", "gateways."+group)
 

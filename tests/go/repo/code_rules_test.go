@@ -146,7 +146,7 @@ func scanText(t *testing.T, tree *parsed.Tree, rules []map[string]any, files []s
 	args := append([]string{"--config", config, "--disable-nosem", "--max-target-bytes", "0"}, files...)
 	out, _ := runSemgrepIn(t, tree, args...)
 	var report struct {
-		Results []struct {
+		Results []struct { // matched to "results" by name
 			Path  string `json:"path"`
 			Start struct {
 				Line int `json:"line"`
@@ -157,7 +157,7 @@ func scanText(t *testing.T, tree *parsed.Tree, rules []map[string]any, files []s
 					About string `json:"about"`
 				} `json:"metadata"`
 			} `json:"extra"`
-		} `json:"results"`
+		}
 		Errors []struct {
 			Message string `json:"message"`
 			Path    string `json:"path"`

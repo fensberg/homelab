@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"homelab/details/ghapi"
 	"os"
 	"path/filepath"
 	"sort"
@@ -307,7 +308,7 @@ func declared(from string, docs []map[string]any, workers int, out map[string]wo
 }
 
 // runnerChart is the chart a set of runners is installed with.
-const runnerChart = "gha-runner-scale-set"
+const runnerChart = ghapi.RunnerScaleSetChart
 
 // runners adds a runner for each place runners are sent.
 //

@@ -67,7 +67,7 @@ func newSetupFixture(t *testing.T, ghBehaviour string) *setupFixture {
 
 	// The script and the one file it sources, copied so `dirname $0/..` is the
 	// throwaway repository rather than this one.
-	repo := repository(t).CopyOf(t, "scripts/install-dependencies.sh", versionPins)
+	repo := repository(t).CopyOf(t, installDependencies, versionPins)
 	repo.Write(t, "githooks/.keep", "")
 	// take-delivery.sh downloads and installs for real, and the script calls it
 	// for every locked tool on every run (#416). Stubbed to record what it was
@@ -131,7 +131,7 @@ func newSetupFixture(t *testing.T, ghBehaviour string) *setupFixture {
 
 func (f *setupFixture) run(t *testing.T) (string, error) {
 	t.Helper()
-	stdout, stderr, err := f.repo.Invoke(parsed.Run{Env: f.env, Bare: true}, "bash", parsed.Here("scripts/install-dependencies.sh"))
+	stdout, stderr, err := f.repo.Invoke(parsed.Run{Env: f.env, Bare: true}, "bash", parsed.Here(filepath.Join("scripts", "install-dependencies.sh")))
 	return string(stdout) + string(stderr), err
 }
 
@@ -294,3 +294,6 @@ Replacing the key GitHub knows about turns a working setup into refused pushes,
 and the script says in its own header that it is safe to re-run.`, first, second)
 	}
 }
+
+// installDependencies is the script that provisions a workstation.
+var installDependencies = filepath.ToSlash(filepath.Join("scripts", "install-dependencies.sh"))

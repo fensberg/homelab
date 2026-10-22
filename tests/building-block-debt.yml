@@ -26,8 +26,7 @@ debt:
   - "pull_request"
   - "refs/heads/main"
 
-  # --- Git test isolation - required in every test that runs git, and copied into each (16)
-  - '"refs/signing/"'
+  # --- Git test isolation - required in every test that runs git, and copied into each (15)
   - "--abbrev-ref"
   - "--allow-empty"
   - "--is-ancestor"
@@ -44,14 +43,13 @@ debt:
   - "refs/signing/"
   - "user.email=a@example.com"
 
-  # --- Paths into this repository (17)
+  # --- Paths into this repository (16)
   - "backend_pg.tf"
   - ".pre-commit-config.yaml"
   - "age-encryption.org/v1"
   - "approved-suppliers.yml"
   - "epoch/03-workload"
   - "http://127.0.0.1:1"
-  - "hypervisor-prep.yml"
   - "management.rendered.json"
   - "management.tpl.json"
   - "modules/infrastructure/cluster/talos.tf"
@@ -61,7 +59,7 @@ debt:
   - "scripts/versions.env"
   - "site.auto.yml"
 
-  # --- Everything else: tool flags, vendor identifiers, status wording (52)
+  # --- Everything else: tool flags, vendor identifiers, status wording (51)
   - "demolish-site"
   - "-refresh=false"
   - " --hash=sha256:"
@@ -102,7 +100,6 @@ debt:
   - "no tools: entry in "
   - "north-street-office"
   - "nothing at all"
-  - "set -euo pipefail"
   - "source_control.repo_url"
   - "state_conn_str"
   - "tag:homelab-router"

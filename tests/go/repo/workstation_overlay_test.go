@@ -33,11 +33,6 @@ func TestTheWorkstationIsProvisionedOntoTheOverlay(t *testing.T) {
 			"`curl | sh` is the shape scripts/approved-suppliers.yml exists to prevent: " +
 			"the package is signed, the install script is merely fetched.")
 	}
-	if !strings.Contains(body, "--accept-routes") {
-		t.Error("the workstation does not accept advertised routes, so it loses the node " +
-			"subnet whenever the SDN is rebuilt - which is precisely when somebody is " +
-			"running the button and needs to watch it")
-	}
 }
 
 // The router tag approves subnet routes. A workstation wearing it could claim

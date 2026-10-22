@@ -229,15 +229,8 @@ func textReads(fset *token.FileSet, f *ast.File, programs map[string]bool, const
 				if !ok {
 					continue // the repository's own script, run as shipped
 				}
-				commands, err := parsed.WorkflowCommands("a script a guard wrote", script)
-				if err != nil {
-					say(call, "hands bash a script that is not shell that can be read")
-					continue
-				}
-				for _, c := range commands {
-					if len(c.Words) > 0 && textReaders[filepath.Base(c.Words[0])] {
-						say(call, "hands bash a script that runs "+c.Words[0]+", which reads a file as text")
-					}
+				for _, problem := range scriptReads(script) {
+					say(call, problem)
 				}
 			}
 		case "git":
@@ -247,6 +240,22 @@ func textReads(fset *token.FileSet, f *ast.File, programs map[string]bool, const
 		}
 		return true
 	})
+	return out
+}
+
+// scriptReads is what is wrong with a script a guard writes out for bash: a
+// program in it that reads a file as text, or its not being shell at all.
+func scriptReads(script string) []string {
+	commands, err := parsed.WorkflowCommands("a script a guard wrote", script)
+	if err != nil {
+		return []string{"hands bash a script that is not shell that can be read: " + err.Error()}
+	}
+	var out []string
+	for _, c := range commands {
+		if len(c.Words) > 0 && textReaders[filepath.Base(c.Words[0])] {
+			out = append(out, "hands bash a script that runs "+c.Words[0]+", which reads a file as text")
+		}
+	}
 	return out
 }
 
