@@ -2,7 +2,7 @@ package repo
 
 import (
 	"fmt"
-	"os"
+	"homelab/tests/parsed"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -67,23 +67,20 @@ func runConftest(t *testing.T, args ...string) (string, bool) {
 	if _, err := exec.LookPath(conftestProgram); err != nil {
 		t.Fatal("conftest is not on PATH; take delivery of it: scripts/take-delivery.sh conftest")
 	}
-	cmd := exec.Command(conftestProgram, args...)
-	cmd.Dir = repoRoot(t)
-	cmd.Env = append(os.Environ(), "NO_COLOR=1")
-	out, err := cmd.CombinedOutput()
+	stdout, stderr, err := repository(t).Invoke(parsed.Run{Env: []string{"NO_COLOR=1"}}, conftestProgram, args...)
+	out := string(stdout) + string(stderr)
 	if err != nil {
 		if _, failed := err.(*exec.ExitError); !failed {
 			t.Fatalf("conftest could not be run: %v", err)
 		}
-		return string(out), false
+		return out, false
 	}
-	return string(out), true
+	return out, true
 }
 
 func TestTheConfigurationRulesHold(t *testing.T) {
-	root := repoRoot(t)
-	if _, err := os.Stat(filepath.Join(root, conftestRules)); err != nil {
-		t.Fatalf("%s is not there, so no configuration rule runs: %v", conftestRules, err)
+	if !repository(t).IsDir(conftestRules) {
+		t.Fatalf("%s is not there, so no configuration rule runs", conftestRules)
 	}
 	// How it is run - every package, every file at once - is conftest.toml's
 	// to say, so this, the lane and a person at a terminal run it alike.
@@ -254,18 +251,16 @@ func collectedPackages(t *testing.T) {
 			continue
 		}
 		files++
-		m := packageClause.FindStringSubmatch(readRepoFile(t, rel))
-		if m == nil {
+		pkg := parseRego(t, rel).Package
+		if pkg == "" {
 			t.Errorf("%s declares no package, so nothing can say whether its rules run", rel)
 			continue
 		}
-		if !rulePackage.MatchString(m[1]) {
-			t.Errorf("%s is package %s. Conftest asks main alone, and main collects the packages under rules; a rule anywhere else never runs and says nothing. Make it package rules.%s.", rel, m[1], m[1])
+		if !rulePackage.MatchString(pkg) {
+			t.Errorf("%s is package %s. Conftest asks main alone, and main collects the packages under rules; a rule anywhere else never runs and says nothing. Make it package rules.%s.", rel, pkg, pkg)
 		}
 	}
 	if files == 0 {
 		t.Fatalf("no policy file was found under %s, so no package was checked", conftestRules)
 	}
 }
-
-var packageClause = regexp.MustCompile(`(?m)^package\s+([A-Za-z0-9_.]+)\s*$`)

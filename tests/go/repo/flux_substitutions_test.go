@@ -1,10 +1,7 @@
 package repo
 
 import (
-	"io/fs"
-	"os"
-	"os/exec"
-	"path/filepath"
+	"homelab/tests/parsed"
 	"regexp"
 	"sort"
 	"strings"
@@ -48,11 +45,12 @@ var (
 )
 
 func TestEveryFluxSubstitutionHasAStandInAndTheReverse(t *testing.T) {
-	root := repoRoot(t)
+	tree := repository(t)
 
 	declared := map[string]bool{}
-	for _, m := range substitutionKV.FindAllStringSubmatch(readRepoFile(t, "tests/flux-substitutions.env"), -1) {
-		declared[m[1]] = true
+	standIns, _ := tree.Conftest(t, "tests/flux-substitutions.env", "dotenv").(map[string]any)
+	for name := range standIns {
+		declared[name] = true
 	}
 	if len(declared) == 0 {
 		t.Fatal("tests/flux-substitutions.env declares no stand-ins, so this checked nothing")
@@ -66,9 +64,7 @@ func TestEveryFluxSubstitutionHasAStandInAndTheReverse(t *testing.T) {
 	// answers on is the routes' own guard's to refuse.
 	derived := map[string]bool{}
 	// covers: shell:.github/scripts/application-standins.sh
-	cmd := exec.Command("bash", ".github/scripts/application-standins.sh")
-	cmd.Dir = root
-	out, err := cmd.Output()
+	out, _, err := tree.Invoke(parsed.Run{}, "bash", parsed.Here(".github/scripts/application-standins.sh"))
 	if err != nil {
 		t.Fatalf("deriving the applications' stand-ins: %v", err)
 	}
@@ -90,31 +86,17 @@ func TestEveryFluxSubstitutionHasAStandInAndTheReverse(t *testing.T) {
 	}
 	bootstrap := fluxTree + "/" + topOf(cni) + "/"
 	used := map[string][]string{}
-	for _, dir := range []string{fluxTree, applications.Dir} {
-		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() || !(strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")) {
-				return err
+	for _, rel := range tree.Files(t) {
+		inTree := strings.HasPrefix(rel, fluxTree+"/") || strings.HasPrefix(rel, applications.Dir+"/")
+		if !inTree || !(strings.HasSuffix(rel, ".yaml") || strings.HasSuffix(rel, ".yml")) || strings.HasPrefix(rel, bootstrap) {
+			continue
+		}
+		// Values, never comments: kustomize drops those before anything
+		// substitutes anything.
+		for _, v := range parsed.Values(tree.YAMLDocuments(t, rel)) {
+			for _, m := range fluxVariable.FindAllStringSubmatch(v, -1) {
+				used[m[1]] = append(used[m[1]], rel)
 			}
-			rel, _ := filepath.Rel(root, path)
-			if strings.HasPrefix(filepath.ToSlash(rel), bootstrap) {
-				return nil
-			}
-			body, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			for _, line := range strings.Split(string(body), "\n") {
-				if strings.HasPrefix(strings.TrimSpace(line), "#") {
-					continue
-				}
-				for _, m := range fluxVariable.FindAllStringSubmatch(line, -1) {
-					used[m[1]] = append(used[m[1]], rel)
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			t.Fatalf("walking %s/: %v", dir, err)
 		}
 	}
 

@@ -1,7 +1,6 @@
 package repo
 
 import (
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -33,47 +32,12 @@ import (
 // the failure it was built to prevent, wearing the walk's clothes. Filter the
 // result by what you are asserting about; never narrow where you looked.
 
-// A repository this size cannot plausibly have fewer tracked files, so a count
-// below it means the enumeration broke rather than that the tree shrank. Without
-// this, a failed listing is an empty list, and every guard downstream passes by
-// examining nothing.
-const fewestPlausibleTrackedFiles = 100
-
-// trackedFiles lists every file git tracks, relative to the repository root.
+// trackedFiles lists every file git tracks, relative to the repository root,
+// as tests/parsed lists them - with the floor below which a listing has
+// broken rather than the tree shrunk.
 func trackedFiles(t *testing.T) []string {
 	t.Helper()
-	return trackedFilesIn(t, repoRoot(t))
-}
-
-// trackedFilesIn lists the tracked files of a tree other than the repository
-// itself - the scratch tree a guard judges when patches are outstanding.
-func trackedFilesIn(t *testing.T, root string) []string {
-	t.Helper()
-
-	out, err := exec.Command("git", "-C", root, "ls-files", "-z").Output()
-	if err != nil {
-		t.Fatalf(`listing tracked files in %s: %v
-
-Every guard in this package enumerates from here, so this is not a failure of
-one check - nothing downstream can see its subjects. If this is the mutation
-ledger's scratch tree, scratchRepo is meant to have run `+"`git init`"+` in it.`, root, err)
-	}
-
-	var files []string
-	for _, rel := range strings.Split(strings.TrimRight(string(out), "\x00"), "\x00") {
-		if rel != "" {
-			files = append(files, rel)
-		}
-	}
-	if len(files) < fewestPlausibleTrackedFiles {
-		t.Fatalf(`git ls-files returned %d file(s) in %s, and this repository has
-many more than that.
-
-The enumeration has broken. Left alone it would report an empty universe, and
-every guard reading it would pass by examining nothing - which looks exactly
-like everything being correct.`, len(files), root)
-	}
-	return files
+	return repository(t).Files(t)
 }
 
 // trackedMatching is trackedFiles filtered by what the caller asserts about.

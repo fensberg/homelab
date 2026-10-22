@@ -121,6 +121,12 @@ func (r *Tree) Exists(rel string) bool {
 	return err == nil
 }
 
+// Stat is what the file system says of a path - its size and its mode - and
+// never where it is.
+func (r *Tree) Stat(rel string) (fs.FileInfo, error) {
+	return os.Stat(r.path(rel))
+}
+
 // IsDir reports whether a path is a directory.
 func (r *Tree) IsDir(rel string) bool {
 	info, err := os.Stat(r.path(rel))

@@ -2,14 +2,12 @@ package repo
 
 import (
 	"fmt"
-	"os"
+	"go/ast"
+	"go/token"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 // Every guard in this package is either proved or declared unprovable.
@@ -41,20 +39,12 @@ type ledgerCompleteness struct {
 	} `yaml:"unprovable"`
 }
 
-var testFunc = regexp.MustCompile(`(?m)^func (Test[A-Za-z0-9_]*)\(`)
-
 func TestEveryGuardIsProvedOrDeclaredUnprovable(t *testing.T) {
 	skipIfInner(t)
-	root := repoRoot(t)
+	tree := repository(t)
 
-	body, err := os.ReadFile(filepath.Join(root, "tests", "mutations.yml"))
-	if err != nil {
-		t.Fatalf("reading tests/mutations.yml: %v", err)
-	}
 	var l ledgerCompleteness
-	if err := yaml.Unmarshal(body, &l); err != nil {
-		t.Fatalf("parsing tests/mutations.yml: %v", err)
-	}
+	tree.YAMLInto(t, ledgerEntries+".yml", &l)
 
 	proved := map[string]bool{}
 	for _, m := range readLedger(t).Mutations {
@@ -78,29 +68,25 @@ func TestEveryGuardIsProvedOrDeclaredUnprovable(t *testing.T) {
 		}
 	}
 
-	dir := filepath.Join(root, "tests", "go", "repo")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("reading %s: %v", dir, err)
-	}
-
 	var undeclared []string
 	seen := map[string]bool{}
-	for _, e := range entries {
-		if !strings.HasSuffix(e.Name(), "_test.go") {
+	fset := token.NewFileSet()
+	for _, rel := range tree.Files(t) {
+		if filepath.Dir(rel) != guardsDir || !strings.HasSuffix(rel, "_test.go") {
 			continue
 		}
-		src, err := os.ReadFile(filepath.Join(dir, e.Name()))
-		if err != nil {
-			t.Fatalf("reading %s: %v", e.Name(), err)
-		}
-		for _, m := range testFunc.FindAllStringSubmatch(string(src), -1) {
-			name := m[1]
-			seen[name] = true
-			if proved[name] || exemptTest[name] || exemptPath[e.Name()] {
+		file := filepath.Base(rel)
+		for _, d := range tree.Go(t, fset, rel).Decls {
+			fn, ok := d.(*ast.FuncDecl)
+			if !ok || fn.Recv != nil || !strings.HasPrefix(fn.Name.Name, "Test") {
 				continue
 			}
-			undeclared = append(undeclared, e.Name()+" "+name)
+			name := fn.Name.Name
+			seen[name] = true
+			if proved[name] || exemptTest[name] || exemptPath[file] {
+				continue
+			}
+			undeclared = append(undeclared, file+" "+name)
 		}
 	}
 

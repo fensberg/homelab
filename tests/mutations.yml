@@ -194,6 +194,8 @@ unprovable:
   # entries prove. Their tables hold each case they must find and must leave.
   - test: TestDanglingInFindsWhatIsGoneAndLeavesWhatIsThere
     reason: table
+  - test: TestDanglingFindingJudgesEachNameAScanFound
+    reason: table
   - test: TestTheOwedCeilingFitsTheDebtExactly
     reason: table
   - test: TestDuplicateFunctionsFindsCopiesAcrossPackagesOnly

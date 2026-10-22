@@ -47,10 +47,6 @@ var skipIsHonest = map[string]string{
 		"and once as the subject - and the inner run must not recurse. The skip is " +
 		"keyed on repoRootEnv, which only the harness sets.",
 
-	"build_artifacts_test.go": "one skip, keyed on the same repoRootEnv: the ledger's " +
-		"scratch tree is deliberately not a git repository, so there is no working " +
-		"tree to ask git about. Every other git failure is a Fatal.",
-
 	"heavy_test.go": "a guard that costs seconds skips only under -short, which is the " +
 		"pre-push hook's budget, and says so with its reason. TestHeavyGuardsRunOnEveryPullRequest " +
 		"refuses a CI run with -short, so the skip reports that the guard runs on the pull " +
