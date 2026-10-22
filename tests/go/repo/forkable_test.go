@@ -2,7 +2,6 @@ package repo
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -24,9 +23,6 @@ import (
 // The complete check - the real names, read from the vault-backed rendered
 // config and searched for across the tree - lives in tests/go/integration,
 // where credentials already exist and nothing has to be written down.
-
-// Matches a control-plane VM name: <site>-cp-NN.
-var vmNamePattern = regexp.MustCompile(`\b([a-z][a-z0-9-]*)-cp-\d+\b`)
 
 // Placeholder site names that examples and fixtures may use. RFC 5737 does
 // this for addresses; there is no equivalent registry for names, so the
@@ -51,16 +47,13 @@ func isPlaceholderSite(name string) bool {
 }
 
 func TestVMNameExamplesUseAPlaceholderSite(t *testing.T) {
-	walkText(t, func(rel, body string) {
-		if strings.HasSuffix(rel, "forkable_test.go") {
-			return // this file contains the pattern in order to describe it
+	heavy(t, "semgrep reads every text file for VM names, a few seconds")
+	for _, f := range scanForkable(t, `(?i)\b(?P<FULL>(?P<KEY>[a-z][a-z0-9-]*)-cp-\d+)\b`) {
+		key, full, _ := strings.Cut(f.Text, "|")
+		if !isPlaceholderSite(strings.ToLower(key)) {
+			t.Errorf("%s names a control-plane VM as %q. VM names are derived from the site's own name, which belongs in the vault - use one of the documented placeholders instead.", f.Path, strings.ToLower(full))
 		}
-		for _, m := range vmNamePattern.FindAllStringSubmatch(strings.ToLower(body), -1) {
-			if !isPlaceholderSite(m[1]) {
-				t.Errorf("%s names a control-plane VM as %q. VM names are derived from the site's own name, which belongs in the vault - use one of the documented placeholders instead.", rel, m[0])
-			}
-		}
-	})
+	}
 }
 
 // A resource address is the other place a proper noun hides, and the check
@@ -80,26 +73,22 @@ func TestVMNameExamplesUseAPlaceholderSite(t *testing.T) {
 // quoted map key on a provider resource address must be a key the config
 // actually uses, not a name.
 func TestResourceAddressKeysUseAPlaceholder(t *testing.T) {
-	walkText(t, func(rel, body string) {
-		if strings.HasSuffix(rel, "forkable_test.go") {
-			return // this file contains the pattern in order to describe it
+	heavy(t, "semgrep reads every text file for resource addresses, a few seconds")
+	for _, f := range scanForkable(t, `(?P<FULL>`+addressKeyShape+`\["(?P<KEY>[^"]+)"\])`) {
+		key, full, _ := strings.Cut(f.Text, "|")
+		if !isPlaceholderKey(key) {
+			t.Errorf("%s keys a resource address by %q. for_each keys come from the "+
+				"config, so a name here is a vault value published in an address - "+
+				"use a positional key such as \"node0\", or a numeric one.", f.Path, full)
 		}
-		for _, m := range addressKeyPattern.FindAllStringSubmatch(body, -1) {
-			if !isPlaceholderKey(m[1]) {
-				t.Errorf("%s keys a resource address by %q. for_each keys come from the "+
-					"config, so a name here is a vault value published in an address - "+
-					"use a positional key such as \"node0\", or a numeric one.", rel, m[0])
-			}
-		}
-	})
+	}
 }
 
 // A provider resource address with a quoted map key:
 // proxmox_virtual_environment_vm.talos_cp["100"], and the data. form of it.
 // Scoped to provider-prefixed types on purpose - a bare foo.bar["x"] is
 // ordinary map indexing in Go and is not what leaks.
-var addressKeyPattern = regexp.MustCompile(
-	`(?:proxmox|talos|tailscale|cloudflare|kubernetes|helm|local|random|null)_[a-z0-9_]*\.[a-z0-9_]+\["([^"]+)"\]`)
+const addressKeyShape = `(?:proxmox|talos|tailscale|cloudflare|kubernetes|helm|local|random|null)_[a-z0-9_]*\.[a-z0-9_]+`
 
 // Keys the config genuinely produces and that carry no proper noun: the
 // positional hypervisor and site keys, and the numeric host octets. Anything
@@ -130,59 +119,36 @@ var textFileExts = map[string]bool{
 	".json": true, ".sh": true, ".hcl": true, ".ts": true, ".js": true,
 }
 
-var skipWalkDirs = map[string]bool{
-	".git": true, "node_modules": true, ".terraform": true, "coverage": true,
-}
-
-// walkText hands every text file in the repository to a check.
+// scanForkable is every place a Semgrep scan of the repository's tracked text
+// files finds a pattern, which names what it found as KEY and the whole of
+// it as FULL; each finding's text is "KEY|FULL".
 //
-// It counts what it visited and refuses to return having visited nothing, for
-// the same reason tracked() does: the callers here are leak guards, and a leak
-// guard that inspects zero files passes. There is no output that distinguishes
-// "no estate name is committed anywhere" from "this walk stopped finding
-// files" - both are silence and a green check - and only the first is ever the
-// intended claim.
-//
-// The reachable version of that is not exotic. textFileExts is a fixed list, so
-// a repository that moved to a different extension would be walked past;
-// skipWalkDirs is a fixed list, so a directory renamed into it would vanish;
-// and repoRoot resolving somewhere unexpected empties the walk entirely. None
-// of those announces itself.
-func walkText(t *testing.T, check func(rel, body string)) {
+// It refuses to return having read nothing, for the same reason tracked()
+// does: the callers here are leak guards, and a leak guard that inspects zero
+// files passes. There is no output that distinguishes "no estate name is
+// committed anywhere" from "this stopped finding files" - both are silence
+// and a green check - and only the first is ever the intended claim.
+func scanForkable(t *testing.T, pattern string) []textFinding {
 	t.Helper()
-	root := repoRoot(t)
-	visited := 0
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
+	var files []string
+	for _, rel := range trackedFiles(t) {
+		// This file contains the patterns in order to describe them.
+		if textFileExts[strings.ToLower(filepath.Ext(rel))] && filepath.Base(rel) != "forkable_test.go" {
+			files = append(files, rel)
 		}
-		if info.IsDir() {
-			if skipWalkDirs[info.Name()] {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !textFileExts[strings.ToLower(filepath.Ext(path))] {
-			return nil
-		}
-		body, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		rel, _ := filepath.Rel(root, path)
-		visited++
-		check(rel, string(body))
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking the repository: %v", err)
 	}
-	if visited == 0 {
-		t.Fatal(`walked the repository and read no text files at all, so this test asserts nothing.
+	if len(files) == 0 {
+		t.Fatal(`found no text files at all, so this test asserts nothing.
 
 The callers of this are leak guards. Inspecting zero files passes every one of
 them, and looks identical to a repository with nothing to find.`)
 	}
+	rule := map[string]any{
+		"id": "forkable", "languages": []string{"generic"}, "severity": "INFO",
+		"message": "$KEY|$FULL", "metadata": map[string]any{"about": "forkable"},
+		"pattern-regex": pattern,
+	}
+	return scanText(t, repository(t), []map[string]any{rule}, files)
 }
 
 // An untrusted zone is named after the workload it hosts, which makes the zone
@@ -199,36 +165,35 @@ them, and looks identical to a repository with nothing to find.`)
 // So zone names in committed fixtures and tests use the same documented
 // placeholders site names do.
 func TestZoneNamesUseAPlaceholder(t *testing.T) {
-	root := repoRoot(t)
+	heavy(t, "semgrep reads every fixture and Go file for zone names, a few seconds")
 
 	// Both shapes a zone name is written in: a config fixture's map key, and
-	// the Go test fixture that builds one directly.
-	inJSON := regexp.MustCompile(`"dmz_zones"\s*:\s*\{\s*"([a-z][a-z0-9-]*)"`)
-	inGo := regexp.MustCompile(`DMZZone\{\s*"([a-z][a-z0-9-]*)"`)
-
-	// Every tracked fixture and Go file, wherever it is. This walked the two
-	// directories that held them when it was written; a fixture that moves, or
-	// a new place to keep one, is then one nothing reads.
-	var checked int
-	for _, rel := range tracked(t, func(rel string) bool {
+	// the Go test fixture that builds one directly. Every tracked fixture and
+	// Go file, wherever it is. This walked the two directories that held them
+	// when it was written; a fixture that moves, or a new place to keep one,
+	// is then one nothing reads.
+	files := tracked(t, func(rel string) bool {
 		return strings.HasSuffix(rel, ".json") || strings.HasSuffix(rel, ".go")
-	}) {
-		body, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatal(err)
+	})
+	zone := func(id, pattern string) map[string]any {
+		return map[string]any{
+			"id": id, "languages": []string{"generic"}, "severity": "INFO",
+			"message": "$ZONE", "metadata": map[string]any{"about": "zone"}, "pattern-regex": pattern,
 		}
-		for _, pattern := range []*regexp.Regexp{inJSON, inGo} {
-			for _, m := range pattern.FindAllStringSubmatch(string(body), -1) {
-				checked++
-				if !isPlaceholderSite(m[1]) && !positionalZone.MatchString(m[1]) {
-					t.Errorf("%s names an untrusted zone %q.\n\n"+
-						"A zone is named after the workload it hosts, and naming a real one here "+
-						"makes the plumbing read as that workload's rather than as a general "+
-						"capability - which is how the next tenant inherits somebody else's "+
-						"assumptions. Use one of the documented placeholders; the epoch record is "+
-						"where the actual workload belongs.", rel, m[1])
-				}
-			}
+	}
+	var checked int
+	for _, f := range scanText(t, repository(t), []map[string]any{
+		zone("in-json", `"dmz_zones"\s*:\s*\{\s*"(?P<ZONE>[a-z][a-z0-9-]*)"`),
+		zone("in-go", `DMZZone\{\s*"(?P<ZONE>[a-z][a-z0-9-]*)"`),
+	}, files) {
+		checked++
+		if !isPlaceholderSite(f.Text) && !positionalZone.MatchString(f.Text) {
+			t.Errorf("%s names an untrusted zone %q.\n\n"+
+				"A zone is named after the workload it hosts, and naming a real one here "+
+				"makes the plumbing read as that workload's rather than as a general "+
+				"capability - which is how the next tenant inherits somebody else's "+
+				"assumptions. Use one of the documented placeholders; the epoch record is "+
+				"where the actual workload belongs.", f.Path, f.Text)
 		}
 	}
 
@@ -277,8 +242,17 @@ func ownOwnerAndName(t *testing.T) (owner, name string) {
 // owner/name, as a URL or a registry path has it - or in a place that says
 // why it carries it. Anything else is refused, in every tracked file.
 func TestTheOwnersNameIsOnlyInTheRepositorysAddress(t *testing.T) {
+	heavy(t, "semgrep reads every tracked file for the owner's name, a few seconds")
 	owner, name := ownOwnerAndName(t)
-	for _, p := range ownerOutsideItsAddress(owner, name, readTracked(t), ownerBelongs) {
+	// Every line of every tracked file that carries the name, found by a rule
+	// built from the name read from the tree: no name is written down here.
+	rule := map[string]any{
+		"id": "names-the-owner", "languages": []string{"generic"}, "severity": "INFO",
+		"message": "$LINE", "metadata": map[string]any{"about": "owner"},
+		"pattern-regex": `(?mi)^(?P<LINE>[^\n]*` + regexp.QuoteMeta(owner) + `[^\n]*)$`,
+	}
+	found := scanText(t, repository(t), []map[string]any{rule}, trackedFiles(t))
+	for _, p := range ownerOutsideItsAddress(owner, name, found, ownerBelongs) {
 		t.Error(p)
 	}
 }
@@ -293,35 +267,21 @@ var ownerBelongs = map[string]string{
 	"tests/js/unit/commitlint": "the same account, in that rule's tests",
 }
 
-func readTracked(t *testing.T) map[string]string {
-	t.Helper()
-	out := map[string]string{}
-	for _, rel := range trackedFiles(t) {
-		out[rel] = readRepoFile(t, rel)
-	}
-	return out
-}
-
 // ownerOutsideItsAddress is every line that carries the owner's name other
 // than as owner/name, outside the places that say why they carry it.
-func ownerOutsideItsAddress(owner, name string, files map[string]string, belongs map[string]string) []string {
+func ownerOutsideItsAddress(owner, name string, lines []textFinding, belongs map[string]string) []string {
 	lower := strings.ToLower(owner)
 	address := lower + "/" + strings.ToLower(name)
 	var out []string
-	for rel, body := range files {
+	for _, line := range lines {
 		exempt := false
 		for place := range belongs {
-			if rel == place || strings.HasPrefix(rel, place) {
+			if line.Path == place || strings.HasPrefix(line.Path, place) {
 				exempt = true
 			}
 		}
-		if exempt || !strings.Contains(strings.ToLower(body), lower) {
-			continue
-		}
-		for i, line := range strings.Split(body, "\n") {
-			if strings.Contains(strings.ReplaceAll(strings.ToLower(line), address, ""), lower) {
-				out = append(out, fmt.Sprintf("%s:%d carries the owner's name outside the repository's own address. A fork would inherit it as its own: use a name that is nobody's, or read the owner from the run.", rel, i+1))
-			}
+		if !exempt && strings.Contains(strings.ReplaceAll(strings.ToLower(line.Text), address, ""), lower) {
+			out = append(out, fmt.Sprintf("%s:%d carries the owner's name outside the repository's own address. A fork would inherit it as its own: use a name that is nobody's, or read the owner from the run.", line.Path, line.Line))
 		}
 	}
 	sort.Strings(out)
@@ -344,7 +304,11 @@ func TestOwnerOutsideItsAddressFindsTheNameAndNotTheAddress(t *testing.T) {
 		"under a place that says why":  {"history/2026.md", "the acme-bot account\n", false},
 		"nothing of theirs":            {"a.go", "package a\n", false},
 	} {
-		got := ownerOutsideItsAddress("Acme", "Yard", map[string]string{tc.rel: tc.body}, belongs)
+		var lines []textFinding
+		for i, line := range strings.Split(tc.body, "\n") {
+			lines = append(lines, textFinding{Path: tc.rel, Line: i + 1, Text: line})
+		}
+		got := ownerOutsideItsAddress("Acme", "Yard", lines, belongs)
 		if (len(got) > 0) != tc.found {
 			t.Errorf("%s: %v", label, got)
 		}

@@ -1,13 +1,9 @@
 package repo
 
 import (
-	"os"
-	"path/filepath"
-	"regexp"
+	"slices"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 // Every chart's images are either governed here or declared as not governed.
@@ -44,19 +40,11 @@ type supplierChartGaps struct {
 	} `yaml:"chart_images_not_governed_here"`
 }
 
-var (
-	helmChartName = regexp.MustCompile(`(?m)^[^\S\n]*chart:[^\S\n]+(\S+)[^\S\n]*$`)
-	imageInValues = regexp.MustCompile(`(?m)^\s*(?:image|repository|registry):\s*\S`)
-)
-
 func TestEveryChartsImagesAreGovernedOrDeclared(t *testing.T) {
-	root := repoRoot(t)
+	tree := repository(t)
 
 	var declared supplierChartGaps
-	body := readRepoFile(t, "scripts/approved-suppliers.yml")
-	if err := yaml.Unmarshal([]byte(body), &declared); err != nil {
-		t.Fatalf("parsing scripts/approved-suppliers.yml: %v", err)
-	}
+	tree.YAMLInto(t, "scripts/approved-suppliers.yml", &declared)
 	ungoverned := map[string]bool{}
 	for _, g := range declared.Gaps {
 		if g.Chart == "" {
@@ -75,27 +63,21 @@ block list and an allow list.`, g.Chart)
 	}
 
 	// Every chart the estate installs, discovered rather than listed.
-	charts := map[string]string{} // chart -> the file that installs it
-	err := filepath.WalkDir(filepath.Join(root, "clusters"), func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".yaml") {
-			return err
+	charts := map[string]string{}  // chart -> the file that installs it
+	releases := map[string][]any{} // the file -> its releases
+	for _, rel := range tree.Files(t) {
+		if !strings.HasPrefix(rel, "clusters/") || !strings.HasSuffix(rel, ".yaml") {
+			continue
 		}
-		manifest, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return readErr
+		for _, doc := range tree.YAMLDocuments(t, rel) {
+			if m, _ := doc.(map[string]any); m["kind"] != kindHelmRelease {
+				continue
+			}
+			releases[rel] = append(releases[rel], doc)
+			for _, chart := range scalarsAt(doc, "chart") {
+				charts[chart] = rel
+			}
 		}
-		text := string(manifest)
-		if !strings.Contains(text, "kind: HelmRelease") {
-			return nil
-		}
-		rel, _ := filepath.Rel(root, path)
-		for _, m := range helmChartName.FindAllStringSubmatch(text, -1) {
-			charts[m[1]] = rel
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking clusters/ for HelmReleases: %v", err)
 	}
 
 	const atLeastFourCharts = 4
@@ -112,8 +94,7 @@ silently stopped asking about.`, len(charts))
 		if ungoverned[chart] {
 			continue
 		}
-		manifest := readRepoFile(t, where)
-		if imageInValues.MatchString(manifest) {
+		if holdsAny(releases[where], "image", "repository", "registry") {
 			continue // Its images are set here, so the walk-based check covers them.
 		}
 		t.Errorf(`%s installs the chart %q, which neither pins its images in this
@@ -137,4 +118,27 @@ A debt recorded against something that is gone is a line nobody can act on and
 a number that makes the gap look larger than it is.`, chart)
 		}
 	}
+}
+
+// holdsAny reports whether any of the keys holds a value anywhere in parsed
+// documents.
+func holdsAny(node any, keys ...string) bool {
+	switch v := node.(type) {
+	case []any:
+		for _, x := range v {
+			if holdsAny(x, keys...) {
+				return true
+			}
+		}
+	case map[string]any:
+		for k, x := range v {
+			if x != nil && x != "" && slices.Contains(keys, k) {
+				return true
+			}
+			if holdsAny(x, keys...) {
+				return true
+			}
+		}
+	}
+	return false
 }

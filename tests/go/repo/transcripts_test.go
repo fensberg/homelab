@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -145,42 +146,51 @@ func isPlaceholderHost(host string) bool {
 	return strings.ContainsAny(host, "<>{}$") || first == ""
 }
 
-// commentaryOf returns only the lines of a file that are commentary or prose,
-// so code that legitimately builds these strings is not read as a transcript.
-func commentaryOf(rel, body string) []string {
-	var out []string
-	markdown := strings.HasSuffix(rel, ".md") || strings.HasSuffix(rel, ".markdown") ||
-		strings.HasSuffix(rel, ".txt")
-
-	for _, line := range strings.Split(body, "\n") {
-		trimmed := strings.TrimSpace(line)
-		switch {
-		case markdown:
-			out = append(out, trimmed)
-		case strings.HasPrefix(trimmed, "#"), strings.HasPrefix(trimmed, "//"),
-			strings.HasPrefix(trimmed, "*"), strings.HasPrefix(trimmed, "--"):
-			// Whole-line comments in every language this repository writes.
-			out = append(out, strings.TrimLeft(trimmed, "#/*- \t"))
+// commentaryRules find the lines of a file that are commentary or prose, so
+// code that legitimately builds these strings is not read as a transcript:
+// whole-line comments in every language this repository writes, and every
+// line of a document. Each shape has a colon or an at sign in it, so only a
+// line that does is handed back.
+func commentaryRules() []map[string]any {
+	rule := func(id, pattern string, paths map[string]any) map[string]any {
+		r := map[string]any{
+			"id": id, "languages": []string{"generic"}, "severity": "INFO",
+			"message": "$LINE", "metadata": map[string]any{"about": id}, "pattern-regex": pattern,
 		}
+		if paths != nil {
+			r["paths"] = paths
+		}
+		return r
 	}
-	return out
+	documents := []string{"*.md", "*.markdown", "*.txt"}
+	return []map[string]any{
+		rule("comment", `(?m)^[ \t]*(?:#|//|\*|--)(?P<LINE>[^\n]*[:@][^\n]*)$`, map[string]any{"exclude": documents}),
+		rule("document", `(?m)^(?P<LINE>[^\n]*[:@][^\n]*)$`, map[string]any{"include": documents}),
+	}
 }
 
 func TestNoTerminalTranscriptCarriesARealHostname(t *testing.T) {
-	checked := 0
-	walkText(t, func(rel, body string) {
-		if strings.HasSuffix(rel, "transcripts_test.go") {
-			return // this file carries the shapes in order to describe them
+	heavy(t, "semgrep reads every text file's comments and documents, a few seconds")
+	var files []string
+	for _, rel := range trackedFiles(t) {
+		// This file carries the shapes in order to describe them.
+		if textFileExts[strings.ToLower(filepath.Ext(rel))] && filepath.Base(rel) != "transcripts_test.go" {
+			files = append(files, rel)
 		}
-		checked++
+	}
+	checked := len(files)
 
-		for _, line := range commentaryOf(rel, body) {
-			for _, shape := range transcriptShapes {
-				for _, m := range shape.re.FindAllStringSubmatch(line, -1) {
-					if isPlaceholderHost(m[1]) {
-						continue
-					}
-					t.Errorf(`%s carries %s naming the host %q:
+	for _, f := range scanText(t, repository(t), commentaryRules(), files) {
+		line := strings.TrimSpace(f.Text)
+		if f.About == "comment" {
+			line = strings.TrimLeft(line, "#/*- \t")
+		}
+		for _, shape := range transcriptShapes {
+			for _, m := range shape.re.FindAllStringSubmatch(line, -1) {
+				if isPlaceholderHost(m[1]) {
+					continue
+				}
+				t.Errorf(`%s carries %s naming the host %q:
 
     %s
 
@@ -191,11 +201,10 @@ carries a real name in without anybody deciding to - which is why this shape
 gets a check rather than a reminder.
 
 Replace the host with a documented placeholder: example, north-street-office,
-redacted, or a positional site0 / site10.`, rel, shape.name, m[1], line)
-				}
+redacted, or a positional site0 / site10.`, f.Path, shape.name, m[1], line)
 			}
 		}
-	})
+	}
 
 	const atLeastAHundredTextFiles = 100
 	if checked < atLeastAHundredTextFiles {
