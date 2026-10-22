@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"hash/fnv"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -13,9 +12,7 @@ import (
 	"sync"
 	"testing"
 
-	"gopkg.in/yaml.v3"
-
-	"homelab/details/applications"
+	"homelab/tests/parsed"
 )
 
 // Proof, committed, that each guard fails when the thing it guards is broken.
@@ -40,42 +37,9 @@ import (
 // See the header of tests/mutations.yml. If one of these fails, the answer is
 // almost never to edit the ledger.
 
-type mutation struct {
-	Guard string `yaml:"guard"`
-	File  string `yaml:"file"`
-	// Test is, in an application's own ledger, which of the application's
-	// tests must be the one that failed: the guard there is the one that
-	// runs them all.
-	Test     string `yaml:"test"`
-	Find     string `yaml:"find"`
-	Replace  string `yaml:"replace"`
-	Create   string `yaml:"create"`
-	Mentions string `yaml:"mentions"`
-	// Rule is, for a proof of the code or the configuration rules, the rule
-	// that must be among those refusing: a Semgrep rule's id, or the package
-	// of a Conftest rule under rules. Those harnesses run every rule at once,
-	// so a failure that mentions the right words could still be another
-	// rule's (#780).
-	Rule string `yaml:"rule"`
-	Why  string `yaml:"why"`
-	// ReadsSource opts a Go target in, for the one kind of guard the blanket
-	// refusal below gets wrong. See the refusal for why the default stays no.
-	ReadsSource bool `yaml:"reads_source"`
-	// Source is where the proof is written: its file in the estate's ledger,
-	// or its place in an application's. It decides which part of the meta
-	// lane proves it.
-	Source string `yaml:"-"`
-}
-
-// creates reports whether the entry proves a guard by adding a file rather
-// than by editing one.
-//
-// Some guards only have anything to say when something is present - the
-// outstanding-patch check is the example, and it skips entirely when no patch
-// is outstanding, which is the normal state. A substitution cannot reach that:
-// there is nothing in the tree to substitute. So an entry may instead plant
-// the thing the guard exists to catch.
-func (m mutation) creates() bool { return strings.TrimSpace(m.Create) != "" }
+// mutation is a ledger's proof, as parsed reads it: only a proof read from a
+// ledger may be placed in a file or applied to a copy.
+type mutation = parsed.Proof
 
 type ledger struct {
 	Floor            int        `yaml:"floor"`
@@ -100,32 +64,22 @@ const applicationLedger = applicationTestsDir + "/mutations.yml"
 // directory would vanish with the application and take the proof with it.
 func applicationMutations(t *testing.T) []mutation {
 	t.Helper()
-	root := repoRoot(t)
-	apps, err := applications.Read(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	tree := repository(t)
 	var out []mutation
-	for _, a := range apps {
+	for _, a := range tree.Applications(t) {
 		rel := a.Root + "/" + applicationLedger
-		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
-		if os.IsNotExist(err) {
+		if !tree.Exists(rel) {
 			continue // an application with no proofs of its own
 		}
-		if err != nil {
-			t.Fatalf("reading %s: %v", rel, err)
-		}
 		var l ledger
-		if err := yaml.Unmarshal(body, &l); err != nil {
-			t.Fatalf("parsing %s: %v", rel, err)
-		}
+		tree.YAMLInto(t, rel, &l)
+		l.Mutations = tree.ProofsIn(t, rel)
 		if len(l.Mutations) < l.Floor {
 			t.Fatalf("%s holds %d entries and its floor is %d. An entry was removed; "+
 				"if a proof genuinely no longer applies, lower the floor in the same diff "+
 				"so somebody sees it happen.", rel, len(l.Mutations), l.Floor)
 		}
-		for i, m := range l.Mutations {
-			m.Source = fmt.Sprintf("%s#%d", rel, i)
+		for _, m := range l.Mutations {
 			if !strings.HasPrefix(m.File, a.Root+"/") {
 				t.Fatalf("%s has an entry that breaks %s, which is not this application's. "+
 					"A proof about the estate belongs in tests/mutations.yml, where removing "+
@@ -161,36 +115,20 @@ func isLedger(rel string) bool {
 
 func readLedger(t *testing.T) ledger {
 	t.Helper()
-	root := repoRoot(t)
-	body, err := os.ReadFile(filepath.Join(root, "tests", "mutations.yml"))
-	if err != nil {
-		t.Fatalf("reading tests/mutations.yml: %v", err)
-	}
+	tree := repository(t)
 	var l ledger
-	if err := yaml.Unmarshal(body, &l); err != nil {
-		t.Fatalf("parsing tests/mutations.yml: %v", err)
-	}
+	tree.YAMLInto(t, ledgerEntries+".yml", &l)
 	if len(l.Mutations) > 0 {
 		t.Fatalf("tests/mutations.yml holds %d proof(s) under mutations:. Each is a file of its own under %s, named for its guard, so that two changes adding one never meet.", len(l.Mutations), ledgerEntries)
 	}
-	files, err := filepath.Glob(filepath.Join(root, filepath.FromSlash(ledgerEntries), "*.yml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	sort.Strings(files)
-	for _, file := range files {
-		raw, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatalf("reading %s: %v", file, err)
+	for _, rel := range tree.Files(t) {
+		if filepath.Dir(rel) != ledgerEntries || filepath.Ext(rel) != ".yml" {
+			continue
 		}
-		var m mutation
-		if err := yaml.Unmarshal(raw, &m); err != nil {
-			t.Fatalf("parsing %s/%s: %v", ledgerEntries, filepath.Base(file), err)
+		m := tree.Proof(t, rel)
+		if m.Guard == "" || !strings.HasPrefix(m.Source, m.Guard+".") {
+			t.Fatalf("%s proves the guard %q and is not named for it. A proof is found by its guard's name, so name the file <guard>.<anything>.yml.", rel, m.Guard)
 		}
-		if m.Guard == "" || !strings.HasPrefix(filepath.Base(file), m.Guard+".") {
-			t.Fatalf("%s/%s proves the guard %q and is not named for it. A proof is found by its guard's name, so name the file <guard>.<anything>.yml.", ledgerEntries, filepath.Base(file), m.Guard)
-		}
-		m.Source = filepath.Base(file)
 		l.Mutations = append(l.Mutations, m)
 	}
 	if len(l.Mutations) == 0 {
@@ -204,7 +142,7 @@ func readLedger(t *testing.T) ledger {
 // once per entry.
 func skipIfInner(t *testing.T) {
 	t.Helper()
-	if os.Getenv(repoRootEnv) != "" {
+	if parsed.Inner() {
 		t.Skip("inner run: this is the harness, not a guard under test")
 	}
 }
@@ -215,63 +153,9 @@ func skipIfInner(t *testing.T) {
 // node_modules and .git without needing a list of things to skip, and it is
 // the same set a reviewer sees. Anything untracked is by definition not what a
 // guard is asserting about the repository.
-func scratchRepo(t *testing.T) string {
+func scratchRepo(t *testing.T) *parsed.Tree {
 	t.Helper()
-	root := repoRoot(t)
-
-	out, err := exec.Command("git", "-C", root, "ls-files", "-z").Output()
-	if err != nil {
-		t.Fatalf("listing tracked files: %v", err)
-	}
-	files := strings.Split(strings.TrimRight(string(out), "\x00"), "\x00")
-	if len(files) < 100 {
-		t.Fatalf("git ls-files returned %d files, which is not this repository", len(files))
-	}
-
-	dir := t.TempDir()
-	for _, rel := range files {
-		if rel == "" {
-			continue
-		}
-		src := filepath.Join(root, rel)
-		info, err := os.Lstat(src)
-		if err != nil || !info.Mode().IsRegular() {
-			continue // a deleted or non-regular tracked path is not our business
-		}
-		body, err := os.ReadFile(src)
-		if err != nil {
-			t.Fatalf("reading %s: %v", rel, err)
-		}
-		dst := filepath.Join(dir, rel)
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			t.Fatalf("preparing %s: %v", rel, err)
-		}
-		if err := os.WriteFile(dst, body, info.Mode().Perm()); err != nil {
-			t.Fatalf("writing %s: %v", rel, err)
-		}
-	}
-
-	// And then the copy becomes a git repository, so that the guards being
-	// proved can enumerate it the same way they enumerate the real tree.
-	//
-	// This is what lets trackedFiles be the single enumeration primitive. Before
-	// it, `git ls-files` here exited 128 - "not a git repository" - so guards
-	// that needed to run under the ledger had to walk from the root with a
-	// hand-written skip list instead, and that list was the stale artifact the
-	// walk was supposed to avoid.
-	//
-	// After the patches, not before: a patch may add or remove files, and the
-	// index has to describe the tree the guards are actually judged against.
-	//
-	// No commit and no user identity are needed - `git ls-files` reads the
-	// index.
-	cmd := exec.Command("git", "init", "-q")
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git init in the scratch tree: %v\n%s", err, out)
-	}
-	indexScratchTree(t, dir)
-	return dir
+	return repository(t).Copy(t)
 }
 
 // indexScratchTree makes `git ls-files` in the scratch tree describe the tree
@@ -286,13 +170,9 @@ func scratchRepo(t *testing.T) string {
 //
 // -f because a tracked file is tracked even if .gitignore matches it, and
 // dropping one would quietly shrink the universe under test.
-func indexScratchTree(t *testing.T, dir string) {
+func indexScratchTree(t *testing.T, scratch *parsed.Tree) {
 	t.Helper()
-	cmd := exec.Command("git", "add", "-A", "-f")
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("indexing the scratch tree: %v\n%s", err, out)
-	}
+	scratch.Index(t)
 }
 
 var (
@@ -313,12 +193,10 @@ func testBinary(t *testing.T) string {
 			return
 		}
 		binPath = filepath.Join(dir, "repo.test")
-		cmd := exec.Command("go", "test", "-C", filepath.Join(repoRoot(t), "tests", "go"),
-			"-o", binPath, "-c", "./repo/")
-		if out, err := cmd.CombinedOutput(); err != nil {
+		if _, errs, err := repository(t).Invoke(parsed.Run{Dir: "tests/go"}, "go", "test", "-o", binPath, "-c", "./repo/"); err != nil {
 			binErr = err
 			binPath = ""
-			t.Logf("compiling the repo test package: %v\n%s", err, out)
+			t.Logf("compiling the repo test package: %v\n%s", err, errs)
 		}
 	})
 	if binErr != nil || binPath == "" {
@@ -328,13 +206,12 @@ func testBinary(t *testing.T) string {
 }
 
 // runGuard runs exactly one test against a given tree.
-func runGuard(t *testing.T, bin, root, name string) (passed bool, output string) {
+func runGuard(t *testing.T, bin string, tree *parsed.Tree, name string) (passed bool, output string) {
 	t.Helper()
-	cmd := exec.Command(bin, "-test.run", "^"+name+"$", "-test.v")
-	cmd.Dir = root
-	cmd.Env = append(os.Environ(), repoRootEnv+"="+root)
-	out, err := cmd.CombinedOutput()
-	text := string(out)
+	// Judging the tree, and started outside it, so that nothing the guard
+	// names relative to where it starts is a file of the tree.
+	stdout, stderr, err := tree.Invoke(parsed.Run{Judged: true, Outside: true}, bin, "-test.run", "^"+name+"$", "-test.v")
+	text := string(stdout) + string(stderr)
 	// A -run pattern matching nothing exits 0 and is not a passing guard; it
 	// is a guard that has been renamed out from under the ledger.
 	if !strings.Contains(text, "RUN   "+name) {
@@ -397,7 +274,7 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 			// A copy of the tree to break. The entry's target is read from
 			// the copy, so what is counted and what is broken are one file.
 			scratch := scratchRepo(t)
-			if problems := placeProblems(scratch, m); len(problems) > 0 {
+			if problems := placeProblems(t, scratch, m); len(problems) > 0 {
 				t.Fatal(problems[0])
 			}
 
@@ -410,28 +287,9 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 					"prove anything about it.\n\nFix the guard first.\n\n%s", m.Guard, u.output)
 			}
 
-			target := filepath.Join(scratch, m.File)
-			if m.creates() {
-				if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-					t.Fatalf("preparing %s: %v", m.File, err)
-				}
-				if err := os.WriteFile(target, []byte(m.Create), 0o644); err != nil {
-					t.Fatalf("planting %s: %v", m.File, err)
-				}
-			} else {
-				body, err := os.ReadFile(target)
-				if err != nil {
-					t.Fatalf("reading the copy of %s: %v", m.File, err)
-				}
-				mutated := strings.Replace(string(body), m.Find, m.Replace, 1)
-				if mutated == string(body) {
-					t.Fatalf("the mutation changed nothing in the copy of %s", m.File)
-				}
-				if err := os.WriteFile(target, []byte(mutated), 0o644); err != nil {
-					t.Fatalf("writing the mutated %s: %v", m.File, err)
-				}
+			if !scratch.Apply(t, m) {
+				t.Fatalf("the mutation changed nothing in the copy of %s", m.File)
 			}
-			indexScratchTree(t, scratch)
 
 			ok, out := runGuard(t, bin, scratch, m.Guard)
 			if ok {
@@ -487,46 +345,34 @@ func ruleHarness(guard string) string {
 // rulesDeclaredIn is every rule a tree declares in one harness's directory,
 // by the name a proof gives it: a Semgrep rule's id, or a Conftest rule's
 // package under rules.
-func rulesDeclaredIn(root, dir string) (map[string]bool, error) {
+func rulesDeclaredIn(t *testing.T, tree *parsed.Tree, dir string) map[string]bool {
+	t.Helper()
 	declared := map[string]bool{}
-	entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(dir)))
-	if err != nil {
-		return nil, fmt.Errorf("%s cannot be read, so no proof's rule can be found there: %v", dir, err)
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue // the examples, which declare no rule
-		}
-		file := e.Name()
-		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(dir), file))
-		if err != nil {
-			return nil, fmt.Errorf("reading %s/%s: %v", dir, file, err)
+	for _, rel := range tree.Files(t) {
+		if filepath.Dir(rel) != dir {
+			continue
 		}
 		switch {
-		case strings.HasSuffix(file, ".yml"):
+		case strings.HasSuffix(rel, ".yml"):
 			var doc struct {
 				Rules []struct {
 					ID string `yaml:"id"`
 				} `yaml:"rules"`
 			}
-			if err := yaml.Unmarshal(body, &doc); err != nil {
-				return nil, fmt.Errorf("%s is not a rule file that can be read: %v", file, err)
-			}
+			tree.YAMLInto(t, rel, &doc)
 			for _, r := range doc.Rules {
 				declared[r.ID] = true
 			}
-		case strings.HasSuffix(file, ".rego") && !strings.HasSuffix(file, "_test.rego"):
-			if m := packageClause.FindStringSubmatch(string(body)); m != nil {
-				if name, ok := strings.CutPrefix(m[1], "rules."); ok {
-					declared[name] = true
-				}
+		case strings.HasSuffix(rel, ".rego"):
+			if name, ok := strings.CutPrefix(regoPackage(tree.Rego(t, rel)), "rules."); ok && !isTestPackage(name) {
+				declared[name] = true
 			}
 		}
 	}
 	if len(declared) == 0 {
-		return nil, fmt.Errorf("no rule was read from %s, so no proof's rule can be found there", dir)
+		t.Fatalf("no rule was read from %s, so no proof's rule can be found there", dir)
 	}
-	return declared, nil
+	return declared
 }
 
 // refusedBy reports whether a rule harness's report says the named rule
@@ -770,11 +616,11 @@ func satisfiedByProse(baseline, stripped map[string]bool, exempt map[string]stri
 }
 
 // runAll returns each test's verdict, by name.
-func runAll(t *testing.T, bin, root string) map[string]bool {
+func runAll(t *testing.T, bin string, tree *parsed.Tree) map[string]bool {
 	t.Helper()
-	verdicts, out := allVerdicts(bin, root)
+	verdicts, out := allVerdicts(bin, tree)
 	if len(verdicts) == 0 {
-		t.Fatalf("no test verdict was parsed from the run in %s:\n%s", root, out)
+		t.Fatalf("no test verdict was parsed from the run in %s:\n%s", tree, out)
 	}
 	return verdicts
 }
@@ -782,11 +628,9 @@ func runAll(t *testing.T, bin, root string) map[string]bool {
 // allVerdicts is runAll with nothing of the test in it, so that two runs
 // can be made side by side: a test may only be failed from its own
 // goroutine.
-func allVerdicts(bin, root string) (map[string]bool, []byte) {
-	cmd := exec.Command(bin, "-test.v")
-	cmd.Dir = root
-	cmd.Env = append(os.Environ(), repoRootEnv+"="+root)
-	out, _ := cmd.CombinedOutput()
+func allVerdicts(bin string, tree *parsed.Tree) (map[string]bool, []byte) {
+	stdout, stderr, _ := tree.Invoke(parsed.Run{Judged: true, Outside: true}, bin, "-test.v")
+	out := append(stdout, stderr...)
 
 	verdicts := map[string]bool{}
 	for _, line := range strings.Split(string(out), "\n") {
@@ -874,45 +718,9 @@ func field(line, prefix string) string {
 
 // stripComments removes whole-line `#` comments from the files the guards read,
 // and reports how many lines went.
-func stripComments(t *testing.T, root string) int {
+func stripComments(t *testing.T, scratch *parsed.Tree) int {
 	t.Helper()
-
-	var targets []string
-	for _, dir := range []string{filepath.Join(".github", "workflows"), "scripts"} {
-		_ = filepath.WalkDir(filepath.Join(root, dir), func(p string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return nil
-			}
-			if ext := filepath.Ext(p); ext == ".yml" || ext == ".yaml" {
-				targets = append(targets, p)
-			}
-			return nil
-		})
-	}
-	targets = append(targets,
-		filepath.Join(root, ".pre-commit-config.yaml"),
-		filepath.Join(root, "taskfile.yml"),
-	)
-
-	removed := 0
-	for _, p := range targets {
-		body, err := os.ReadFile(p)
-		if err != nil {
-			continue
-		}
-		var kept []string
-		for _, line := range strings.Split(string(body), "\n") {
-			if strings.HasPrefix(strings.TrimSpace(line), "#") {
-				removed++
-				continue
-			}
-			kept = append(kept, line)
-		}
-		if err := os.WriteFile(p, []byte(strings.Join(kept, "\n")), 0o644); err != nil {
-			t.Fatalf("writing the comment-stripped %s: %v", p, err)
-		}
-	}
-	return removed
+	return scratch.StripYAMLComments(t)
 }
 
 // The comment check's decision, shown saying no as well as yes.
@@ -982,12 +790,13 @@ func TestSatisfiedByProseOnlyNamesAPassToFailFlip(t *testing.T) {
 // of these before it runs anything, and TestEveryProofStillFindsItsPlace asks
 // the same of every entry at push, so a proof left behind by a change is found
 // in milliseconds rather than eight minutes into the meta lane.
-func placeProblems(root string, m mutation) []string {
+func placeProblems(t *testing.T, tree *parsed.Tree, m mutation) []string {
+	t.Helper()
 	required := []struct{ field, value string }{
 		{"guard", m.Guard}, {"file", m.File},
 		{"mentions", m.Mentions}, {"why", m.Why},
 	}
-	if m.creates() {
+	if m.Creates() {
 		if m.Find != "" || m.Replace != "" {
 			return []string{"this entry both creates a file and substitutes in one; " +
 				"it can only prove one thing, so say which"}
@@ -1043,10 +852,7 @@ func placeProblems(root string, m mutation) []string {
 	}
 
 	if harness != "" {
-		declared, err := rulesDeclaredIn(root, harness)
-		if err != nil {
-			return []string{err.Error()}
-		}
+		declared := rulesDeclaredIn(t, tree, harness)
 		if !declared[m.Rule] {
 			return []string{fmt.Sprintf("this entry names the rule %s, which %s does not declare. "+
 				"A rule renamed or retired leaves its proofs naming nothing: point each at the rule that refuses "+
@@ -1054,21 +860,21 @@ func placeProblems(root string, m mutation) []string {
 		}
 	}
 
-	if m.creates() {
-		if _, err := os.Stat(filepath.Join(root, m.File)); err == nil {
+	if m.Creates() {
+		if tree.Exists(m.File) {
 			return []string{fmt.Sprintf("this entry plants %s, and that file already exists in the "+
 				"repository. Planting it would overwrite something real, and the "+
 				"guard would be judged against the wrong thing.", m.File)}
 		}
 		return nil
 	}
-	original, err := os.ReadFile(filepath.Join(root, m.File))
-	if err != nil {
-		return []string{fmt.Sprintf("the ledger names %s, which cannot be read: %v\n\n"+
+	n := tree.Places(t, m)
+	if n < 0 {
+		return []string{fmt.Sprintf("the ledger names %s, which is not there.\n\n"+
 			"The file moved or was deleted. Point the entry at where it went; "+
-			"do not delete the entry.", m.File, err)}
+			"do not delete the entry.", m.File)}
 	}
-	if n := strings.Count(string(original), m.Find); n != 1 {
+	if n != 1 {
 		return []string{fmt.Sprintf("`find` appears %d times in %s, and an entry that is not "+
 			"exactly one place is ambiguous.\n\n"+
 			"Widen `find` until it names one spot. Guessing which of %d it "+
@@ -1084,13 +890,13 @@ func placeProblems(root string, m mutation) []string {
 // minutes in. Nothing here runs a guard: it reads each entry and the file it
 // names, which is the part of the ledger's judgement that costs nothing.
 func TestEveryProofStillFindsItsPlace(t *testing.T) {
-	root := repoRoot(t)
+	tree := repository(t)
 	entries := append(append([]mutation{}, readLedger(t).Mutations...), applicationMutations(t)...)
 	if len(entries) < 100 {
 		t.Fatalf("only %d proofs were read, which is not this ledger - the reader has stopped matching", len(entries))
 	}
 	for _, m := range entries {
-		for _, p := range placeProblems(root, m) {
+		for _, p := range placeProblems(t, tree, m) {
 			name := m.Guard
 			if m.Test != "" {
 				name += "/" + m.Test

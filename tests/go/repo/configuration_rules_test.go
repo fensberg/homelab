@@ -1,7 +1,6 @@
 package repo
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -129,32 +128,26 @@ type regoTree struct {
 	Tree    any
 }
 
-// parseRego asks OPA for a policy file's syntax tree.
+// parseRego is a policy file as OPA parses it, with its package read off.
 func parseRego(t *testing.T, rel string) regoTree {
 	t.Helper()
-	if _, err := exec.LookPath(opaProgram); err != nil {
-		t.Fatal("opa is not on PATH; take delivery of it: scripts/take-delivery.sh opa")
-	}
-	out, err := exec.Command(opaProgram, "parse", "--format", "json", "--json-include", "locations", filepath.Join(repoRoot(t), rel)).Output()
-	if err != nil {
-		t.Fatalf("opa could not parse %s: %v", rel, err)
-	}
-	var tree struct {
-		Package struct {
-			Path []struct {
-				Value string `json:"value"`
-			} `json:"path"`
-		} `json:"package"`
-	}
-	var whole any
-	if err := json.Unmarshal(out, &tree); err != nil || json.Unmarshal(out, &whole) != nil {
-		t.Fatalf("opa's syntax tree for %s could not be read: %v", rel, err)
-	}
+	whole := repository(t).Rego(t, rel)
+	return regoTree{regoPackage(whole), whole}
+}
+
+// regoPackage is the package a policy file's syntax tree declares, past data.
+func regoPackage(tree any) string {
+	root, _ := tree.(map[string]any)
+	pkg, _ := root["package"].(map[string]any)
+	path, _ := pkg["path"].([]any)
 	var parts []string
-	for _, p := range tree.Package.Path[1:] { // past data
-		parts = append(parts, p.Value)
+	for i, p := range path {
+		if i == 0 {
+			continue // data
+		}
+		parts = append(parts, termValue(p))
 	}
-	return regoTree{strings.Join(parts, "."), whole}
+	return strings.Join(parts, ".")
 }
 
 // readsInput is how many times a syntax tree names the input.

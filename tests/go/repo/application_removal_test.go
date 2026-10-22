@@ -1,17 +1,14 @@
 package repo
 
 import (
-	"os"
-	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 	"testing"
 
-	"gopkg.in/yaml.v3"
-
 	"homelab/details/applications"
 	"homelab/details/flux"
+	"homelab/tests/parsed"
 )
 
 // Removing an application is deleting its directory and its block in each
@@ -43,11 +40,7 @@ func TestAnApplicationIsRemovedByDeletingItsDirectoryAndItsBlocks(t *testing.T) 
 	// with any of them but the compiled tests, which are made once.
 	t.Parallel()
 
-	root := repoRoot(t)
-	apps, err := applications.Read(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	apps := repository(t).Applications(t)
 	bin := testBinary(t)
 	for _, a := range apps {
 		if by := requiredBy(apps, a.Name); len(by) > 0 {
@@ -77,8 +70,8 @@ func TestAnApplicationIsRemovedByDeletingItsDirectoryAndItsBlocks(t *testing.T) 
 			removeApplication(t, scratch, a)
 			indexScratchTree(t, scratch)
 
-			if left, err := applications.Read(scratch); err != nil || slices.ContainsFunc(left, func(o applications.Application) bool { return o.Name == a.Name }) {
-				t.Fatalf("%s was not removed from the copy (%v), so this proved nothing", a.Name, err)
+			if slices.ContainsFunc(scratch.Applications(t), func(o applications.Application) bool { return o.Name == a.Name }) {
+				t.Fatalf("%s was not removed from the copy, so this proved nothing", a.Name)
 			}
 			// The ledger's runner does not run inside a copy, so what it
 			// would say is asked directly: every proof in tests/mutations.yml
@@ -119,41 +112,30 @@ func TestAnApplicationIsRemovedByDeletingItsDirectoryAndItsBlocks(t *testing.T) 
 
 // removeApplication removes an application from a copy of the repository the
 // way a person would: its directory, and its block in every site's file.
-func removeApplication(t *testing.T, root string, a applications.Application) {
+func removeApplication(t *testing.T, scratch *parsed.Tree, a applications.Application) {
 	t.Helper()
-	if err := os.RemoveAll(filepath.Join(root, filepath.FromSlash(a.Root))); err != nil {
-		t.Fatal(err)
-	}
-	sites, err := filepath.Glob(filepath.Join(root, applications.SitesDir, "*", applications.SiteFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, site := range sites {
-		body, err := os.ReadFile(site)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(site, []byte(withoutApplication(string(body), a)), 0o644); err != nil {
-			t.Fatal(err)
+	scratch.Remove(t, a.Root)
+	for _, rel := range scratch.Files(t) {
+		if parts := strings.Split(rel, "/"); len(parts) == 3 && parts[0] == applications.SitesDir && parts[2] == applications.SiteFile {
+			scratch.RemoveDocuments(t, rel, blockOf(a))
 		}
 	}
 }
 
 // ledgerNoLongerDescribes is every entry of the estate's ledger that could
-// not be run against the tree at root: its file is gone, or what it breaks
-// in that file is not there exactly once.
-func ledgerNoLongerDescribes(t *testing.T, root string) []string {
+// not be run against a tree: its file is gone, or what it breaks in that file
+// is not there exactly once.
+func ledgerNoLongerDescribes(t *testing.T, tree *parsed.Tree) []string {
 	t.Helper()
 	var out []string
 	for _, m := range readLedger(t).Mutations {
-		if m.creates() {
+		if m.Creates() {
 			continue
 		}
-		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(m.File)))
-		switch {
-		case err != nil:
+		switch n := tree.Places(t, m); {
+		case n < 0:
 			out = append(out, "the ledger's proof of "+m.Guard+" breaks "+m.File+", which is no longer there.")
-		case strings.Count(string(body), m.Find) != 1:
+		case n != 1:
 			out = append(out, "the ledger's proof of "+m.Guard+" breaks text in "+m.File+" that is no longer there exactly once.")
 		}
 	}
@@ -171,64 +153,45 @@ func requiredBy(apps []applications.Application, name string) []string {
 	return out
 }
 
-// withoutApplication is a site's applications file with one application's
-// block taken out: the release source named for it, and the Kustomization
-// that reconciles a directory of its own. Everything else is left exactly as
-// it was written.
-func withoutApplication(body string, a applications.Application) string {
-	const separator = "\n---\n"
-	lead := ""
-	if strings.HasPrefix(body, "---\n") {
-		lead, body = "---\n", strings.TrimPrefix(body, "---\n")
+// blockOf picks a site's documents that are one application's block: the
+// release source named for it, and the Kustomization that runs its
+// directory.
+func blockOf(a applications.Application) func(doc any) bool {
+	return func(doc any) bool {
+		m, _ := doc.(map[string]any)
+		kind, _ := m["kind"].(string)
+		meta, _ := m["metadata"].(map[string]any)
+		name, _ := meta["name"].(string)
+		spec, _ := m["spec"].(map[string]any)
+		path, _ := spec["path"].(string)
+		source := kind == flux.OCIRepository && name == a.Name
+		runs := kind == flux.Kustomization && strings.HasPrefix(path, "./"+a.Root+"/")
+		return source || runs
 	}
-	var kept []string
-	for _, doc := range strings.Split(body, separator) {
-		var parsed struct {
-			Kind     string `yaml:"kind"`
-			Metadata struct {
-				Name string `yaml:"name"`
-			} `yaml:"metadata"`
-			Spec struct {
-				Path string `yaml:"path"`
-			} `yaml:"spec"`
-		}
-		// A document that does not parse is not this application's block,
-		// and is left for the guards to judge.
-		_ = yaml.Unmarshal([]byte(doc), &parsed)
-		source := parsed.Kind == flux.OCIRepository && parsed.Metadata.Name == a.Name
-		runs := parsed.Kind == flux.Kustomization && strings.HasPrefix(parsed.Spec.Path, "./"+a.Root+"/")
-		if !source && !runs {
-			kept = append(kept, doc)
-		}
-	}
-	return lead + strings.Join(kept, separator)
 }
 
-// The removal is held to what it claims, against a file written here: one
-// application's two documents go, and another's stay as written - comments,
-// order and all.
-func TestWithoutApplicationTakesOutOneBlockAndLeavesTheRest(t *testing.T) {
-	app := func(name string) applications.Application {
-		return applications.Application{Name: name, Root: applications.Dir + "/" + name}
+// An application's block is its release source and the Kustomization that
+// runs its directory, and nothing else: not another application's, and not
+// one whose name only begins with its own.
+func TestABlockIsAnApplicationsOwnSourceAndWhatRunsIt(t *testing.T) {
+	app := applications.Application{Name: "first", Root: applications.Dir + "/first"}
+	doc := func(kind, name, path string) any {
+		return map[string]any{"kind": kind, "metadata": map[string]any{"name": name}, "spec": map[string]any{"path": path}}
 	}
-	block := func(name, kustomization string) string {
-		return "# " + name + "'s release\nkind: OCIRepository\nmetadata:\n  name: " + name + "\n---\nkind: Kustomization\nmetadata:\n  name: " + kustomization + "\nspec:\n  path: ./" + applications.Dir + "/" + name + "/production\n"
-	}
-	first, second := block("first", "workloads-production"), block("second", "second")
-	both := "---\n" + first + "---\n" + second
-
-	if got := withoutApplication(both, app("first")); got != "---\n"+second {
-		t.Errorf("removing the first application left:\n%s", got)
-	}
-	if got := withoutApplication(both, app("second")); got != "---\n"+strings.TrimSuffix(first, "\n") {
-		t.Errorf("removing the second application left:\n%s", got)
-	}
-	if got := withoutApplication(both, app("absent")); got != both {
-		t.Errorf("removing an application the site does not run changed the file:\n%s", got)
-	}
-	// One whose name only begins another's is a different application.
-	if got := withoutApplication("---\n"+block("first-and-more", "x"), app("first")); got != "---\n"+block("first-and-more", "x") {
-		t.Errorf("removing an application took out one whose name begins with its name:\n%s", got)
+	for _, c := range []struct {
+		doc  any
+		want bool
+	}{
+		{doc(flux.OCIRepository, "first", ""), true},
+		{doc(flux.Kustomization, "workloads-production", "./"+applications.Dir+"/first/production"), true},
+		{doc(flux.OCIRepository, "second", ""), false},
+		{doc(flux.Kustomization, "x", "./"+applications.Dir+"/first-and-more/production"), false},
+		{doc("ConfigMap", "first", ""), false},
+		{"not a mapping", false},
+	} {
+		if got := blockOf(app)(c.doc); got != c.want {
+			t.Errorf("blockOf(first)(%v) = %v, want %v", c.doc, got, c.want)
+		}
 	}
 	apps := []applications.Application{{Name: "a", Requires: []string{"b"}}, {Name: "b"}, {Name: "c", Requires: []string{"b"}}}
 	if got := strings.Join(requiredBy(apps, "b"), ","); got != "a,c" || len(requiredBy(apps, "a")) != 0 {

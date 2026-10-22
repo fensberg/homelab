@@ -306,7 +306,7 @@ func placesOf(uses []selectorUse, l libRules) map[string]bool {
 func picks(t *testing.T, libFile string, m mutation, places map[string]bool) map[string]bool {
 	t.Helper()
 	body := m.Create
-	if !m.creates() {
+	if !m.Creates() {
 		original, err := os.ReadFile(filepath.Join(repoRoot(t), filepath.FromSlash(m.File)))
 		if err != nil {
 			t.Fatalf("reading %s for %s: %v", m.File, m.Source, err)
@@ -393,7 +393,7 @@ func TestEverySelectorARuleReadsThroughIsProved(t *testing.T) {
 	planted := false
 	libFile := filepath.Join(repoRoot(t), filepath.FromSlash(libRel))
 	for _, m := range proofs {
-		planted = planted || m.creates()
+		planted = planted || m.Creates()
 		if strings.HasSuffix(m.File, ".rego") || len(places[m.Rule]) == 0 {
 			continue // it breaks a rule, not a file a rule reads
 		}

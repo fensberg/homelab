@@ -247,7 +247,7 @@ var droppedErrors = map[string]int{
 	"duplicates_test.go":         1,
 	"estate_surfaces_test.go":    2,
 	"go_invocation_test.go":      4,
-	"mutation_ledger_test.go":    5,
+	"mutation_ledger_test.go":    2,
 	"pinned_endpoints_test.go":   2,
 	"placeholder_config_test.go": 1,
 	"recovery_paths_test.go":     1,
@@ -256,27 +256,24 @@ var droppedErrors = map[string]int{
 }
 
 // The ceiling on the whole debt. It may only fall.
-const droppedErrorCeiling = 22
+const droppedErrorCeiling = 19
 
 func TestNoGuardDropsAnErrorFromItsOwnSubject(t *testing.T) {
-	dir := filepath.Join(repoRoot(t), "tests", "go", "repo")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("reading %s: %v", dir, err)
-	}
-
+	// The guards, and the package they read the repository through: an error
+	// dropped in the reader is dropped for every guard reading through it.
+	tree := repository(t)
 	fset := token.NewFileSet()
 	dropping := map[string][]int{}
 	examined := 0
 
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), "_test.go") || e.Name() == "fail_closed_test.go" {
+	for _, rel := range tree.Files(t) {
+		guard := filepath.Dir(rel) == guardsDir && strings.HasSuffix(rel, "_test.go")
+		reader := filepath.Dir(rel) == readerDir && strings.HasSuffix(rel, ".go")
+		if !guard && !reader || filepath.Base(rel) == "fail_closed_test.go" {
 			continue
 		}
-		f, parseErr := parser.ParseFile(fset, filepath.Join(dir, e.Name()), nil, 0)
-		if parseErr != nil {
-			t.Fatalf("parsing %s: %v", e.Name(), parseErr)
-		}
+		e := struct{ name string }{filepath.Base(rel)}
+		f := tree.Go(t, fset, rel)
 		examined++
 
 		ast.Inspect(f, func(n ast.Node) bool {
@@ -285,7 +282,7 @@ func TestNoGuardDropsAnErrorFromItsOwnSubject(t *testing.T) {
 				return true
 			}
 			if swallowsTheError(ifStmt.Body) {
-				dropping[e.Name()] = append(dropping[e.Name()], fset.Position(ifStmt.Pos()).Line)
+				dropping[e.name] = append(dropping[e.name], fset.Position(ifStmt.Pos()).Line)
 			}
 			return true
 		})

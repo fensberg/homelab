@@ -301,7 +301,7 @@ func TestEveryPlaceACodeRuleReadsIsProved(t *testing.T) {
 			proofs = append(proofs, m)
 		}
 	}
-	if !slices.ContainsFunc(proofs, mutation.creates) {
+	if !slices.ContainsFunc(proofs, mutation.Creates) {
 		t.Errorf("no proof of %s plants a file, so nothing shows a code rule reads a file that is not there today", harness)
 	}
 	rules := codeRules(t)

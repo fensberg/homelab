@@ -2,6 +2,7 @@ package repo
 
 import (
 	"homelab/details/repopath"
+	"homelab/tests/parsed"
 	"os"
 	"path/filepath"
 	"strings"
@@ -204,4 +205,18 @@ func orTopLevel(path string) string {
 		return "the top level"
 	}
 	return path
+}
+
+// Where the guards are, and the one package they read the repository
+// through.
+var (
+	guardsDir = filepath.Join("tests", "go", "repo")
+	readerDir = filepath.Join("tests", "go", "parsed")
+)
+
+// repository is the tree this package's guards judge, read through
+// tests/parsed and only through it.
+func repository(t *testing.T) *parsed.Tree {
+	t.Helper()
+	return parsed.Repository(t)
 }
