@@ -3,9 +3,7 @@ package repo
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -66,27 +64,20 @@ var skipIsHonest = map[string]string{
 }
 
 func TestNoGuardSkipsWithoutSayingWhyItIsHonest(t *testing.T) {
-	dir := filepath.Join(repoRoot(t), "tests", "go", "repo")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("reading %s: %v", dir, err)
-	}
-
+	tree := repository(t)
 	fset := token.NewFileSet()
 	skipping := map[string]int{}
 	examined := 0
 
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), "_test.go") {
+	for _, rel := range tree.Files(t) {
+		if filepath.Dir(rel) != guardsDir || !strings.HasSuffix(rel, "_test.go") {
 			continue
 		}
-		if e.Name() == "fail_closed_test.go" {
+		name := filepath.Base(rel)
+		if name == "fail_closed_test.go" {
 			continue // this file names the call in order to refuse it
 		}
-		f, parseErr := parser.ParseFile(fset, filepath.Join(dir, e.Name()), nil, 0)
-		if parseErr != nil {
-			t.Fatalf("parsing %s: %v", e.Name(), parseErr)
-		}
+		f := tree.Go(t, fset, rel)
 		examined++
 
 		ast.Inspect(f, func(n ast.Node) bool {
@@ -96,7 +87,7 @@ func TestNoGuardSkipsWithoutSayingWhyItIsHonest(t *testing.T) {
 			}
 			switch callName(call) {
 			case "t.Skip", "t.Skipf", "t.SkipNow":
-				skipping[e.Name()]++
+				skipping[name]++
 			}
 			return true
 		})
@@ -272,7 +263,7 @@ func TestNoGuardDropsAnErrorFromItsOwnSubject(t *testing.T) {
 		if !guard && !reader || filepath.Base(rel) == "fail_closed_test.go" {
 			continue
 		}
-		e := struct{ name string }{filepath.Base(rel)}
+		name := filepath.Base(rel)
 		f := tree.Go(t, fset, rel)
 		examined++
 
@@ -282,7 +273,7 @@ func TestNoGuardDropsAnErrorFromItsOwnSubject(t *testing.T) {
 				return true
 			}
 			if swallowsTheError(ifStmt.Body) {
-				dropping[e.name] = append(dropping[e.name], fset.Position(ifStmt.Pos()).Line)
+				dropping[name] = append(dropping[name], fset.Position(ifStmt.Pos()).Line)
 			}
 			return true
 		})

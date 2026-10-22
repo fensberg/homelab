@@ -59,9 +59,8 @@ func helmReleaseDocument(t *testing.T, rel, name string) string {
 	return ""
 }
 
-// yamlScalar pulls one `key: value` scalar out of a manifest. Deliberately not
-// a YAML parse: the file carries a ${VAR} Flux substitutes at reconcile time,
-// which is not a thing a strict decode has to cope with just to read one field.
+// yamlScalar is the first `key: value` scalar anywhere in a manifest's
+// documents, and the test fails when there is none.
 func yamlScalar(t *testing.T, docs []any, key string) string {
 	t.Helper()
 	if v, ok := scalarAt(docs, key); ok {
@@ -97,6 +96,31 @@ func scalarAt(node any, key string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// scalarsAt is every string value under a key anywhere in parsed documents,
+// in the order scalarAt walks them.
+func scalarsAt(node any, key string) []string {
+	var out []string
+	switch v := node.(type) {
+	case []any:
+		for _, x := range v {
+			out = append(out, scalarsAt(x, key)...)
+		}
+	case map[string]any:
+		if s, ok := v[key].(string); ok {
+			out = append(out, s)
+		}
+		keys := make([]string, 0, len(v))
+		for k := range v {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			out = append(out, scalarsAt(v[k], key)...)
+		}
+	}
+	return out
 }
 
 func readRepoFile(t *testing.T, rel string) string {

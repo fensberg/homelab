@@ -176,6 +176,28 @@ func (r *Tree) YAMLDocuments(t testing.TB, rel string) []any {
 	}
 }
 
+// MaybeYAML is every document of a file, decoded, and false when it is not
+// YAML at all: for a guard asking every file whether it is one of a kind
+// whose own validator owns its being well formed.
+func (r *Tree) MaybeYAML(t testing.TB, rel string) ([]any, bool) {
+	t.Helper()
+	dec := yaml.NewDecoder(bytes.NewReader(r.read(t, rel)))
+	var docs []any
+	for {
+		var doc any
+		err := dec.Decode(&doc)
+		if err == io.EOF {
+			return docs, true
+		}
+		if err != nil {
+			return nil, false
+		}
+		if doc != nil {
+			docs = append(docs, doc)
+		}
+	}
+}
+
 // YAMLNode is a YAML file as its node tree, with every comment and position.
 func (r *Tree) YAMLNode(t testing.TB, rel string) *yaml.Node {
 	t.Helper()
@@ -184,6 +206,27 @@ func (r *Tree) YAMLNode(t testing.TB, rel string) *yaml.Node {
 		t.Fatalf("%s is not YAML that can be read: %v", rel, err)
 	}
 	return &node
+}
+
+// YAMLNodes is every document of a YAML file as its node tree, comments
+// and positions kept; an empty document is left out.
+func (r *Tree) YAMLNodes(t testing.TB, rel string) []*yaml.Node {
+	t.Helper()
+	dec := yaml.NewDecoder(bytes.NewReader(r.read(t, rel)))
+	var docs []*yaml.Node
+	for {
+		var doc yaml.Node
+		err := dec.Decode(&doc)
+		if err == io.EOF {
+			return docs
+		}
+		if err != nil {
+			t.Fatalf("%s is not YAML that can be read: %v", rel, err)
+		}
+		if len(doc.Content) > 0 {
+			docs = append(docs, &doc)
+		}
+	}
 }
 
 // JSONInto decodes a JSON file into v.
@@ -322,17 +365,63 @@ type Run struct {
 	// it is given relative to where it starts reaches nothing in one: how a
 	// meta test runs the guards against a copy.
 	Outside bool
+	// In runs the program in a directory of the test's own, outside the
+	// tree: a script of the repository run against a fixture repository.
+	In string
+	// Bare gives the program Env and nothing of this process's own.
+	Bare bool
+}
+
+// here marks a path of the tree in an argument; only Invoke reads it.
+const here = "\x00tree\x00"
+
+// Here names a file of the tree to a program Invoke runs - a script to run,
+// or a flag's value - without handing anyone its path: the token holds a NUL,
+// so every file function refuses it, and Invoke alone turns it into the path.
+func Here(rel string) string {
+	if strings.Contains(rel, "..") {
+		panic("parsed.Here names a file of the tree, and " + rel + " climbs out of it")
+	}
+	return here + rel
+}
+
+func (r *Tree) expand(s string) string {
+	for {
+		i := strings.Index(s, here)
+		if i < 0 {
+			return s
+		}
+		rest := s[i+len(here):]
+		end := strings.IndexAny(rest, " =:,")
+		if end < 0 {
+			end = len(rest)
+		}
+		s = s[:i] + r.path(rest[:end]) + rest[end:]
+	}
 }
 
 // Invoke runs a program in the tree and gives what it wrote to standard
 // output, what it wrote to standard error, and how it ended.
 func (r *Tree) Invoke(run Run, name string, args ...string) (stdout, stderr []byte, err error) {
-	cmd := exec.Command(name, args...)
-	cmd.Dir = r.path(run.Dir)
-	if run.Outside {
-		cmd.Dir = os.TempDir()
+	expanded := make([]string, len(args))
+	for i, a := range args {
+		expanded[i] = r.expand(a)
 	}
-	cmd.Env = append(os.Environ(), run.Env...)
+	cmd := exec.Command(r.expand(name), expanded...)
+	cmd.Dir = r.path(run.Dir)
+	switch {
+	case run.Outside:
+		cmd.Dir = os.TempDir()
+	case run.In != "":
+		cmd.Dir = run.In
+	}
+	cmd.Env = os.Environ()
+	if run.Bare {
+		cmd.Env = nil
+	}
+	for _, e := range run.Env {
+		cmd.Env = append(cmd.Env, r.expand(e))
+	}
 	if run.Judged {
 		cmd.Env = append(cmd.Env, RootEnv+"="+r.root)
 	}
@@ -349,8 +438,15 @@ func (r *Tree) Invoke(run Run, name string, args ...string) (stdout, stderr []by
 // test's own, made a git repository so that it is listed as this one is.
 func (r *Tree) Copy(t testing.TB) *Tree {
 	t.Helper()
+	return r.CopyOf(t, r.Files(t)...)
+}
+
+// CopyOf is a scratch copy of the named files of the tree alone: one a meta
+// test breaks a file in to ask a program about that file and nothing else.
+func (r *Tree) CopyOf(t testing.TB, rels ...string) *Tree {
+	t.Helper()
 	dir := t.TempDir()
-	for _, rel := range r.Files(t) {
+	for _, rel := range rels {
 		info, err := os.Lstat(r.path(rel))
 		switch {
 		case errors.Is(err, fs.ErrNotExist):

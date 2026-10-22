@@ -179,3 +179,14 @@ func (r *Tree) Tools(t testing.TB) []supplierslist.Tool {
 	}
 	return tools
 }
+
+// Work is what kind of work each job on the estate's runners says it is, as
+// the suppliers list declares it.
+func (r *Tree) Work(t testing.TB) []harness.Work {
+	t.Helper()
+	w, err := harness.WorkOf(r.suppliers(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return w
+}

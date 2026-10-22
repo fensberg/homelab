@@ -1,7 +1,9 @@
 package repo
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -146,9 +148,15 @@ func fixtureDocuments(t *testing.T, text string) []any {
 	var docs []any
 	for {
 		var doc any
-		if err := dec.Decode(&doc); err != nil {
+		err := dec.Decode(&doc)
+		if errors.Is(err, io.EOF) {
 			return docs
 		}
-		docs = append(docs, doc)
+		if err != nil {
+			t.Fatalf("a fixture is not YAML: %v", err)
+		}
+		if doc != nil {
+			docs = append(docs, doc)
+		}
 	}
 }

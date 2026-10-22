@@ -1,7 +1,9 @@
 package repo
 
 import (
+	"homelab/tests/parsed"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -82,29 +84,32 @@ there are none.`, header, strings.TrimSpace(forEach[1]))
 // a count to named zones broke it while the behaviour it cared about was
 // unchanged - which is the failure the mutation ledger exists to make visible.
 func TestEveryZoneTaskLoopsOverTheZones(t *testing.T) {
-	body := readRepoFile(t, "management/hypervisor/hypervisor-prep.yml")
-
-	tasks := regexp.MustCompile(`(?m)^    - name:`).Split(body, -1)
+	var plays []struct {
+		Tasks []map[string]any `yaml:"tasks"`
+	}
+	repository(t).YAMLInto(t, hypervisorPlaybook, &plays)
 
 	var checked int
-	for _, task := range tasks {
-		// A zone task is one that reads a zone's own values. The shared vnet
-		// listing is not one: it lists every vnet, and looping it over the
-		// zones would hide the node vnet from the task that creates it.
-		if !strings.Contains(task, "item.vnet") && !strings.Contains(task, "item.item.vnet") {
-			continue
-		}
-		checked++
+	for _, play := range plays {
+		for _, task := range play.Tasks {
+			// A zone task is one that reads a zone's own values. The shared vnet
+			// listing is not one: it lists every vnet, and looping it over the
+			// zones would hide the node vnet from the task that creates it.
+			if !slices.ContainsFunc(parsed.Values(task), func(v string) bool { return strings.Contains(v, "item.vnet") }) {
+				continue
+			}
+			checked++
 
-		if !strings.Contains(task, "loop:") {
-			name := strings.SplitN(strings.TrimSpace(task), "\n", 2)[0]
-			t.Errorf(`the task "%s" reads a zone's values without looping over the zones.
+			if _, loops := task["loop"]; !loops {
+				name, _ := task["name"].(string)
+				t.Errorf(`the task "%s" reads a zone's values without looping over the zones.
 
 Without the loop it runs once against an undefined item on every estate,
 including one with no untrusted workload at all. The loop is what makes "no
 zones" mean "nothing is built" - Ansible creates and never removes, so anything
 this leaves behind stays until somebody finds it and wonders what it is for.`,
-				strings.Trim(name, ": "))
+					name)
+			}
 		}
 	}
 
@@ -113,3 +118,6 @@ this leaves behind stays until somebody finds it and wonders what it is for.`,
 			"Either the zones' SDN tasks were removed or their loop variable was renamed.")
 	}
 }
+
+// hypervisorPlaybook is the playbook that prepares a hypervisor.
+const hypervisorPlaybook = "management/hypervisor/hypervisor-prep.yml"

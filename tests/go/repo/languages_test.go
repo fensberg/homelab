@@ -5,8 +5,6 @@ import (
 	"sort"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 // A language nobody declared is a language nothing checks.
@@ -73,9 +71,7 @@ func kindOf(rel string) string {
 func loadLanguages(t *testing.T) languageDeclaration {
 	t.Helper()
 	var decl languageDeclaration
-	if err := yaml.Unmarshal([]byte(readRepoFile(t, "tests/languages.yml")), &decl); err != nil {
-		t.Fatalf("parsing tests/languages.yml: %v", err)
-	}
+	repository(t).YAMLInto(t, "tests/languages.yml", &decl)
 	return decl
 }
 

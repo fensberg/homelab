@@ -30,10 +30,7 @@ import (
 // Whether what a job says matches how long it really takes is asked nightly,
 // of GitHub (tests/go/api).
 func TestEveryJobOnTheEstatesRunnersIsOnTheRunnersItsKindAllows(t *testing.T) {
-	declared, err := harness.DeclaredWork(repoRoot(t))
-	if err != nil {
-		t.Fatal(err)
-	}
+	declared := repository(t).Work(t)
 	said := map[string]harness.Work{}
 	for _, w := range declared {
 		if _, twice := said[w.Job]; twice {
@@ -87,9 +84,7 @@ func TestEveryJobOnTheEstatesRunnersIsOnTheRunnersItsKindAllows(t *testing.T) {
 				Timeout int       `yaml:"timeout-minutes"`
 			} `yaml:"jobs"`
 		}
-		if err := yaml.Unmarshal([]byte(readRepoFile(t, wf)), &workflow); err != nil {
-			t.Fatalf("%s does not parse, so the jobs in it were not read: %v", wf, err)
-		}
+		repository(t).YAMLInto(t, wf, &workflow)
 		for name, job := range workflow.Jobs {
 			var on *set
 			for i := range sets {

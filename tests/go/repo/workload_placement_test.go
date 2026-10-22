@@ -419,11 +419,10 @@ type helmRelease struct {
 func readHelmReleases(t *testing.T, rel string) map[string]helmRelease {
 	t.Helper()
 	out := map[string]helmRelease{}
-	dec := yaml.NewDecoder(strings.NewReader(readRepoFile(t, rel)))
-	for {
+	for _, d := range repository(t).YAMLDocuments(t, rel) {
 		var doc helmRelease
-		if err := dec.Decode(&doc); err != nil {
-			break
+		if err := as(d, &doc); err != nil {
+			t.Fatalf("reading %s: %v", rel, err)
 		}
 		if doc.Kind == "HelmRelease" {
 			out[doc.Metadata.Name] = doc
