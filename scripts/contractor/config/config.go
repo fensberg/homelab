@@ -440,8 +440,11 @@ type SiteNetwork struct {
 	// Every zone's machines, flattened. AllMachineIPs and AllMachineNames are
 	// built from these, and the health gate and the teardown warning are built
 	// from those.
-	DMZIPs      []string
-	DMZNames    []string
+	DMZIPs   []string
+	DMZNames []string
+	// DMZKeys is each zone machine's key in the address plan, by its name:
+	// the key the cluster module's resources for it are under.
+	DMZKeys     map[string]string
 	Hypervisors []Node
 
 	// Machines is every machine the site is to have, with what it is given
@@ -794,6 +797,7 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 	sort.Strings(zoneNames)
 	var zones []ResolvedZone
 	var dmzIPs, dmzNames []string
+	dmzKeys := map[string]string{}
 	for _, zn := range zoneNames {
 		z := plan.DMZZones[zn]
 		rz := ResolvedZone{Name: zn, CIDR: z.CIDR, Gateway: z.Gateway, VNet: z.VNet, VNI: z.VNI}
@@ -801,6 +805,7 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 		for k, m := range plan.DMZ {
 			if m.Zone == zn {
 				members[k] = m
+				dmzKeys[m.Name] = k
 			}
 		}
 		for _, m := range inHostOrder(members) {
@@ -850,6 +855,7 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 		DMZZones:          zones,
 		DMZIPs:            dmzIPs,
 		DMZNames:          dmzNames,
+		DMZKeys:           dmzKeys,
 		Hypervisors:       nodes,
 	}, nil
 }
