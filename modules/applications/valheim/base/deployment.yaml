@@ -282,21 +282,23 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 4
 
-          # Sized from the vendor's own guidance rather than from a guess: 4 GiB
-          # for a fresh world at this player count, 6-8 once it is explored and
-          # built on. The request is what the scheduler reserves; the limit is
-          # what stops a leak taking the node's other tenants with it.
+          # The least it runs in, while nobody is playing: the vendor's own
+          # guidance is 4 GiB for a fresh world at this player count, and 6-8
+          # once it is explored and built on - which this world is. So this
+          # is tight for a world being played, and is raised again before it
+          # is (to 8Gi and four processors, which it had until 2026-10-22).
+          # Until then what it frees is lent to a pull request's jobs; see
+          # the workers in modules/infrastructure/cluster/compute.tf.
           #
-          # THIS DOES NOT FIT COMFORTABLY ON AN 8 GiB WORKER. See the note in
-          # docs/epochs/03-workload.md - moving this workload to the shared
-          # workers was right on isolation grounds and was not costed on memory.
+          # The request is what the scheduler reserves; the limit is what
+          # stops a leak taking the node's other tenants with it.
           resources:
             requests:
-              memory: 8Gi
-              # Four, and there is deliberately no CPU limit beneath it.
+              memory: 4Gi
+              # Two, and there is deliberately no CPU limit beneath it.
               #
               # A request reserves scheduling room rather than consuming it:
-              # the node keeps four cores' worth free for this pod, and
+              # the node keeps two cores' worth free for this pod, and
               # anything it is not using is available to everything else.
               #
               # A CPU LIMIT WOULD BE ACTIVELY HARMFUL HERE. Limits are enforced
@@ -305,18 +307,13 @@ spec:
               # simulation people are moving around in, that is stutter. Memory
               # is different and does have a limit: it is incompressible, so
               # the only alternative to a limit is a neighbour being evicted.
-              cpu: "4"
+              cpu: "2"
             limits:
               # Request and limit are equal, which makes this Guaranteed rather
               # than Burstable: the kubelet will not evict it under node
               # pressure ahead of anything else, and it cannot grow into a
               # neighbour's memory.
-              #
-              # It also effectively dedicates a worker. Nine gigabytes
-              # allocatable minus eight leaves room for the daemons that run
-              # everywhere and very little else, which is a real consequence of
-              # asking for the vendor's upper bound rather than an accident.
-              memory: 8Gi
+              memory: 4Gi
 
       volumes:
         - name: world

@@ -429,18 +429,19 @@ resource "proxmox_virtual_environment_vm" "talos_worker" {
     # exists. Overcommit belongs inside Kubernetes, where requests and limits
     # describe it and the kubelet can act on it.
     #
-    # TEN, RAISED FROM EIGHT BECAUSE OF WHAT NOW RUNS HERE.
+    # EIGHT, LOWERED FROM TEN TO LEND TWO EACH TO THE UNTRUSTED WORKER.
     #
     # A node's Allocatable is its memory minus what Talos, the kubelet and the
-    # Cilium agent reserve - roughly a gigabyte. A pod requesting 8Gi therefore
-    # does not fit on an 8 GiB node at all: it stays Pending forever, with an
-    # "Insufficient memory" event and nothing wrong that a restart would fix.
+    # Cilium agent reserve - roughly a gigabyte. Ten was chosen so the game
+    # server's 8Gi request fitted on one; it now asks four, which leaves about
+    # three of the seven allocatable for the daemons and everything else.
     #
-    # Ten leaves about nine allocatable, which fits an 8Gi request with room
-    # for the daemons that must run everywhere. It is deliberately not more:
-    # the hypervisor was measured at 23 GiB available, and three workers at ten
-    # spends fourteen of it.
-    dedicated = 10240
+    # What can wait is not owed room, and what cannot reserved about nine
+    # gibibytes across the three when this was measured (2026-10-22), against
+    # about fourteen with any one of them gone. The six this frees is lent to
+    # the untrusted worker, where a pull request's jobs run, and goes back
+    # when the game server is played again.
+    dedicated = 8192
   }
 
   network_device {
@@ -500,6 +501,11 @@ resource "proxmox_virtual_environment_vm" "talos_worker" {
 resource "proxmox_virtual_environment_vm" "dmz" {
   for_each = local.dmz
 
+  # After the workers, so that when this machine grows on memory they are
+  # lending it, they have given it back first. Applied in the other order,
+  # the hypervisor would for a while hold more than it has.
+  depends_on = [proxmox_virtual_environment_vm.talos_worker]
+
   name      = each.value.name
   node_name = local.hostnames[each.value.hypervisor]
   vm_id     = each.value.vm_id
@@ -514,15 +520,14 @@ resource "proxmox_virtual_environment_vm" "dmz" {
   cpu {
     # Four, and the clock matters more than the count.
     #
-    # Sized for the workload this zone was built for, whose published guidance
-    # is in docs/epochs/03-workload.md - it leans on single-thread performance,
-    # so a high base clock is what matters and more cores past four buy very
-    # little. The figures are looked up rather than guessed; the first version
-    # of this file said two cores, which was one too few.
+    # EIGHT, FOR A PULL REQUEST'S JOBS.
     #
-    # The zone itself is not sized for that workload or named after it. This is
-    # the machine's allocation, and the next tenant's will be its own.
-    cores = 4
+    # Four were sized for the game server this zone was first built for, which
+    # leans on one fast thread. What runs here now is a pull request's jobs -
+    # compiling and testing Go, several at once - which use every core they
+    # are given. Processors are not strict on the hypervisor the way memory
+    # is: past what it has, a machine slows and nothing is killed.
+    cores = 8
     type  = "x86-64-v2-AES"
   }
 
@@ -532,19 +537,27 @@ resource "proxmox_virtual_environment_vm" "dmz" {
     # a node deflated afterwards keeps scheduling against memory that is gone.
     # That makes this a hard allocation and the estate's scarcest resource.
     #
-    # FOUR, AND IT IS WHAT THE HYPERVISOR HAS LEFT.
+    # FOURTEEN, AND TEN OF IT IS BORROWED.
     #
-    # This was eight, sized for the game server the zone was first built
-    # for, which has not run in a zone since [03] moved it out. What a zone
-    # hosts now is a pull request's jobs, and the size is not chosen from
-    # what they need: the site's hypervisor has four to give and no more
-    # (docs/epochs/08-agent-roles.md). About three of it is left for work
-    # once Talos, the kubelet and the network's agent have theirs.
+    # What a zone hosts is a pull request's jobs, and at four the whole of
+    # them had about three gibibytes: fewer runners than the pools allow,
+    # with every lane of a push queued behind them. Ten more are lent from
+    # two places, measured on the host on 2026-10-22:
     #
-    # An estimate in the plainest sense. Nothing has run here at this size,
-    # and what a pull request's jobs use is to be read off the machine once
-    # they do.
-    dedicated = 4096
+    #   six from the workers, two each, while the game server asks for the
+    #   least it runs in rather than for a world that is being played;
+    #
+    #   four held to replace a control plane with, while no machine is
+    #   replaced one at a time (docs/epochs/05-node-lifecycle.md says when
+    #   it is held again).
+    #
+    # That is the hypervisor's whole budget, with tens of mebibytes to
+    # spare; the contractor's budget check refuses a plan that is any more.
+    #
+    # The size is the host's to give, not what the jobs were seen to use:
+    # nothing has run here at this size yet, and the pools' requests are
+    # corrected from what the jobs are read using once they do.
+    dedicated = 14336
   }
 
   network_device {

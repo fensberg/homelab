@@ -11,7 +11,7 @@
 //	- what the hypervisor keeps for itself
 //	- what its filesystem may hold as cache
 //	- what machines that are not the site's are given
-//	- one control plane's worth, so a machine can be replaced by a new one
+//	- what is held to replace a machine with, so a new one can be made
 //	  before the old one is gone
 //
 // Every figure but the first is a deduction somebody chose, and each is
@@ -46,6 +46,14 @@ func Cache(host int64) int64 {
 	}
 	return CacheMost
 }
+
+// Held is what is kept back to replace a machine with: one control plane's
+// worth, so a new one is made before the old one goes. None is held while it
+// is lent, and it is lent: no machine is replaced one at a time yet, and from
+// 2026-10-22 the untrusted worker has it, where a pull request's jobs run.
+// docs/epochs/05-node-lifecycle.md holds it again before anything replaces a
+// machine that way.
+const Held = 0
 
 // CacheShare is the fraction of a host its cache may take, as its
 // denominator, and CacheMost the most it may take whatever the host's size.
@@ -133,14 +141,13 @@ func Of(hosts map[string]hypervisorapi.Host, site *config.SiteNetwork) ([]Line, 
 	}
 	sort.Strings(keys)
 
-	reserve := config.MemoryOf[config.ControlPlane]
 	var lines []Line
 	for _, key := range keys {
 		host, ok := hosts[key]
 		if !ok {
 			return nil, fmt.Errorf("the site puts machines on the hypervisor %q, and nothing read what that hypervisor has", key)
 		}
-		line := Line{Hypervisor: key, Host: host.MemoryBytes, Kept: Kept, Cache: Cache(host.MemoryBytes), Reserve: reserve, Asked: asked[key]}
+		line := Line{Hypervisor: key, Host: host.MemoryBytes, Kept: Kept, Cache: Cache(host.MemoryBytes), Reserve: Held, Asked: asked[key]}
 		for _, m := range host.Machines {
 			switch {
 			case m.Template:

@@ -481,8 +481,8 @@ const gibibyte = int64(1) << 30
 // to say (#615).
 var MemoryOf = map[MachineRole]int64{
 	ControlPlane: 4 * gibibyte,
-	Worker:       10 * gibibyte,
-	Untrusted:    4 * gibibyte,
+	Worker:       8 * gibibyte,
+	Untrusted:    14 * gibibyte,
 }
 
 // WorkerPool is the hypervisor's pool of a site's workers, as the cluster
