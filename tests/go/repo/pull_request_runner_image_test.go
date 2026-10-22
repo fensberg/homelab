@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"homelab/tests/parsed"
 	"regexp"
 	"sort"
 	"strings"
@@ -63,8 +64,14 @@ func (i dockerInstruction) String() string {
 // may say anything.
 func dockerfile(t *testing.T, rel string) []dockerInstruction {
 	t.Helper()
+	return dockerfileIn(t, repository(t), rel)
+}
+
+// dockerfileIn is dockerfile, of a file of the given tree.
+func dockerfileIn(t *testing.T, tree *parsed.Tree, rel string) []dockerInstruction {
+	t.Helper()
 	var all []dockerInstruction
-	encoded, err := json.Marshal(repository(t).Conftest(t, rel, "dockerfile"))
+	encoded, err := json.Marshal(tree.Conftest(t, rel, "dockerfile"))
 	if err == nil {
 		err = json.Unmarshal(encoded, &all)
 	}

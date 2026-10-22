@@ -2,6 +2,7 @@ package repo
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 
@@ -105,35 +106,40 @@ registry login step, which is separate and may keep using them.`, bad)
 }
 
 // dockerBuild is the fabricator's `docker build ...` invocation, from the
-// step's script as the workflow parses: the command, followed through its
-// backslash continuations to its end.
+// steps' scripts as the shell parses them: the command's words, joined.
 func dockerBuild(t *testing.T) (string, bool) {
 	t.Helper()
-	for _, v := range parsed.Values(repository(t).YAMLDocuments(t, ".github/workflows/"+fabricatorWorkflow)) {
-		if build, ok := dockerBuildCommand(v); ok {
-			return build, true
-		}
-	}
-	return "", false
+	return dockerBuildIn(t, fabricatorWorkflow)
 }
 
-// dockerBuildCommand returns the `docker build ...` invocation in a script,
-// following backslash continuations to the end of the command.
-func dockerBuildCommand(script string) (string, bool) {
-	lines := strings.Split(script, "\n")
-	for i, line := range lines {
-		if !strings.Contains(line, "docker build") {
-			continue
-		}
-		var b strings.Builder
-		for j := i; j < len(lines); j++ {
-			b.WriteString(lines[j])
-			b.WriteString("\n")
-			if !strings.HasSuffix(strings.TrimSpace(lines[j]), `\`) {
-				break
+// dockerBuildIn is the first `docker build` command a workflow's steps run.
+func dockerBuildIn(t *testing.T, workflow string) (string, bool) {
+	t.Helper()
+	var wf struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				Run string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	repository(t).YAMLInto(t, workflowPath(workflow), &wf)
+	names := make([]string, 0, len(wf.Jobs))
+	for name := range wf.Jobs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		for _, step := range wf.Jobs[name].Steps {
+			commands, err := parsed.WorkflowCommands(workflow, step.Run)
+			if err != nil {
+				t.Fatalf("a step of %s is not shell that can be read: %v", workflow, err)
+			}
+			for _, c := range commands {
+				if len(c.Words) > 1 && c.Words[0] == "docker" && (c.Words[1] == "build" || len(c.Words) > 2 && c.Words[1] == "buildx" && c.Words[2] == "build") {
+					return strings.Join(c.Words, " "), true
+				}
 			}
 		}
-		return b.String(), true
 	}
 	return "", false
 }

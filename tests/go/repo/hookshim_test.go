@@ -234,11 +234,11 @@ func formatLaneDeliveries(t *testing.T, workflow []any) map[string]bool {
 	}
 	out := map[string]bool{}
 	for _, step := range lane.Steps {
-		script, err := parsed.ShellOf("the Format lane", step.Run)
+		commands, err := parsed.WorkflowCommands("the Format lane", step.Run)
 		if err != nil {
 			t.Fatalf("a step of the Format lane is not shell that can be read: %v", err)
 		}
-		for _, c := range parsed.Commands(script) {
+		for _, c := range commands {
 			if len(c.Words) >= 3 && slices.Equal(c.Words[:3], []string{"pre-commit", "run", "--all-files"}) {
 				return out
 			}

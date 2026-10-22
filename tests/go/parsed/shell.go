@@ -2,6 +2,8 @@ package parsed
 
 import (
 	"bytes"
+	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -114,3 +116,42 @@ func wordValue(w *syntax.Word) string {
 	}
 	return printed.String()
 }
+
+// WorkflowCommands is every simple command in a workflow step's run, as
+// Commands gives them. GitHub substitutes its expressions, ${{ ... }}, into
+// the script before any shell sees it, and they are no shell's syntax, so
+// each stands in for a token of its own for the parse and is put back, as
+// written, in the words and assignments it was part of.
+func WorkflowCommands(name, run string) ([]Command, error) {
+	var exprs []string
+	src := githubExpression.ReplaceAllStringFunc(run, func(e string) string {
+		exprs = append(exprs, e)
+		return fmt.Sprintf("__github_expression_%d__", len(exprs)-1)
+	})
+	f, err := ShellOf(name, src)
+	if err != nil {
+		return nil, err
+	}
+	restore := func(s string) string {
+		return standIn.ReplaceAllStringFunc(s, func(tok string) string {
+			var i int
+			fmt.Sscanf(tok, "__github_expression_%d__", &i)
+			return exprs[i]
+		})
+	}
+	commands := Commands(f)
+	for i := range commands {
+		for j, w := range commands[i].Words {
+			commands[i].Words[j] = restore(w)
+		}
+		for k, v := range commands[i].Assigns {
+			commands[i].Assigns[k] = restore(v)
+		}
+	}
+	return commands, nil
+}
+
+var (
+	githubExpression = regexp.MustCompile(`\$\{\{.*?\}\}`)
+	standIn          = regexp.MustCompile(`__github_expression_\d+__`)
+)

@@ -48,3 +48,18 @@ readonly LIST=(a b)
 		t.Errorf("a declared array was not kept as an assignment: %+v", last)
 	}
 }
+
+// A step's GitHub expressions are no shell's, and come back as written.
+func TestWorkflowCommandsKeepGitHubsExpressions(t *testing.T) {
+	got, err := WorkflowCommands("step", "docker build --build-arg V=${{ env.V }} \\\n  --tag \"${{ matrix.site || 'site0' }}\" .\necho done\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("read %d commands, want 2: %+v", len(got), got)
+	}
+	want := []string{"docker", "build", "--build-arg", "V=${{ env.V }}", "--tag", "${{ matrix.site || 'site0' }}", "."}
+	if !slices.Equal(got[0].Words, want) {
+		t.Errorf("read %q, want %q", got[0].Words, want)
+	}
+}
