@@ -49,7 +49,7 @@ func namedScripts(t *testing.T) map[string][]string {
 	root := repoRoot(t)
 	named := map[string][]string{}
 	for _, rel := range trackedFilesIn(t, root) {
-		if !authoredHere(rel) || !runnable(rel) {
+		if !authoredHere(t, rel) || !runnable(rel) {
 			continue
 		}
 		body, err := os.ReadFile(filepath.Join(root, rel))

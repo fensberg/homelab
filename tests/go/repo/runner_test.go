@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"homelab/tests/parsed"
 	"slices"
 	"sort"
 )
@@ -61,14 +62,41 @@ func helmReleaseDocument(t *testing.T, rel, name string) string {
 // yamlScalar pulls one `key: value` scalar out of a manifest. Deliberately not
 // a YAML parse: the file carries a ${VAR} Flux substitutes at reconcile time,
 // which is not a thing a strict decode has to cope with just to read one field.
-func yamlScalar(t *testing.T, body, key string) string {
+func yamlScalar(t *testing.T, docs []any, key string) string {
 	t.Helper()
-	re := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(key) + `:\s*(\S+)\s*$`)
-	m := re.FindStringSubmatch(body)
-	if m == nil {
-		t.Fatalf("no %s: scalar in the scale set manifest", key)
+	if v, ok := scalarAt(docs, key); ok {
+		return v
 	}
-	return m[1]
+	t.Fatalf("no %s: scalar in the scale set manifest", key)
+	return ""
+}
+
+// scalarAt is the first string value under a key anywhere in parsed
+// documents, keys walked in order so the answer does not depend on a map's.
+func scalarAt(node any, key string) (string, bool) {
+	switch v := node.(type) {
+	case []any:
+		for _, x := range v {
+			if s, ok := scalarAt(x, key); ok {
+				return s, true
+			}
+		}
+	case map[string]any:
+		if s, ok := v[key].(string); ok {
+			return s, true
+		}
+		keys := make([]string, 0, len(v))
+		for k := range v {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			if s, ok := scalarAt(v[k], key); ok {
+				return s, true
+			}
+		}
+	}
+	return "", false
 }
 
 func readRepoFile(t *testing.T, rel string) string {
@@ -129,4 +157,43 @@ func nodeAffinityAdmits(t *testing.T, terms []any, labels map[string]string) boo
 		}
 	}
 	return false
+}
+
+// versionPins is where every version the estate takes is pinned.
+const versionPins = "scripts/versions.env"
+
+// pinned is a version scripts/versions.env pins, read as the env file it is.
+func pinned(t *testing.T, name string) string {
+	t.Helper()
+	pins, _ := repository(t).Conftest(t, versionPins, "dotenv").(map[string]any)
+	v, ok := pins[name].(string)
+	if !ok || strings.TrimSpace(v) == "" {
+		t.Fatalf("%s declares no %s.\n\nEvery version this estate takes is pinned in that one file.", versionPins, name)
+	}
+	return strings.TrimSpace(v)
+}
+
+// header is the comment a rendered file opens with, as the YAML parser reads
+// it: who rendered it, and from what. It is the subject of the checks that
+// read it, so it is read where a parser keeps it and nowhere else.
+func header(t *testing.T, rel string) string {
+	t.Helper()
+	node := repository(t).YAMLNode(t, rel)
+	out := node.HeadComment
+	if len(node.Content) > 0 {
+		out += "\n" + node.Content[0].HeadComment
+	}
+	return out
+}
+
+// mappings is every document of a YAML file that is a mapping.
+func mappings(t *testing.T, tree *parsed.Tree, rel string) []map[string]any {
+	t.Helper()
+	var out []map[string]any
+	for _, doc := range tree.YAMLDocuments(t, rel) {
+		if m, ok := doc.(map[string]any); ok {
+			out = append(out, m)
+		}
+	}
+	return out
 }

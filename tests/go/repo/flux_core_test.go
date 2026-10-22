@@ -43,11 +43,11 @@ func TestTheFluxCoreIsSharedAndASiteDirectoryIsItsWork(t *testing.T) {
 
 	// Found by what they hold, not named: the core is where Flux's own
 	// install is, and the bootstrap is where the CNI's manifest is.
-	install, err := fluxObjectPath(fluxInstallKind, fluxInstallName)
+	install, err := fluxObjectPath(t, fluxInstallKind, fluxInstallName)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cni, err := fluxObjectPath(cniKind, cniName)
+	cni, err := fluxObjectPath(t, cniKind, cniName)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -100,17 +100,16 @@ func trackedMatching(t *testing.T, keep func(rel string) bool) []string {
 // about where to look, so naming paths in it is correct. A new entry is a
 // decision somebody makes once; a missing entry produces noise, not silence,
 // which is the direction this should fail in.
-var notAuthoredHere = unauthored()
-
 // unauthored is the list, with the one entry that is a place rather than a
 // file name found by what is in it: Flux's own install is wherever the
 // manifest declaring its controllers is, and that directory moves when the
 // Flux tree does. If it cannot be found the entry is the empty prefix's
 // opposite - a path nothing has - and TestEveryUnauthoredPathStillExists
 // says so.
-func unauthored() []string {
+func unauthored(t *testing.T) []string {
+	t.Helper()
 	fluxInstall := "the Flux install, which no manifest declares/"
-	if path, err := fluxObjectPath(fluxInstallKind, fluxInstallName); err == nil {
+	if path, err := fluxObjectPath(t, fluxInstallKind, fluxInstallName); err == nil {
 		fluxInstall = filepath.ToSlash(filepath.Dir(path)) + "/"
 	}
 	return append([]string{fluxInstall}, unauthoredNames...)
@@ -125,8 +124,9 @@ var unauthoredNames = []string{
 }
 
 // authoredHere reports whether a tracked path is this repository's own work.
-func authoredHere(rel string) bool {
-	for _, skip := range notAuthoredHere {
+func authoredHere(t *testing.T, rel string) bool {
+	t.Helper()
+	for _, skip := range unauthored(t) {
 		if strings.HasSuffix(skip, "/") {
 			if strings.HasPrefix(rel, skip) {
 				return false
@@ -189,7 +189,7 @@ whole repository.`, dir)
 func TestEveryUnauthoredPathStillExists(t *testing.T) {
 	files := trackedFiles(t)
 
-	for _, skip := range notAuthoredHere {
+	for _, skip := range unauthored(t) {
 		found := false
 		for _, rel := range files {
 			if strings.HasSuffix(skip, "/") {
@@ -223,7 +223,7 @@ exemption without anybody choosing it.`, skip)
 func openTofuSources(t *testing.T) []string {
 	t.Helper()
 	sources := trackedMatching(t, func(rel string) bool {
-		return authoredHere(rel) &&
+		return authoredHere(t, rel) &&
 			(strings.HasSuffix(rel, ".tf") || strings.HasSuffix(rel, ".tftest.hcl"))
 	})
 

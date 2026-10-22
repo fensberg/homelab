@@ -53,6 +53,7 @@ func TestEveryJobOnTheEstatesRunnersIsOnTheRunnersItsKindAllows(t *testing.T) {
 		_, manifest := fluxObject(t, kindHelmRelease, release)
 		prefix, _ := strings.CutSuffix(yamlScalar(t, manifest, "runnerScaleSetName"), "${SITE}")
 		var doc struct {
+			Kind string `yaml:"kind"`
 			Spec struct {
 				Values struct {
 					Template struct {
@@ -63,10 +64,16 @@ func TestEveryJobOnTheEstatesRunnersIsOnTheRunnersItsKindAllows(t *testing.T) {
 				} `yaml:"values"`
 			} `yaml:"spec"`
 		}
-		if err := yaml.Unmarshal([]byte(manifest), &doc); err != nil {
-			t.Fatalf("parsing the runner set %s: %v", release, err)
+		priority := ""
+		for _, d := range manifest {
+			if err := as(d, &doc); err != nil {
+				t.Fatalf("reading the runner set %s: %v", release, err)
+			}
+			if doc.Kind == kindHelmRelease {
+				priority = doc.Spec.Values.Template.Spec.Priority
+			}
 		}
-		sets = append(sets, set{prefix, doc.Spec.Values.Template.Spec.Priority == "batch"})
+		sets = append(sets, set{prefix, priority == "batch"})
 	}
 	sort.Slice(sets, func(i, j int) bool { return len(sets[i].prefix) > len(sets[j].prefix) })
 

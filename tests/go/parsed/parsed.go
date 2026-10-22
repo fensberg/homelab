@@ -88,7 +88,9 @@ func (r *Tree) Files(t testing.TB) []string {
 			files = append(files, rel)
 		}
 	}
-	if len(files) < fewestPlausibleFiles {
+	// A fixture holds only what its test wrote; the repository and copies of
+	// it hold far more, and fewer means the listing broke.
+	if !r.fixture && len(files) < fewestPlausibleFiles {
 		t.Fatalf("git ls-files returned %d file(s), and this repository has many more; the listing has broken, and a guard reading it would pass by examining nothing", len(files))
 	}
 	return files

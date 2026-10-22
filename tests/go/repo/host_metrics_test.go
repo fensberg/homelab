@@ -110,7 +110,7 @@ func TestTheHostsExporterHasOneName(t *testing.T) {
 // its comments, or "" when there is none.
 func hostScrape(t *testing.T) string {
 	t.Helper()
-	path, err := fluxObjectPath("ScrapeConfig", "hypervisor")
+	path, err := fluxObjectPath(t, "ScrapeConfig", "hypervisor")
 	if err != nil {
 		return ""
 	}

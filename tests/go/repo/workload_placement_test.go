@@ -616,16 +616,15 @@ func declaredPriorityClasses(t *testing.T) map[string]bool {
 	out := map[string]bool{}
 	// Found by a class it declares; every class in that file is read.
 	_, classes := fluxObject(t, capacity.KindPriorityClass, "critical")
-	dec := yaml.NewDecoder(strings.NewReader(classes))
-	for {
+	for _, d := range classes {
 		var doc struct {
 			Kind     string `yaml:"kind"`
 			Metadata struct {
 				Name string `yaml:"name"`
 			} `yaml:"metadata"`
 		}
-		if err := dec.Decode(&doc); err != nil {
-			break
+		if err := as(d, &doc); err != nil {
+			t.Fatalf("reading a priority class: %v", err)
 		}
 		if doc.Kind == capacity.KindPriorityClass {
 			out[doc.Metadata.Name] = true
@@ -657,7 +656,7 @@ func TestEveryHelmReleaseSaysWhereItsPodSpecLives(t *testing.T) {
 	// authoredHere drops flux-system, which holds Flux's own generated install:
 	// not a HelmRelease at all, and checked separately below.
 	for _, rel := range trackedMatching(t, func(rel string) bool {
-		return authoredHere(rel) && strings.HasPrefix(rel, "clusters/") &&
+		return authoredHere(t, rel) && strings.HasPrefix(rel, "clusters/") &&
 			strings.HasSuffix(rel, ".yaml")
 	}) {
 		for name := range readHelmReleases(t, rel) {
@@ -733,11 +732,10 @@ func TestEveryFluxControllerIsPlacedAndGivenAPriority(t *testing.T) {
 		} `yaml:"spec"`
 	}
 	deployments := map[string]map[string]any{}
-	dec := yaml.NewDecoder(strings.NewReader(components))
-	for {
+	for _, d := range components {
 		var doc deployment
-		if err := dec.Decode(&doc); err != nil {
-			break
+		if err := as(d, &doc); err != nil {
+			t.Fatalf("reading the generated install: %v", err)
 		}
 		if doc.Kind == "Deployment" {
 			deployments[doc.Metadata.Name] = doc.Spec.Template.Spec
@@ -757,9 +755,7 @@ func TestEveryFluxControllerIsPlacedAndGivenAPriority(t *testing.T) {
 			Patch string `yaml:"patch"`
 		} `yaml:"patches"`
 	}
-	if err := yaml.Unmarshal([]byte(readRepoFile(t, overlay)), &k); err != nil {
-		t.Fatalf("parsing %s: %v", overlay, err)
-	}
+	repository(t).YAMLInto(t, overlay, &k)
 	for _, p := range k.Patches {
 		if p.Target.Kind != "Deployment" {
 			continue

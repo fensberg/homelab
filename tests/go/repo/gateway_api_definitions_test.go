@@ -1,13 +1,8 @@
 package repo
 
 import (
-	"errors"
-	"io"
-	"regexp"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 // The committed Gateway API definitions are the ones the pinned versions
@@ -30,23 +25,14 @@ func TestTheRenderedGatewayAPIDefinitionsMatchTheirPins(t *testing.T) {
 	const group = "gateway.networking.k8s.io"
 	path, body := fluxObject(t, "CustomResourceDefinition", "gateways."+group)
 
-	env := readRepoFile(t, "scripts/versions.env")
-	pinned := func(name string) string {
-		m := regexp.MustCompile(`(?m)^` + name + `=(.+)$`).FindStringSubmatch(env)
-		if m == nil {
-			t.Fatalf("scripts/versions.env declares no %s.\n\nEvery version this estate takes is pinned in that one file.", name)
-		}
-		return strings.TrimSpace(m[1])
-	}
-	chart, api := pinned("TRAEFIK_CRDS_VERSION"), pinned("GATEWAY_API_VERSION")
+	chart, api := pinned(t, "TRAEFIK_CRDS_VERSION"), pinned(t, "GATEWAY_API_VERSION")
 
-	if !strings.Contains(body, "traefik-crds "+chart+" ") {
+	if !strings.Contains(header(t, path), "traefik-crds "+chart+" ") {
 		t.Errorf("%s: its header does not name chart version %s.\n\nRe-render it with `task render-gateway-api`.", path, chart)
 	}
 
 	found := map[string]bool{}
-	dec := yaml.NewDecoder(strings.NewReader(body))
-	for {
+	for _, decoded := range body {
 		var doc struct {
 			Kind     string `yaml:"kind"`
 			Metadata struct {
@@ -57,12 +43,8 @@ func TestTheRenderedGatewayAPIDefinitionsMatchTheirPins(t *testing.T) {
 				Group string `yaml:"group"`
 			} `yaml:"spec"`
 		}
-		err := dec.Decode(&doc)
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			t.Fatalf("%s is not YAML that can be read: %v", path, err)
+		if err := as(decoded, &doc); err != nil {
+			t.Fatalf("%s has a document that does not read as an object: %v", path, err)
 		}
 		if doc.Kind == "" {
 			continue

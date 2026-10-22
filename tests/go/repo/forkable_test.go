@@ -241,7 +241,7 @@ func TestZoneNamesUseAPlaceholder(t *testing.T) {
 // The one place the repository says where it lives is the source its own
 // Flux reads it from, found by what it declares and not by where it is. A
 // fork changes that line and nothing else to become its own repository.
-var ownURL = regexp.MustCompile(`(?m)^\s+url:\s*https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?\s*$`)
+var ownURL = regexp.MustCompile(`^https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?$`)
 
 // ownAddress is the repository's own owner/name, read from that line.
 func ownAddress(t *testing.T) string {
@@ -252,8 +252,9 @@ func ownAddress(t *testing.T) string {
 
 func ownOwnerAndName(t *testing.T) (owner, name string) {
 	t.Helper()
-	path, body := fluxObject(t, "GitRepository", "flux-system")
-	m := ownURL.FindStringSubmatch(body)
+	path, docs := fluxObject(t, "GitRepository", "flux-system")
+	url, _ := scalarAt(docs, "url")
+	m := ownURL.FindStringSubmatch(url)
 	if m == nil {
 		t.Fatalf("%s names no repository on GitHub, so the owner whose name this looks for is unknown", path)
 	}

@@ -61,7 +61,7 @@ func TestEveryJobSaysWhetherItKeepsRoot(t *testing.T) {
 
 	jobs, disabled := 0, 0
 	for _, rel := range trackedFilesIn(t, root) {
-		if !authoredHere(rel) || !runnable(rel) || filepath.Base(rel) == "action.yml" {
+		if !authoredHere(t, rel) || !runnable(rel) || filepath.Base(rel) == "action.yml" {
 			continue
 		}
 		wf, err := os.ReadFile(filepath.Join(root, rel))

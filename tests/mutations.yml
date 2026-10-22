@@ -217,7 +217,9 @@ unprovable:
   - test: TestUnfollowableReleasesNamesEachWayAnOrderCanBeBroken
     reason: table
   - test: TestAnApplicationIsNamedOnlyWhereItLives
-    reason: proved by TestNamedOutsideAllowsAnApplicationsNameOnlyWhereItLives; planting a name here would be naming an application in this file
+    reason: proved by TestNamedOutsideAllowsAnApplicationsNameOnlyWhereItLives, and its reading by TestScanTextFindsEveryLineARuleMatchesInEveryFile; planting a name here would be naming an application in this file
+  - test: TestScanTextFindsEveryLineARuleMatchesInEveryFile
+    reason: table
   - test: TestNamedOutsideAllowsAnApplicationsNameOnlyWhereItLives
     reason: table
   - test: TestEveryApplicationsOwnTestsPass
@@ -237,7 +239,7 @@ unprovable:
   # What it removes is proved by the table beside it.
   - test: TestAnApplicationIsRemovedByDeletingItsDirectoryAndItsBlocks
     reason: meta
-  - test: TestWithoutApplicationTakesOutOneBlockAndLeavesTheRest
+  - test: TestABlockIsAnApplicationsOwnSourceAndWhatRunsIt
     reason: table
   - test: TestFluxLayoutRefusesWhatIsNotCoreOrASitesOwn
     reason: table

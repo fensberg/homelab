@@ -86,7 +86,7 @@ func testSources(t *testing.T) map[string]string {
 	root := repoRoot(t)
 	out := map[string]string{}
 	for _, rel := range trackedMatching(t, func(rel string) bool {
-		if !authoredHere(rel) {
+		if !authoredHere(t, rel) {
 			return false
 		}
 		return strings.HasSuffix(rel, "_test.go") || strings.HasSuffix(rel, ".test.ts") ||
@@ -113,7 +113,7 @@ func testSources(t *testing.T) map[string]string {
 func tracked(t *testing.T, keep func(rel string) bool) []string {
 	t.Helper()
 	return trackedMatching(t, func(rel string) bool {
-		return authoredHere(rel) && keep(rel)
+		return authoredHere(t, rel) && keep(rel)
 	})
 }
 

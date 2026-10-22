@@ -220,7 +220,7 @@ func TestEveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits(t *testing.T) {
 	var asking []string
 	workflows, usesAPool := 0, false
 	for _, rel := range trackedFilesIn(t, root) {
-		if !authoredHere(rel) {
+		if !authoredHere(t, rel) {
 			continue
 		}
 		isTofu := strings.HasSuffix(rel, ".tf")

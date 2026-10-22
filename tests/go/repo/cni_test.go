@@ -1,8 +1,7 @@
 package repo
 
 import (
-	"os"
-	"path/filepath"
+	"homelab/tests/parsed"
 	"regexp"
 	"strings"
 	"testing"
@@ -29,10 +28,11 @@ func cniPath(t *testing.T) string {
 	return path
 }
 
-func cniBody(t *testing.T) string {
+// cniValues is every value the rendered CNI manifest holds.
+func cniValues(t *testing.T) []string {
 	t.Helper()
-	_, body := fluxObject(t, cniKind, cniName)
-	return body
+	_, docs := fluxObject(t, cniKind, cniName)
+	return parsed.Values(docs)
 }
 
 func cniValuesPath(t *testing.T) string {
@@ -138,22 +138,9 @@ func TestKubePrismIsDeclaredRatherThanAssumed(t *testing.T) {
 // actually gets deployed, so both are checked and the tags are what would catch
 // a bumped version and a forgotten re-render.
 func TestTheRenderedCNIManifestMatchesThePinnedChartVersion(t *testing.T) {
-	root := repoRoot(t)
+	want := pinned(t, cniVersion)
 
-	env, err := os.ReadFile(filepath.Join(root, "scripts", "versions.env"))
-	if err != nil {
-		t.Fatalf("reading versions.env: %v", err)
-	}
-	pin := regexp.MustCompile(`(?m)^` + cniVersion + `=(.+)$`).FindStringSubmatch(string(env))
-	if pin == nil {
-		t.Fatalf("scripts/versions.env declares no %s.\n\n"+
-			"Every version this estate takes is pinned in that one file.", cniVersion)
-	}
-	want := strings.TrimSpace(pin[1])
-
-	manifest := cniBody(t)
-
-	if !strings.Contains(manifest, "cilium "+want) {
+	if !strings.Contains(header(t, cniPath(t)), "cilium "+want) {
 		t.Errorf("%s: its provenance header does not name chart version %s.\n\n"+
 			"Re-render it with `task render-cni`.", cniPath(t), want)
 	}
@@ -162,7 +149,11 @@ func TestTheRenderedCNIManifestMatchesThePinnedChartVersion(t *testing.T) {
 	// checked here; the agent and the operator are the chart's own images.
 	tagged := regexp.MustCompile(`quay\.io/cilium/(cilium|operator-generic):v([0-9][^@"\s]*)`)
 	found := 0
-	for _, m := range tagged.FindAllStringSubmatch(manifest, -1) {
+	var images [][]string
+	for _, v := range cniValues(t) {
+		images = append(images, tagged.FindAllStringSubmatch(v, -1)...)
+	}
+	for _, m := range images {
 		found++
 		if m[2] != want {
 			t.Errorf("%s: image %s is tagged v%s, but %s pins %s.\n\n"+

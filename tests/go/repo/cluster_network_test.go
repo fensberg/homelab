@@ -79,10 +79,7 @@ func TestThePodAndServiceNetworksCannotCollideWithASite(t *testing.T) {
 	for octet := lowestSiteOctet; octet <= highestSiteOctet; octet++ {
 		sites["s"+itoaSmall(octet)] = config.Site{Octet: octet, ControlPlaneCount: 1}
 	}
-	plan, err := config.EstateRanges(repoRoot(t), sites)
-	if err != nil {
-		t.Fatalf("asking the address plan: %v", err)
-	}
+	plan := repository(t).EstateRanges(t, sites)
 	if len(plan) != len(sites) {
 		t.Fatalf("the plan answered for %d of %d sites, so this proves less than it claims", len(plan), len(sites))
 	}

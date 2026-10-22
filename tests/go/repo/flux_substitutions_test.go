@@ -84,7 +84,7 @@ func TestEveryFluxSubstitutionHasAStandInAndTheReverse(t *testing.T) {
 	// validating.
 	// The CNI's bootstrap, found by the agent it declares: rendered chart
 	// output Talos applies, which Flux never substitutes into.
-	cni, err := fluxObjectPath(cniKind, cniName)
+	cni, err := fluxObjectPath(t, cniKind, cniName)
 	if err != nil {
 		t.Fatal(err)
 	}

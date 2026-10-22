@@ -223,7 +223,7 @@ func TestEveryPlainWorkloadExemptionNamesARealFile(t *testing.T) {
 		if strings.TrimSpace(e.why) == "" {
 			t.Errorf("the %s %s is exempted with no reason", e.kind, e.name)
 		}
-		if _, err := fluxObjectPath(e.kind, e.name); err != nil {
+		if _, err := fluxObjectPath(t, e.kind, e.name); err != nil {
 			t.Errorf("the file declaring the %s %s is exempted from the plain-workload guard, and %v: delete the entry", e.kind, e.name, err)
 		}
 	}
