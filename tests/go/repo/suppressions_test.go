@@ -1,19 +1,16 @@
 package repo
 
 import (
-	"bytes"
-	"os"
+	"go/ast"
+	"go/token"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
-
-	"homelab/details/repopath"
 )
 
 // A finding that is silenced names the guard that proves it may be.
@@ -59,9 +56,7 @@ const silencersFile = "tests/silencers.yml"
 func readSilencers(t *testing.T) silencers {
 	t.Helper()
 	var s silencers
-	if err := yaml.Unmarshal([]byte(readRepoFile(t, silencersFile)), &s); err != nil {
-		t.Fatalf("%s does not parse: %v", silencersFile, err)
-	}
+	repository(t).YAMLInto(t, silencersFile, &s)
 	if len(s.Tools) == 0 {
 		t.Fatalf("%s names no tools, so every check that reads it is asserting nothing", silencersFile)
 	}
@@ -76,32 +71,18 @@ var provedBy = regexp.MustCompile(`proved by (Test[A-Za-z0-9_]+)`)
 func guardsHere(t *testing.T) map[string]bool {
 	t.Helper()
 	// This package, in whichever tree is being judged: the mutation ledger
-	// runs a guard from a scratch copy's root, not from here.
-	_, self, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("this test cannot find its own source file")
-	}
-	real, err := repopath.Root()
-	if err != nil {
-		t.Fatal(err)
-	}
-	rel, err := filepath.Rel(real, filepath.Dir(self))
-	if err != nil {
-		t.Fatal(err)
-	}
-	files, err := filepath.Glob(filepath.Join(repoRoot(t), rel, "*_test.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	decl := regexp.MustCompile(`(?m)^func (Test[A-Za-z0-9_]+)\(`)
+	// runs a guard against a scratch copy.
+	tree := repository(t)
 	guards := map[string]bool{}
-	for _, file := range files {
-		body, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatalf("reading %s: %v", file, err)
+	fset := token.NewFileSet()
+	for _, rel := range tree.Files(t) {
+		if filepath.Dir(rel) != guardsDir || !strings.HasSuffix(rel, "_test.go") {
+			continue
 		}
-		for _, m := range decl.FindAllStringSubmatch(string(body), -1) {
-			guards[m[1]] = true
+		for _, d := range tree.Go(t, fset, rel).Decls {
+			if fn, ok := d.(*ast.FuncDecl); ok && fn.Recv == nil && strings.HasPrefix(fn.Name.Name, "Test") {
+				guards[fn.Name.Name] = true
+			}
 		}
 	}
 	if len(guards) == 0 {
@@ -129,64 +110,87 @@ func unproved(comment string, guards map[string]bool) string {
 	return ""
 }
 
-// commentLeaders is how a comment starts in a file of this name. A mark only
-// silences from inside a comment, and a sentence that mentions one is not a
-// silencing.
-func commentLeaders(rel string) []string {
-	switch strings.ToLower(filepath.Ext(rel)) {
-	case ".go", ".js", ".mjs", ".cjs", ".ts", ".mts", ".tsx", ".jsx":
-		return []string{"//", "/*"}
-	case ".md", ".html":
-		return []string{"<!--"}
-	case ".tf", ".hcl":
-		return []string{"#", "//"}
-	case ".patch", ".diff":
-		// A change somebody has yet to apply. No tool reads it as the file
-		// it describes, so a mark inside it silences nothing until it is.
-		return nil
-	}
-	return []string{"#"}
+// commentLeaders is how a comment starts in a file of each kind, by the
+// globs Semgrep picks the kind's files with. A mark only silences from inside
+// a comment, and a sentence that mentions one is not a silencing. A patch is
+// a change somebody has yet to apply: no tool reads it as the file it
+// describes, so a mark inside it silences nothing until it is, and no kind
+// here reads one.
+var commentLeaders = []struct {
+	globs   []string
+	leaders []string
+}{
+	{[]string{"*.go", "*.js", "*.mjs", "*.cjs", "*.ts", "*.mts", "*.tsx", "*.jsx"}, []string{"//", "/*"}},
+	{[]string{"*.md", "*.html"}, []string{"<!--"}},
+	{[]string{"*.tf", "*.hcl"}, []string{"#", "//"}},
+	{nil, []string{"#"}}, // everything else
 }
 
-// commentOn is the comment a line carries, from its first leader, or "".
-func commentOn(line string, leaders []string) string {
-	at := -1
-	for _, l := range leaders {
-		if i := strings.Index(line, l); i >= 0 && (at < 0 || i < at) {
-			at = i
-		}
-	}
-	if at < 0 {
-		return ""
-	}
-	return line[at:]
+// commentLines is what a scan finds of a file's comments: each line that is
+// a comment and nothing else, and each line whose comment - from the line's
+// first leader - carries one of the marks, by line number.
+type commentLines struct {
+	whole, marked map[int]string
 }
 
-// commentAround is the comment a mark sits in: the comment on its own line,
-// and the unbroken run of comment-only lines above and below it.
-func commentAround(lines []string, i int, leaders []string) string {
-	block := []string{commentOn(lines[i], leaders)}
-	whole := func(j int) (string, bool) {
-		trimmed := strings.TrimSpace(lines[j])
-		c := commentOn(trimmed, leaders)
-		return c, c != "" && c == trimmed
+// commentScan asks Semgrep for the comments of files, kind by kind.
+func commentScan(t *testing.T, files []string, marks []string) map[string]*commentLines {
+	t.Helper()
+	var quoted []string
+	for _, m := range marks {
+		quoted = append(quoted, regexp.QuoteMeta(m))
 	}
-	for j := i - 1; j >= 0; j-- {
-		c, ok := whole(j)
-		if !ok {
-			break
+	var rules []map[string]any
+	var claimed []string
+	for i, kind := range commentLeaders {
+		var alt []string
+		for _, l := range kind.leaders {
+			alt = append(alt, regexp.QuoteMeta(l))
 		}
-		block = append(block, c)
-	}
-	// Below only when the mark is itself in a comment-only line: a mark at
-	// the end of a line of code has that code under it, not its own comment.
-	if _, ok := whole(i); ok {
-		for j := i + 1; j < len(lines); j++ {
-			c, ok := whole(j)
-			if !ok {
-				break
+		leader := "(?:" + strings.Join(alt, "|") + ")"
+		paths := map[string]any{"include": kind.globs}
+		if kind.globs == nil {
+			paths = map[string]any{"exclude": append(append([]string{}, claimed...), "*.patch", "*.diff")}
+		}
+		claimed = append(claimed, kind.globs...)
+		rule := func(id, about, pattern string) map[string]any {
+			return map[string]any{
+				"id": id + strconv.Itoa(i), "languages": []string{"generic"}, "severity": "INFO",
+				"message": "$C", "metadata": map[string]any{"about": about}, "paths": paths, "pattern-regex": pattern,
 			}
-			block = append(block, c)
+		}
+		rules = append(rules,
+			rule("whole", "whole", `(?m)^[ \t]*(?P<C>`+leader+`[^\n]*?)[ \t]*$`),
+			rule("marked", "marked", `(?m)^(?:(?!`+leader+`)[^\n])*(?P<C>`+leader+`(?=[^\n]*(?:`+strings.Join(quoted, "|")+`))[^\n]*)$`))
+	}
+	out := map[string]*commentLines{}
+	for _, f := range scanText(t, repository(t), rules, files) {
+		c := out[f.Path]
+		if c == nil {
+			c = &commentLines{whole: map[int]string{}, marked: map[int]string{}}
+			out[f.Path] = c
+		}
+		if f.About == "whole" {
+			c.whole[f.Line] = f.Text
+		} else {
+			c.marked[f.Line] = f.Text
+		}
+	}
+	return out
+}
+
+// around is the comment a mark sits in: the comment on its own line, and the
+// unbroken run of comment-only lines above and below it - below only when
+// the mark is itself in a comment-only line, since a mark at the end of a
+// line of code has that code under it, not its own comment.
+func (c *commentLines) around(line int, comment string) string {
+	block := []string{comment}
+	for j := line - 1; c.whole[j] != ""; j-- {
+		block = append(block, c.whole[j])
+	}
+	if c.whole[line] != "" {
+		for j := line + 1; c.whole[j] != ""; j++ {
+			block = append(block, c.whole[j])
 		}
 	}
 	return strings.Join(block, "\n")
@@ -208,35 +212,27 @@ func TestEverySilencedFindingNamesTheGuardThatProvesItMayBe(t *testing.T) {
 	}
 
 	var failures []string
-	read, found := 0, 0
+	var files []string
 	for _, rel := range trackedFiles(t) {
 		// The one file that spells every mark, to say what they are.
-		if rel == silencersFile {
-			continue
+		if rel != silencersFile {
+			files = append(files, rel)
 		}
-		raw, err := os.ReadFile(filepath.Join(repoRoot(t), rel))
-		if err != nil {
-			t.Fatalf("reading %s: %v", rel, err)
-		}
-		// Not text, so it holds no comment.
-		if bytes.IndexByte(raw, 0) >= 0 {
-			continue
-		}
-		read++
-		leaders := commentLeaders(rel)
-		lines := strings.Split(string(raw), "\n")
-		for i, line := range lines {
-			comment := commentOn(line, leaders)
-			if comment == "" {
-				continue
-			}
+	}
+	read, found := len(files), 0
+	var texts []string
+	for _, m := range marks {
+		texts = append(texts, m.text)
+	}
+	for rel, comments := range commentScan(t, files, texts) {
+		for line, comment := range comments.marked {
 			for _, m := range marks {
 				if !strings.Contains(comment, m.text) {
 					continue
 				}
 				found++
-				if why := unproved(commentAround(lines, i, leaders), guards); why != "" {
-					failures = append(failures, rel+":"+strconv.Itoa(i+1)+" silences "+m.tool+" ("+m.text+") and "+why)
+				if why := unproved(comments.around(line, comment), guards); why != "" {
+					failures = append(failures, rel+":"+strconv.Itoa(line)+" silences "+m.tool+" ("+m.text+") and "+why)
 				}
 				break
 			}
@@ -273,15 +269,20 @@ type configEntry struct {
 func (s silencers) configEntries(t *testing.T) []configEntry {
 	t.Helper()
 	var out []configEntry
+	var lineFiles []string
+	for _, def := range s.Tools {
+		for _, c := range def.Config {
+			if len(c.Lists)+len(c.Maps) == 0 {
+				lineFiles = append(lineFiles, c.File)
+			}
+		}
+	}
+	lines := configLines(t, lineFiles)
 	for tool, def := range s.Tools {
 		for _, c := range def.Config {
-			body := readRepoFile(t, c.File)
 			switch {
 			case len(c.Lists)+len(c.Maps) > 0:
-				var doc yaml.Node
-				if err := yaml.Unmarshal([]byte(body), &doc); err != nil {
-					t.Fatalf("%s does not parse: %v", c.File, err)
-				}
+				doc := repository(t).YAMLNode(t, c.File)
 				if len(doc.Content) == 0 {
 					continue
 				}
@@ -312,12 +313,11 @@ func (s silencers) configEntries(t *testing.T) []configEntry {
 					}
 				}
 			default:
-				lines := strings.Split(body, "\n")
-				for i, line := range lines {
-					trimmed := strings.TrimSpace(line)
-					if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-						continue
-					}
+				file := lines[c.File]
+				if file == nil {
+					file = &commentLines{whole: map[int]string{}, marked: map[int]string{}}
+				}
+				for i, trimmed := range file.marked {
 					entry := c.Lines
 					for _, k := range c.Keys {
 						entry = entry || regexp.MustCompile(`^`+regexp.QuoteMeta(k)+`\s*=`).MatchString(trimmed)
@@ -326,10 +326,44 @@ func (s silencers) configEntries(t *testing.T) []configEntry {
 						entry = entry || trimmed == "[["+table+"]]"
 					}
 					if entry {
-						out = append(out, configEntry{tool, c.File + ":" + strconv.Itoa(i+1), trimmed, commentAround(lines, i, []string{"#"})})
+						inline := ""
+						if at := strings.Index(trimmed, "#"); at >= 0 {
+							inline = trimmed[at:]
+						}
+						out = append(out, configEntry{tool, c.File + ":" + strconv.Itoa(i), trimmed, file.around(i, inline)})
 					}
 				}
 			}
+		}
+	}
+	return out
+}
+
+// configLines is what Semgrep finds in configuration files read line by
+// line: each comment line, and each line that is an entry - anything else
+// that is not blank - kept, for the entries, as marked.
+func configLines(t *testing.T, files []string) map[string]*commentLines {
+	t.Helper()
+	rule := func(id, pattern string) map[string]any {
+		return map[string]any{
+			"id": id, "languages": []string{"generic"}, "severity": "INFO",
+			"message": "$C", "metadata": map[string]any{"about": id}, "pattern-regex": pattern,
+		}
+	}
+	out := map[string]*commentLines{}
+	for _, f := range scanText(t, repository(t), []map[string]any{
+		rule("whole", `(?m)^[ \t]*(?P<C>#[^\n]*?)[ \t]*$`),
+		rule("marked", `(?m)^[ \t]*(?P<C>[^#\s][^\n]*?)[ \t]*$`),
+	}, files) {
+		c := out[f.Path]
+		if c == nil {
+			c = &commentLines{whole: map[int]string{}, marked: map[int]string{}}
+			out[f.Path] = c
+		}
+		if f.About == "whole" {
+			c.whole[f.Line] = f.Text
+		} else {
+			c.marked[f.Line] = f.Text
 		}
 	}
 	return out
@@ -378,24 +412,32 @@ func TestEveryToolThatArrivesSaysHowItIsSilenced(t *testing.T) {
 	}
 
 	arrives := map[string]string{}
-	for _, m := range regexp.MustCompile(`(?m)^([A-Z][A-Z0-9_]*_VERSION)=`).FindAllStringSubmatch(readRepoFile(t, "scripts/versions.env"), -1) {
-		arrives[m[1]] = "scripts/versions.env"
+	for name := range versionsPinned(t) {
+		if regexp.MustCompile(`^[A-Z][A-Z0-9_]*_VERSION$`).MatchString(name) {
+			arrives[name] = versionPins
+		}
 	}
-	for _, m := range regexp.MustCompile(`(?m)^\s*- id:\s*([a-z0-9-]+)\s*$`).FindAllStringSubmatch(readRepoFile(t, ".pre-commit-config.yaml"), -1) {
-		arrives[m[1]] = ".pre-commit-config.yaml"
+	for _, repo := range parsePreCommitConfig(t).Repos {
+		for _, hook := range repo.Hooks {
+			arrives[hook.ID] = ".pre-commit-config.yaml"
+		}
 	}
-	uses := regexp.MustCompile(`(?m)^\s*(?:- )?uses:\s*["']?([A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+)@`)
-	image := regexp.MustCompile(`(?m)^\s*image:\s*["']?([a-z0-9./-]+):`)
+	uses := regexp.MustCompile(`^([A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+)@`)
+	image := regexp.MustCompile(`^([a-z0-9./-]+):`)
 	for _, rel := range trackedFiles(t) {
 		if !strings.HasPrefix(rel, ".github/") || !(strings.HasSuffix(rel, ".yml") || strings.HasSuffix(rel, ".yaml")) {
 			continue
 		}
-		body := stripYAMLComments(readRepoFile(t, rel))
-		for _, m := range uses.FindAllStringSubmatch(body, -1) {
-			arrives[m[1]] = rel
+		docs := repository(t).YAMLDocuments(t, rel)
+		for _, v := range scalarsAt(docs, "uses") {
+			if m := uses.FindStringSubmatch(v); m != nil {
+				arrives[m[1]] = rel
+			}
 		}
-		for _, m := range image.FindAllStringSubmatch(body, -1) {
-			arrives[m[1]] = rel
+		for _, v := range scalarsAt(docs, "image") {
+			if m := image.FindStringSubmatch(v); m != nil {
+				arrives[m[1]] = rel
+			}
 		}
 	}
 	if len(arrives) < 10 {
