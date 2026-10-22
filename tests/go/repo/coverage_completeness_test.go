@@ -529,3 +529,40 @@ run "c" {
 		t.Errorf("expected failures are %v, want %v", got, wantExpected)
 	}
 }
+
+// stringConstants is every string constant the package declares, by name, so
+// a program named by a constant is named.
+func stringConstants(files map[string]*ast.File) map[string]string {
+	out := map[string]string{}
+	for _, f := range files {
+		for _, d := range f.Decls {
+			gen, ok := d.(*ast.GenDecl)
+			if !ok || gen.Tok != token.CONST {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for i, name := range vs.Names {
+					if i < len(vs.Values) {
+						if v, ok := stringLiteral(vs.Values[i]); ok {
+							out[name.Name] = v
+						}
+					}
+				}
+			}
+		}
+	}
+	return out
+}
+
+func stringLiteral(e ast.Expr) (string, bool) {
+	lit, ok := ast.Unparen(e).(*ast.BasicLit)
+	if !ok || lit.Kind != token.STRING {
+		return "", false
+	}
+	v, err := strconv.Unquote(lit.Value)
+	return v, err == nil
+}
