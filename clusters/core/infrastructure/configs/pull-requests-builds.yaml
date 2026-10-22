@@ -101,7 +101,7 @@ spec:
             type: RuntimeDefault
         containers:
           - name: runner
-            image: ghcr.io/fensberg/homelab-pull-request-runner@sha256:065b85c0393c87129894c733ee41c06ab54f4f64e901e2bc4bf8846a38382e39
+            image: ghcr.io/fensberg/homelab-pull-request-runner@sha256:06f194adc618843dfdba8e8e3da6c3d35039bc996da5b2b697894ea9128a2cf7
             command: ["/home/runner/run.sh"]
             securityContext:
               allowPrivilegeEscalation: false
