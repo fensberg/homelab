@@ -59,14 +59,14 @@ func TestWhatIsLeftForASiteIsTheHostLessWhatIsNotTheSites(t *testing.T) {
 		t.Fatalf("got %v, %v", lines, err)
 	}
 	l := lines[0]
-	if l.Host != 64*gib || l.Kept != 2*gib || l.Cache != 64*gib/10 || l.Others != 16*gib || l.Reserve != 4*gib {
+	if l.Host != 64*gib || l.Kept != 2*gib || l.Cache != 64*gib/10 || l.Others != 16*gib || l.Reserve != Held {
 		t.Errorf("the deductions are %+v; the other machine is 16, the site's own and both templates are none of them", l)
 	}
-	if want := 64*gib - 2*gib - 64*gib/10 - 16*gib - 4*gib; l.ForTheSite() != want {
+	if want := 64*gib - 2*gib - 64*gib/10 - 16*gib - Held; l.ForTheSite() != want {
 		t.Errorf("left for the site: %d, want %d", l.ForTheSite(), want)
 	}
 	if l.Asked != 3*4*gib+2*10*gib || l.Short() > 0 || Refusal(lines) != nil {
-		t.Errorf("three control planes and two workers ask 32 and are left 35.6, and were refused or miscounted: %s", l)
+		t.Errorf("three control planes and two workers ask 32 and are left 39.6, and were refused or miscounted: %s", l)
 	}
 }
 
@@ -77,9 +77,9 @@ func TestASiteThatAsksMoreThanIsLeftIsRefusedWithEveryFigure(t *testing.T) {
 	}
 	refusal := Refusal(lines)
 	if refusal == nil {
-		t.Fatalf("42 asked of 35.6 was not refused: %s", lines[0])
+		t.Fatalf("42 asked of 39.6 was not refused: %s", lines[0])
 	}
-	for _, want := range []string{"node0 has 64.0 GiB", "2.0 kept", "6.4 for its cache", "16.0 given to machines that are not this site's", "4.0 held to replace", "35.6 for the site", "ask 42.0", "OVER BY 6.4"} {
+	for _, want := range []string{"node0 has 64.0 GiB", "2.0 kept", "6.4 for its cache", "16.0 given to machines that are not this site's", "0.0 held to replace", "39.6 for the site", "ask 42.0", "OVER BY 2.4"} {
 		if !strings.Contains(refusal.Error(), want) {
 			t.Errorf("the refusal does not carry %q, so that figure cannot be questioned:\n%v", want, refusal)
 		}

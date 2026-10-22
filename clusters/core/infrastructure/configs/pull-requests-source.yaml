@@ -36,8 +36,12 @@ spec:
     runnerScaleSetName: pr-source-${SITE}
 
     minRunners: 0
-    # More than the zone's machine holds at once wait for one to finish.
-    maxRunners: 3
+    # Two, at one gibibyte each: the lanes that only read the source. The
+    # three pools together ask twelve of the untrusted worker's thirteen or
+    # so, and a job past two waits for one to finish. Chosen from what the
+    # machine holds, not from use (2026-10-22), and corrected from what the
+    # jobs are read using once they have run here.
+    maxRunners: 2
 
     listenerTemplate:
       spec:
