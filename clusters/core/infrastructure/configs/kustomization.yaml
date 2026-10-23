@@ -10,6 +10,7 @@ resources:
   - pull-request-runners.yaml
   - pull-requests-source.yaml
   - pull-requests-builds.yaml
+  - pull-requests-builds-primary.yaml
   - pull-requests-packages.yaml
   - host-metrics.yaml
   - capacity.yaml

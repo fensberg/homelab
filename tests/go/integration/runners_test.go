@@ -29,6 +29,7 @@ import (
 // covers: integration:self-hosted-batch
 // covers: integration:pull-requests-source
 // covers: integration:pull-requests-builds
+// covers: integration:pull-requests-builds-primary
 // covers: integration:pull-requests-packages
 func TestEverySetOfRunnersIsListeningForWork(t *testing.T) {
 	t.Parallel()
@@ -36,7 +37,7 @@ func TestEverySetOfRunnersIsListeningForWork(t *testing.T) {
 
 	for runners, releases := range map[string][]string{
 		"arc-runners":          {"self-hosted", "self-hosted-batch"},
-		"pull-request-runners": {"pull-requests-source", "pull-requests-builds", "pull-requests-packages"},
+		"pull-request-runners": {"pull-requests-source", "pull-requests-builds", "pull-requests-builds-primary", "pull-requests-packages"},
 	} {
 		// A release is named for the estate and its set for the site, so the
 		// cluster is asked which set each release made. Helm writes the

@@ -644,6 +644,7 @@ pull_request_pools:
   names:
     - source
     - builds
+    - builds-primary
     - packages
   every_runner_reaches:
     - github.com:443
@@ -971,6 +972,18 @@ egress:
       - github.com:443
       - proxy.golang.org:443
 
+  - job: pr-validation.yml/pool-builds-primary
+    pool: builds-primary
+    policy: block
+    reason: >-
+      Tries the pool from inside: that it takes work, reaches what is
+      declared for it, and is refused a host nobody declared, the cluster's
+      own API and any token of the cluster's.
+    hosts:
+      - api.github.com:443
+      - github.com:443
+      - proxy.golang.org:443
+
   - job: pr-validation.yml/pool-packages
     pool: packages
     policy: block
@@ -1063,7 +1076,7 @@ egress:
       - sum.golang.org:443
 
   - job: pr-validation.yml/invariants
-    pool: builds
+    pool: builds-primary
     policy: block
     hosts:
       - api.github.com:443
@@ -1657,6 +1670,10 @@ work:
     kind: cannot-wait
     takes: 1m
 
+  - job: pr-validation.yml/pool-builds-primary
+    kind: cannot-wait
+    takes: 1m
+
   - job: pr-validation.yml/pool-packages
     kind: cannot-wait
     takes: 1m
@@ -1727,7 +1744,9 @@ work:
 
   - job: pr-validation.yml/invariants
     kind: cannot-wait
-    takes: 7m
+    # What it took on the pools when #808 was merged (2026-10-23): eighteen
+    # minutes, and seventeen in the queue, rounded up.
+    takes: 19m
 
   - job: pr-validation.yml/meta
     kind: cannot-wait
