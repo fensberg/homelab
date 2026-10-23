@@ -21,14 +21,6 @@ on:
   # this workflow again on each pull request as it would land, on top of
   # whatever is ahead of it, and merges it only if that passes.
   merge_group:
-  # Every lane, nightly, on main. It was where the lanes were first tried on
-  # the estate's pools, before pull requests moved onto them. It stays so that
-  # a lane that breaks with nothing merged - a supplier's file moved, a host
-  # that stopped answering - is found at night, and not on the next pull
-  # request. clusters/core/infrastructure/configs/scheduled-workflows.yaml
-  # holds it to a deadline.
-  schedule:
-    - cron: "17 3 * * *"
 
 permissions: read-all
 # The meta-tests, named once. The Repository invariants lane skips them and
@@ -1431,9 +1423,7 @@ jobs:
     # Skipped, which the queue reads as passed, when the queue would land
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
-    # Scans what a pull request adds, between its two commits; a nightly run
-    # has neither.
-    if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' && github.event_name != 'schedule' }}
+    if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Secrets Scan (TruffleHog)"
     runs-on: ubuntu-latest
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
