@@ -1,0 +1,446 @@
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index ea02d95d..9732b19c 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -802,7 +802,9 @@ jobs:
+     needs: already-tested
+     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
+     name: "Repository invariants"
+-    runs-on: pr-builds-${{ vars.pull_request_runners_site }}
++    # The primary pool: the job every pull request waits on longest, so it
++    # never waits for one of the builds pool's runners (2026-10-23).
++    runs-on: pr-builds-primary-${{ vars.pull_request_runners_site }}
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows; above Go's own bound
+     # on the tests below, so a slow run fails as a timeout that names the
+@@ -1693,6 +1695,46 @@ jobs:
+         with:
+           reaches: https://proxy.golang.org
+ 
++  # ---------------------------------------------------------------------
++  # POOL PROOF (builds-primary) - one of the estate's own pools for a pull
++  # request's jobs, tried from inside. The pool for the job every pull
++  # request waits on longest, which downloads what a build needs.
++  #
++  # On the untrusted zone's machine, held to its pool's hosts by the
++  # cluster's network (clusters/core, pull-requests-builds-primary.yaml).
++  # The site is the estate's to say (management/estate, the repository's
++  # variable).
++  #
++  # AFTER THAT JOB, and nothing waits on this. The pool has one runner, and
++  # a proof that took it first would hold up the job the pool is for.
++  # ---------------------------------------------------------------------
++  pool-builds-primary:
++    needs: invariants
++    if: ${{ !cancelled() }}
++    name: "Pool Proof (builds-primary)"
++    runs-on: pr-builds-primary-${{ vars.pull_request_runners_site }}
++    timeout-minutes: 5
++    permissions:
++      contents: read
++    steps:
++      - name: Mobilize
++        uses: $/.github/workflows/mobilize
++        with:
++          # harden-runner does nothing in the estate's pools. What is
++          # declared here is what the pool's own policy is held to, in
++          # scripts/approved-suppliers.yml under `egress:`.
++          egress-policy: block
++          disable-sudo-and-containers: "true"
++          allowed-endpoints: >
++            api.github.com:443
++            github.com:443
++            proxy.golang.org:443
++
++      - name: Prove the pool holds
++        uses: $/.github/workflows/pool-proof
++        with:
++          reaches: https://proxy.golang.org
++
+   # ---------------------------------------------------------------------
+   # POOL PROOF (packages) - one of the estate's own pools for a pull request's
+   # jobs, tried from inside. The pool for jobs that reach the package registries.
+diff --git a/clusters/core/infrastructure/configs/kustomization.yaml b/clusters/core/infrastructure/configs/kustomization.yaml
+index 145ba88f..78287a3a 100644
+--- a/clusters/core/infrastructure/configs/kustomization.yaml
++++ b/clusters/core/infrastructure/configs/kustomization.yaml
+@@ -10,6 +10,7 @@ resources:
+   - pull-request-runners.yaml
+   - pull-requests-source.yaml
+   - pull-requests-builds.yaml
++  - pull-requests-builds-primary.yaml
+   - pull-requests-packages.yaml
+   - host-metrics.yaml
+   - capacity.yaml
+diff --git a/clusters/core/infrastructure/configs/pull-request-runners.yaml b/clusters/core/infrastructure/configs/pull-request-runners.yaml
+index 5320ef16..9e77ea14 100644
+--- a/clusters/core/infrastructure/configs/pull-request-runners.yaml
++++ b/clusters/core/infrastructure/configs/pull-request-runners.yaml
+@@ -14,8 +14,10 @@
+ #     declared to need, by name, on 443, and the cluster's resolver for
+ #     those names and no others: each pool's own file, beside this one.
+ #
+-# THREE POOLS, by what a job needs beyond the source control itself:
+-# nothing, what a build downloads, and the package registries. Which job is
++# THREE KINDS OF POOL, by what a job needs beyond the source control itself:
++# nothing, what a build downloads, and the package registries. A kind may
++# have a primary pool beside it, for the job every pull request waits on
++# longest, so that job never waits for a runner. Which job is
+ # of which pool, and so what each pool reaches, is declared once, in
+ # scripts/approved-suppliers.yml. Each pool's policy is that, written out,
+ # and TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore fails
+diff --git a/clusters/core/infrastructure/configs/pull-requests-builds-primary.yaml b/clusters/core/infrastructure/configs/pull-requests-builds-primary.yaml
+new file mode 100644
+index 00000000..cbf19113
+--- /dev/null
++++ b/clusters/core/infrastructure/configs/pull-requests-builds-primary.yaml
+@@ -0,0 +1,172 @@
++# The pool for the one job every pull request waits on longest, which
++# downloads what a build needs. It is a pool of its own so that job never
++# waits for a runner: in the builds pool it raced eight others for four
++# runners and started six to ten minutes late (2026-10-23), and the run
++# ended that much later. Which job is first is its runs-on; the pool says
++# nothing about which job that is.
++# What holds every pool is said once, in pull-request-runners.yaml.
++---
++apiVersion: helm.toolkit.fluxcd.io/v2
++kind: HelmRelease
++metadata:
++  name: pull-requests-builds-primary
++  namespace: pull-request-runners
++spec:
++  interval: 30m
++  chart:
++    spec:
++      chart: gha-runner-scale-set
++      version: "0.14.2"
++      sourceRef:
++        kind: HelmRepository
++        name: actions-runner-controller
++        namespace: flux-system
++      interval: 12h
++  install:
++    strategy:
++      name: RetryOnFailure
++      retryInterval: 5m
++  upgrade:
++    strategy:
++      name: RetryOnFailure
++      retryInterval: 5m
++  values:
++    githubConfigUrl: ${RUNNER_GITHUB_CONFIG_URL}
++    githubConfigSecret: ${RUNNER_SECRET_NAME}
++    # A group of its own. The estate's other runners are in one that takes
++    # only named workflows from the default branch, which a pull request
++    # never runs from.
++    runnerGroup: pull-requests
++
++    runnerScaleSetName: pr-builds-primary-${SITE}
++
++    minRunners: 0
++    # One, at two gibibytes: one of the builds pool's four, moved here, so
++    # what the pools ask of the untrusted worker is what it was.
++    maxRunners: 1
++
++    listenerTemplate:
++      spec:
++        terminationGracePeriodSeconds: 60
++        securityContext:
++          runAsNonRoot: true
++          seccompProfile:
++            type: RuntimeDefault
++        priorityClassName: critical
++        affinity:
++          nodeAffinity:
++            requiredDuringSchedulingIgnoredDuringExecution:
++              nodeSelectorTerms:
++                - matchExpressions:
++                    - key: node-role.kubernetes.io/control-plane
++                      operator: DoesNotExist
++        containers:
++          - name: listener
++            securityContext:
++              allowPrivilegeEscalation: false
++              capabilities:
++                drop: ["ALL"]
++            resources:
++              requests:
++                cpu: 25m
++                memory: 64Mi
++
++    template:
++      spec:
++        priorityClassName: interactive
++        automountServiceAccountToken: false
++        # The untrusted zone's machine and no other: the label sends a
++        # runner there, and the toleration is what lets it stay.
++        nodeSelector:
++          untrusted-zone: zone0
++        tolerations:
++          - key: untrusted-zone
++            operator: Equal
++            value: zone0
++            effect: NoSchedule
++        affinity:
++          nodeAffinity:
++            requiredDuringSchedulingIgnoredDuringExecution:
++              nodeSelectorTerms:
++                - matchExpressions:
++                    - key: node-role.kubernetes.io/control-plane
++                      operator: DoesNotExist
++        securityContext:
++          runAsNonRoot: true
++          runAsUser: 1001
++          runAsGroup: 1001
++          fsGroup: 1001
++          seccompProfile:
++            type: RuntimeDefault
++        containers:
++          - name: runner
++            image: ghcr.io/fensberg/homelab-pull-request-runner@sha256:06f194adc618843dfdba8e8e3da6c3d35039bc996da5b2b697894ea9128a2cf7
++            command: ["/home/runner/run.sh"]
++            securityContext:
++              allowPrivilegeEscalation: false
++              capabilities:
++                drop: ["ALL"]
++            resources:
++              requests:
++                cpu: "1"
++                memory: 2Gi
++---
++apiVersion: cilium.io/v2
++kind: CiliumNetworkPolicy
++metadata:
++  name: pull-requests-builds-primary
++  namespace: pull-request-runners
++spec:
++  endpointSelector:
++    matchLabels:
++      actions.github.com/scale-set-name: pr-builds-primary-${SITE}
++  egress:
++    # The cluster's resolver, and only for the names below: a name that is
++    # not asked for is a name nothing can be sent to inside a question.
++    - toEndpoints:
++        - matchLabels:
++            k8s:io.kubernetes.pod.namespace: kube-system
++            k8s-app: kube-dns
++      toPorts:
++        - ports:
++            - port: "53"
++              protocol: UDP
++            - port: "53"
++              protocol: TCP
++          rules:
++            dns:
++              - matchPattern: "*.actions.githubusercontent.com"
++              - matchPattern: "*.blob.core.windows.net"
++              - matchName: api.github.com
++              - matchName: codeload.github.com
++              - matchName: files.pythonhosted.org
++              - matchName: get.opentofu.org
++              - matchName: github.com
++              - matchName: go.dev
++              - matchName: objects.githubusercontent.com
++              - matchName: proxy.golang.org
++              - matchName: pypi.org
++              - matchName: registry.opentofu.org
++              - matchName: release-assets.githubusercontent.com
++              - matchName: storage.googleapis.com
++              - matchName: sum.golang.org
++    - toFQDNs:
++        - matchPattern: "*.actions.githubusercontent.com"
++        - matchPattern: "*.blob.core.windows.net"
++        - matchName: api.github.com
++        - matchName: codeload.github.com
++        - matchName: files.pythonhosted.org
++        - matchName: get.opentofu.org
++        - matchName: github.com
++        - matchName: go.dev
++        - matchName: objects.githubusercontent.com
++        - matchName: proxy.golang.org
++        - matchName: pypi.org
++        - matchName: registry.opentofu.org
++        - matchName: release-assets.githubusercontent.com
++        - matchName: storage.googleapis.com
++        - matchName: sum.golang.org
++      toPorts:
++        - ports:
++            - port: "443"
++              protocol: TCP
+diff --git a/clusters/core/infrastructure/configs/pull-requests-builds.yaml b/clusters/core/infrastructure/configs/pull-requests-builds.yaml
+index e3205342..845586c1 100644
+--- a/clusters/core/infrastructure/configs/pull-requests-builds.yaml
++++ b/clusters/core/infrastructure/configs/pull-requests-builds.yaml
+@@ -36,15 +36,18 @@ spec:
+     runnerScaleSetName: pr-builds-${SITE}
+ 
+     minRunners: 0
+-    # Four, at two gibibytes each: the lanes that compile and test Go, with
+-    # the meta lane's parts among them. With the other two pools' twelve
+-    # gibibytes asked of the untrusted worker's thirteen or so, and one left
+-    # for what runs on every machine. A job past four waits for one to finish.
++    # Three, at two gibibytes each: the lanes that compile and test Go, with
++    # the meta lane's parts among them. A fourth was here, and is the
++    # primary pool's (pull-requests-builds-primary.yaml), so the job every
++    # pull request waits on longest never waits for one of these. With the
++    # other pools' twelve gibibytes, and one left for what runs on every
++    # machine, of the untrusted worker's fourteen. A job past three waits
++    # for one to finish.
+     #
+     # Chosen from what the machine holds, not from what the jobs use: none
+     # had run here in full when this was set (2026-10-22). Corrected from
+     # what they are read using once they have.
+-    maxRunners: 4
++    maxRunners: 3
+ 
+     listenerTemplate:
+       spec:
+diff --git a/clusters/core/sized-from.json b/clusters/core/sized-from.json
+index 33dff153..27137be5 100644
+--- a/clusters/core/sized-from.json
++++ b/clusters/core/sized-from.json
+@@ -98,6 +98,12 @@
+         "basis": "A guess, and a low one on purpose: the zone's machine has about 3 GiB for work, and at what the estate's other runners ask it would hold one runner. For jobs that build; nothing has run in this pool yet, and what its jobs use is to be read off the machine once the first of them does."
+       }
+     },
++    "HelmRelease/pull-requests-builds-primary": {
++      "*": {
++        "kind": "estimate",
++        "basis": "One of the builds pool's runners, moved to a pool of its own on 2026-10-23, at the builds pool's size: two gibibytes and one core, for the job every pull request waits on longest. Not yet read off the machine for that job alone."
++      }
++    },
+     "HelmRelease/pull-requests-packages": {
+       "*": {
+         "kind": "estimate",
+diff --git a/scripts/approved-suppliers.yml b/scripts/approved-suppliers.yml
+index cede8680..a4d8a2f5 100644
+--- a/scripts/approved-suppliers.yml
++++ b/scripts/approved-suppliers.yml
+@@ -644,6 +644,7 @@ pull_request_pools:
+   names:
+     - source
+     - builds
++    - builds-primary
+     - packages
+   every_runner_reaches:
+     - github.com:443
+@@ -971,6 +972,18 @@ egress:
+       - github.com:443
+       - proxy.golang.org:443
+ 
++  - job: pr-validation.yml/pool-builds-primary
++    pool: builds-primary
++    policy: block
++    reason: >-
++      Tries the pool from inside: that it takes work, reaches what is
++      declared for it, and is refused a host nobody declared, the cluster's
++      own API and any token of the cluster's.
++    hosts:
++      - api.github.com:443
++      - github.com:443
++      - proxy.golang.org:443
++
+   - job: pr-validation.yml/pool-packages
+     pool: packages
+     policy: block
+@@ -1063,7 +1076,7 @@ egress:
+       - sum.golang.org:443
+ 
+   - job: pr-validation.yml/invariants
+-    pool: builds
++    pool: builds-primary
+     policy: block
+     hosts:
+       - api.github.com:443
+@@ -1657,6 +1670,10 @@ work:
+     kind: cannot-wait
+     takes: 1m
+ 
++  - job: pr-validation.yml/pool-builds-primary
++    kind: cannot-wait
++    takes: 1m
++
+   - job: pr-validation.yml/pool-packages
+     kind: cannot-wait
+     takes: 1m
+@@ -1727,7 +1744,9 @@ work:
+ 
+   - job: pr-validation.yml/invariants
+     kind: cannot-wait
+-    takes: 7m
++    # What it took on the pools when #808 was merged (2026-10-23): eighteen
++    # minutes, and seventeen in the queue, rounded up.
++    takes: 19m
+ 
+   - job: pr-validation.yml/meta
+     kind: cannot-wait
+diff --git a/tests/go/integration/runners_test.go b/tests/go/integration/runners_test.go
+index 25036812..8369a7ba 100644
+--- a/tests/go/integration/runners_test.go
++++ b/tests/go/integration/runners_test.go
+@@ -29,6 +29,7 @@ import (
+ // covers: integration:self-hosted-batch
+ // covers: integration:pull-requests-source
+ // covers: integration:pull-requests-builds
++// covers: integration:pull-requests-builds-primary
+ // covers: integration:pull-requests-packages
+ func TestEverySetOfRunnersIsListeningForWork(t *testing.T) {
+ 	t.Parallel()
+@@ -36,7 +37,7 @@ func TestEverySetOfRunnersIsListeningForWork(t *testing.T) {
+ 
+ 	for runners, releases := range map[string][]string{
+ 		"arc-runners":          {"self-hosted", "self-hosted-batch"},
+-		"pull-request-runners": {"pull-requests-source", "pull-requests-builds", "pull-requests-packages"},
++		"pull-request-runners": {"pull-requests-source", "pull-requests-builds", "pull-requests-builds-primary", "pull-requests-packages"},
+ 	} {
+ 		// A release is named for the estate and its set for the site, so the
+ 		// cluster is asked which set each release made. Helm writes the
+diff --git a/tests/go/repo/selfhosted_test.go b/tests/go/repo/selfhosted_test.go
+index 92f22f06..18d1b966 100644
+--- a/tests/go/repo/selfhosted_test.go
++++ b/tests/go/repo/selfhosted_test.go
+@@ -21,9 +21,10 @@ import (
+ // The site is the estate's to say and is read from the repository's
+ // variable, so a pool's name ends in that and never in a site written out.
+ var pullRequestPools = map[string]bool{
+-	pullRequestPool("source"):   true,
+-	pullRequestPool("builds"):   true,
+-	pullRequestPool("packages"): true,
++	pullRequestPool("source"):         true,
++	pullRequestPool("builds"):         true,
++	pullRequestPool("builds-primary"): true,
++	pullRequestPool("packages"):       true,
+ }
+ 
+ // pullRequestPool is the name a job asks for one of the pools by.
+diff --git a/tests/go/repo/workload_placement_test.go b/tests/go/repo/workload_placement_test.go
+index 51d54c37..53026a46 100644
+--- a/tests/go/repo/workload_placement_test.go
++++ b/tests/go/repo/workload_placement_test.go
+@@ -220,6 +220,26 @@ var workloadPods = []workloadPod{
+ 		PodSecurityKey:        "securityContext",
+ 		ContainerSecurityKey:  "securityContext",
+ 	},
++	{
++		What:                  "the listener for a pull request's job that every pull request waits on longest",
++		Release:               "pull-requests-builds-primary",
++		ChartVersion:          "0.14.2",
++		Values:                []string{"listenerTemplate", "spec"},
++		ResourcesInContainers: true,
++		Priority:              "critical",
++		PodSecurityKey:        "securityContext",
++		ContainerSecurityKey:  "securityContext",
++	},
++	{
++		What:                  "a runner for a pull request's job that every pull request waits on longest",
++		Release:               "pull-requests-builds-primary",
++		ChartVersion:          "0.14.2",
++		Values:                []string{"template", "spec"},
++		ResourcesInContainers: true,
++		Priority:              "interactive",
++		PodSecurityKey:        "securityContext",
++		ContainerSecurityKey:  "securityContext",
++	},
+ 	{
+ 		What:                  "the listener for a pull request's jobs that reach the package registries",
+ 		Release:               "pull-requests-packages",
