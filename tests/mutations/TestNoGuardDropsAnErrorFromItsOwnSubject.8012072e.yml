@@ -1,7 +1,7 @@
 guard: TestNoGuardDropsAnErrorFromItsOwnSubject
 file: tests/go/repo/cni_test.go
-find: "func TestTheClusterDeclaresNoBuiltInCNIAndNoKubeProxy(t *testing.T) {"
-replace: "func TestTheClusterDeclaresNoBuiltInCNIAndNoKubeProxy(t *testing.T) {\n\tif err := error(nil); err != nil {\n\t\treturn\n\t}"
+find: "func TestTheRenderedCNIManifestMatchesThePinnedChartVersion(t *testing.T) {"
+replace: "func TestTheRenderedCNIManifestMatchesThePinnedChartVersion(t *testing.T) {\n\tif err := error(nil); err != nil {\n\t\treturn\n\t}"
 reads_source: true
 mentions: "drop an error from the thing being guarded"
 why: >
