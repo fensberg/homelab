@@ -214,3 +214,9 @@ removed:
     reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/plan_builtin_cni_off.rego), as TestTheConfigurationRulesHold.TheClusterDeclaresNoBuiltInCNIAndNoKubeProxy.b215f223.yml, unchanged in what it breaks (2026-10-23)
   - proof: TestKubePrismIsDeclaredRatherThanAssumed.812849c4.yml
     reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/plan_kubeprism.rego), as TestTheConfigurationRulesHold.KubePrismIsDeclaredRatherThanAssumed.812849c4.yml, unchanged in what it breaks (2026-10-23)
+  - proof: TestThePodAndServiceNetworksAreDeclared.114d6d26.yml
+    reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/plan_cluster_network.rego), as TestTheConfigurationRulesHold.ThePodAndServiceNetworksAreDeclared.114d6d26.yml, its mentions moved to the rule's words (2026-10-23)
+  - proof: TestEveryMachineIsToldTheClustersNetwork.e398290e.yml
+    reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/plan_cluster_network.rego), as TestTheConfigurationRulesHold.EveryMachineIsToldTheClustersNetwork.e398290e.yml, its mentions moved to the rule's words (2026-10-23)
+  - proof: TestATalosImagePathCarriesItsSchematic.c052f831.yml
+    reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/plan_image_schematic.rego), as TestTheConfigurationRulesHold.ATalosImagePathCarriesItsSchematic.c052f831.yml, its mentions moved to the rule's words (2026-10-23)

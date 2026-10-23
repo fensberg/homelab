@@ -1,4 +1,5 @@
-guard: TestATalosImagePathCarriesItsSchematic
+guard: TestTheConfigurationRulesHold
+rule: plan_image_schematic
 file: modules/infrastructure/cluster/compute.tf
 find: '  file_name               = "talos-${local.talos_version}-${substr(local.schematic_id, 0, 8)}.iso"'
 replace: '  file_name               = "talos-${local.talos_version}.iso"'

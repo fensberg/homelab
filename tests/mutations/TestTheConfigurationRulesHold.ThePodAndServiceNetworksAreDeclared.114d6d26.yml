@@ -1,8 +1,9 @@
-guard: TestThePodAndServiceNetworksAreDeclared
+guard: TestTheConfigurationRulesHold
+rule: plan_cluster_network
 file: modules/infrastructure/cluster/talos.tf
 find: "        podSubnets     = [local.pod_cidr]"
 replace: "        # podSubnets removed"
-mentions: "declares no podSubnets"
+mentions: "sets no cluster.network.podSubnets"
 why: >
   The cluster's pod and service ranges are its largest address
   commitment and they were undeclared for the whole life of the estate -
