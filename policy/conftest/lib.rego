@@ -44,6 +44,26 @@ plan contains [f.path, r] if {
 	is_object(r.values)
 }
 
+# plan_configuration is every resource as a plan's configuration declares
+# it, as [path, address, resource]: its address with the modules it is
+# declared in, and each of its arguments as the plan gives an expression -
+# a constant_value when it is written as one, and the references it is
+# worked out from when it is not. What a value is made from, where the
+# values alone cannot say: a value worked out from a stand-in for the vault
+# reads as the stand-in.
+plan_configuration contains [f.path, address, r] if {
+	some f in input
+	is_object(f.contents)
+	is_object(f.contents.configuration)
+	walk(f.contents.configuration, [p, r])
+	is_object(r)
+	is_string(r.address)
+	is_string(r.mode)
+	is_object(r.expressions)
+	calls := [sprintf("module.%s", [p[i + 1]]) | some i, k in p; k == "module_calls"]
+	address := concat(".", array.concat(calls, [r.address]))
+}
+
 # dockerfiles is every Dockerfile, as Conftest reads one: its instructions in
 # order, each with the stage it is in.
 dockerfiles contains f if {

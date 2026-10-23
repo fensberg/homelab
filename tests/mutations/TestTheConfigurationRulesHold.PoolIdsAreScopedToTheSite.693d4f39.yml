@@ -1,4 +1,5 @@
-guard: TestPoolIdsAreScopedToTheSite
+guard: TestTheConfigurationRulesHold
+rule: plan_pool_ids
 file: modules/infrastructure/cluster/pools.tf
 find: 'pool_id = "${local.site_name}-workers"'
 replace: 'pool_id = "workers"'
