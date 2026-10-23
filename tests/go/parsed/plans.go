@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"testing"
 
 	"homelab/contractor/config"
@@ -65,6 +66,13 @@ func (r *Tree) UnbuiltPlans(t testing.TB) []string {
 
 // keptPlans is a site's plans: the ones made before from exactly these
 // files, or new ones, kept for the next tree that holds them.
+//
+// ONE PLAN AT A TIME, across every process on the machine. The ledger runs
+// its proofs side by side, and every one that starts with no plan kept would
+// plan at once, each fetching every provider afresh: the registry refuses a
+// crowd, and a proof refused it fails for a reason that is not its own. So a
+// plan is made under a lock, and a tree that waited for one looks again for
+// what the plan before it kept.
 func (r *Tree) keptPlans(t testing.TB, site string) ([]steps.Unbuilt, error) {
 	key, err := r.planKey(t, site)
 	if err != nil {
@@ -74,21 +82,25 @@ func (r *Tree) keptPlans(t testing.TB, site string) ([]steps.Unbuilt, error) {
 	if err != nil {
 		return nil, err
 	}
-	dir := filepath.Join(cache, "homelab", "unbuilt-plans", key)
-	roots := []string{config.ClusterRoot, config.PlatformRoot}
-	var kept []steps.Unbuilt
-	for _, root := range roots {
-		plan, err := os.ReadFile(filepath.Join(dir, root+".json"))
-		if errors.Is(err, fs.ErrNotExist) {
-			break // not made from these files before
-		}
-		if err != nil {
-			return nil, err
-		}
-		kept = append(kept, steps.Unbuilt{Root: root, Plan: plan})
+	plans := filepath.Join(cache, "homelab", "unbuilt-plans")
+	dir := filepath.Join(plans, key)
+	if kept, err := readKept(dir); err != nil || kept != nil {
+		return kept, err
 	}
-	if len(kept) == len(roots) {
-		return kept, nil
+	if err := os.MkdirAll(plans, 0o700); err != nil {
+		return nil, err
+	}
+	lock, err := os.OpenFile(filepath.Join(plans, "planning.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = lock.Close() }()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		return nil, err
+	}
+	defer func() { _ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) }()
+	if kept, err := readKept(dir); err != nil || kept != nil {
+		return kept, err
 	}
 	made, err := steps.PlanUnbuilt(r.root, site)
 	if err != nil {
@@ -108,6 +120,23 @@ func (r *Tree) keptPlans(t testing.TB, site string) ([]steps.Unbuilt, error) {
 		}
 	}
 	return made, nil
+}
+
+// readKept is the plans kept in a directory, one per root, or none when any
+// root's is not there: a plan of some of a site's roots is not its plan.
+func readKept(dir string) ([]steps.Unbuilt, error) {
+	var kept []steps.Unbuilt
+	for _, root := range []string{config.ClusterRoot, config.PlatformRoot} {
+		plan, err := os.ReadFile(filepath.Join(dir, root+".json"))
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil // not made from these files before
+		}
+		if err != nil {
+			return nil, err
+		}
+		kept = append(kept, steps.Unbuilt{Root: root, Plan: plan})
+	}
+	return kept, nil
 }
 
 // planKey is what a site's plans are made from, as one digest: every
