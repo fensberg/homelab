@@ -1,11 +1,13 @@
 package repo
 
 import (
-	"homelab/tests/parsed"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/hashicorp/hcl/v2"
+
+	"homelab/tests/parsed"
 )
 
 // The untrusted zone has an off switch, and it has to keep working.
@@ -32,40 +34,33 @@ import (
 // hypervisor forever, and would read as correct in review - it is the line the
 // resource beside it uses.
 func TestEveryZoneResourceIsKeyedOffItsMachines(t *testing.T) {
-	_, body := tofuDeclaring(t, `resource "proxmox_virtual_environment_vm" "dmz"`)
-
-	// Top-level blocks, so a resource is judged with its own for_each rather
-	// than with a neighbour's.
-	blocks := regexp.MustCompile(`(?m)^resource\s+"`).Split(body, -1)
-
 	var checked int
-	for _, block := range blocks {
-		if !strings.Contains(block, "dmz") {
+	for _, block := range repository(t).Blocks(t, "resource") {
+		// A zone's resource is named for it.
+		if len(block.Labels) < 2 || !strings.Contains(block.Labels[1], "dmz") {
 			continue
 		}
-		// The header line names the resource; keep it for the message.
-		header := strings.SplitN(block, "\n", 2)[0]
-		if !strings.Contains(block, "for_each") {
+		forEach, ok := block.Body.Attributes["for_each"]
+		if !ok {
 			continue // not a per-machine resource at all
 		}
 		checked++
-
-		forEach := regexp.MustCompile(`for_each\s*=\s*([^\n]+)`).FindStringSubmatch(block)
-		if forEach == nil {
-			continue
-		}
-		if !strings.Contains(forEach[1], "dmz") {
-			t.Errorf(`resource "%s is a zone resource keyed off %s.
+		if !slices.ContainsFunc(forEach.Expr.Variables(), func(ref hcl.Traversal) bool {
+			return slices.ContainsFunc(ref, func(step hcl.Traverser) bool {
+				attr, is := step.(hcl.TraverseAttr)
+				return is && strings.Contains(attr.Name, "dmz")
+			})
+		}) {
+			t.Errorf(`%s is a zone resource keyed off %s.
 
 That builds it whether or not any untrusted machine exists, so an estate that
 has deprecated its last untrusted workload keeps maintaining the zone. Key it
 off a dmz collection - those are derived from the machines and are empty when
-there are none.`, header, strings.TrimSpace(forEach[1]))
+there are none.`, block.Address(), repository(t).Source(t, forEach.Expr))
 		}
 	}
-
 	if checked == 0 {
-		t.Fatal("no zone resource with a for_each found in compute.tf, so this test proves nothing.\n\n" +
+		t.Fatal("no zone resource with a for_each was found, so this test proves nothing.\n\n" +
 			"Either the zone moved or its resources stopped being per-machine.")
 	}
 }

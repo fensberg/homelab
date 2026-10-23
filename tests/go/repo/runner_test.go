@@ -1,16 +1,14 @@
 package repo
 
 import (
-	"homelab/details/capacity"
-	"homelab/details/ghapi"
-	"os"
-	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 
+	"homelab/details/capacity"
+	"homelab/details/ghapi"
 	"homelab/tests/parsed"
-	"slices"
-	"sort"
 )
 
 // The estate's runners. That their manifests agree with OpenTofu, that each
@@ -126,15 +124,6 @@ func scalarsAt(node any, key string) []string {
 		}
 	}
 	return out
-}
-
-func readRepoFile(t *testing.T, rel string) string {
-	t.Helper()
-	b, err := os.ReadFile(filepath.Join(repoRoot(t), rel))
-	if err != nil {
-		t.Fatalf("reading %s: %v", rel, err)
-	}
-	return string(b)
 }
 
 // --- CI stays off the machines holding quorum -------------------------------

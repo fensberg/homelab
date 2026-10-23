@@ -2,7 +2,7 @@ guard: TestNoTestNamesTheRootItReads
 file: tests/go/repo/converge_in_flight_test.go
 reads_source: true
 find: "	_, manifest := fluxObject(t, kindHelmRelease, runnerScaleSet)"
-replace: '	manifest := readRepoFile(t, "clusters/core/infrastructure/configs/runner-scale-set.yaml")'
+replace: '	manifest := repository(t).YAMLDocuments(t, "clusters/core/infrastructure/configs/runner-scale-set.yaml")'
 mentions: "a path into the Flux tree"
 why: "reads_source, as the entry above.
 

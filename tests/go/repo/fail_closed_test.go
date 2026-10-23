@@ -45,7 +45,7 @@ import (
 var skipIsHonest = map[string]string{
 	"mutation_ledger_test.go": "the ledger runs each guard twice - once as the harness " +
 		"and once as the subject - and the inner run must not recurse. The skip is " +
-		"keyed on repoRootEnv, which only the harness sets.",
+		"keyed on parsed.Inner, which only the harness's runs answer yes to.",
 
 	"heavy_test.go": "a guard that costs seconds skips only under -short, which is the " +
 		"pre-push hook's budget, and says so with its reason. TestHeavyGuardsRunOnEveryPullRequest " +

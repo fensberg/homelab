@@ -1,12 +1,12 @@
 package repo
 
 import (
-	"regexp"
 	"sort"
 	"strings"
 	"testing"
 
 	"homelab/contractor/config"
+	"homelab/tests/parsed"
 )
 
 // The estate creates a site's buckets and the contractor uses them, and the two
@@ -36,19 +36,14 @@ func TestTheBucketTableAgreesWithTheHCL(t *testing.T) {
 	}
 }
 
-var purposesRe = regexp.MustCompile(`(?s)purposes\s*=\s*toset\(\[(.*?)\]\)`)
-
+// bucketPurposesInHCL is the purposes the estate creates a site's buckets
+// for: the local that declares them, read as the strings it is written as.
 func bucketPurposesInHCL(t *testing.T) []string {
 	t.Helper()
-	_, body := tofuDeclaring(t, "purposes = toset(")
-	m := purposesRe.FindStringSubmatch(body)
-	if m == nil {
-		t.Fatal("management/estate/site/object-storage.tf has no `purposes = toset([...])`, so this " +
-			"guard reads nothing. If the set was renamed, rename it here too.")
-	}
-	var out []string
-	for _, q := range regexp.MustCompile(`"([^"]+)"`).FindAllStringSubmatch(m[1], -1) {
-		out = append(out, q[1])
+	tree := repository(t)
+	out, ok := parsed.Strings(tree.Local(t, "purposes").Expr)
+	if !ok {
+		t.Fatal("local.purposes is not a set of strings written out, so which buckets the estate creates cannot be read from it")
 	}
 	if len(out) == 0 {
 		t.Fatal("the estate declares an empty set of bucket purposes, so this guard compares nothing")

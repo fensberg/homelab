@@ -106,7 +106,7 @@ func TestTheCodeLawsAreCoveredBySensitivePaths(t *testing.T) {
 	// change to that file deserves the alarm.
 	// The file that refuses a bad config, wherever it is: found by what it
 	// declares, so a rule keeps covering it when it moves.
-	invariants, _ := tofuDeclaring(t, declInvariants)
+	invariants := declaring(t, declInvariants).File
 	for _, rel := range []string{
 		"scripts/details/onepassword/probe.go",
 		"config/management.tpl.json",

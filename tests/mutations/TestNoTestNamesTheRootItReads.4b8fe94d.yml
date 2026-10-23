@@ -1,8 +1,8 @@
 guard: TestNoTestNamesTheRootItReads
 file: tests/go/repo/pools_test.go
 reads_source: true
-find: "	_, compute := tofuDeclaring(t, declMachines)"
-replace: '	compute := readRepoFile(t, "management/cluster/root.tf")'
+find: '	machines := forEachCollections(t, "proxmox_virtual_environment_vm")'
+replace: '	machines, _ := forEachCollections(t, "proxmox_virtual_environment_vm"), tofuFile(t, "management/cluster/root.tf")'
 mentions: "a path into the root management/cluster"
 why: "reads_source, because the guard parses the test files for what they name.
 

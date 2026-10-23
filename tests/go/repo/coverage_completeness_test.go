@@ -1,10 +1,8 @@
 package repo
 
 import (
-	"encoding/json"
 	"go/ast"
 	"go/token"
-	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -13,7 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/yaml.v3"
+	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/hclsyntax"
 )
 
 // Coverage is discovered and fails closed.
@@ -150,26 +149,22 @@ func programStrings(t *testing.T) []string {
 	return out
 }
 
-// testSources is every file in the repository that is a test.
-func testSources(t *testing.T) map[string]string {
+// tofuTests is every OpenTofu test file in the repository, parsed.
+func tofuTests(t *testing.T) map[string]*hclsyntax.Body {
 	t.Helper()
-	root := repoRoot(t)
-	out := map[string]string{}
+	tree := repository(t)
+	out := map[string]*hclsyntax.Body{}
 	for _, rel := range trackedMatching(t, func(rel string) bool {
-		if !authoredHere(t, rel) {
-			return false
-		}
-		return strings.HasSuffix(rel, "_test.go") || strings.HasSuffix(rel, ".test.ts") ||
-			strings.HasSuffix(rel, ".spec.ts") || strings.HasSuffix(rel, ".tftest.hcl")
+		return authoredHere(t, rel) && strings.HasSuffix(rel, ".tftest.hcl")
 	}) {
-		body, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatalf("reading %s: %v", rel, err)
+		body, ok := tree.HCL(t, rel).Body.(*hclsyntax.Body)
+		if !ok {
+			t.Fatalf("%s is not OpenTofu's native syntax", rel)
 		}
-		out[rel] = string(body)
+		out[rel] = body
 	}
 	if len(out) == 0 {
-		t.Fatal("found no test files at all, so every unit would look uncovered")
+		t.Fatal("found no OpenTofu test files at all, so every OpenTofu unit would look uncovered")
 	}
 	return out
 }
@@ -187,12 +182,10 @@ func tracked(t *testing.T, keep func(rel string) bool) []string {
 	})
 }
 
-var assertsSomething = regexp.MustCompile(`(?m)^\s*(validation\s*\{|precondition\s*\{|postcondition\s*\{|check\s+")`)
-
 // discover enumerates every unit this repository is expected to test.
 func discover(t *testing.T) []unit {
 	t.Helper()
-	root := repoRoot(t)
+	tree := repository(t)
 	var units []unit
 
 	// Go: one unit per module under scripts/. tests/go is test code, and
@@ -216,11 +209,7 @@ func discover(t *testing.T) []unit {
 	for _, p := range tracked(t, func(rel string) bool {
 		return strings.HasPrefix(rel, "management/hypervisor/") && strings.HasSuffix(rel, ".yml")
 	}) {
-		body, err := os.ReadFile(filepath.Join(root, p))
-		if err != nil {
-			t.Fatalf("reading %s: %v", p, err)
-		}
-		if regexp.MustCompile(`(?m)^\s*-?\s*(hosts|tasks):`).Match(body) {
+		if plays(tree.YAMLDocuments(t, p)) {
 			units = append(units, unit{"ansible", p})
 		}
 	}
@@ -229,11 +218,7 @@ func discover(t *testing.T) []unit {
 	// declares resources is exercised by any plan; a file with a validation or
 	// a precondition is making a claim that something should assert fails.
 	for _, p := range tracked(t, func(rel string) bool { return strings.HasSuffix(rel, ".tf") }) {
-		body, err := os.ReadFile(filepath.Join(root, p))
-		if err != nil {
-			t.Fatalf("reading %s: %v", p, err)
-		}
-		if assertsSomething.Match(body) {
+		if body, ok := tree.HCL(t, p).Body.(*hclsyntax.Body); ok && refuses(body) {
 			units = append(units, unit{"tofu", p})
 		}
 	}
@@ -241,8 +226,34 @@ func discover(t *testing.T) []unit {
 	return units
 }
 
+// plays says whether a YAML file plays something: a play has hosts or tasks.
+func plays(docs []any) bool {
+	for _, d := range docs {
+		list, _ := d.([]any)
+		for _, item := range list {
+			if play, ok := item.(map[string]any); ok && (play["hosts"] != nil || play["tasks"] != nil) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// refuses says whether anything in a body refuses something: a validation,
+// a precondition, a postcondition, or a check.
+func refuses(n hclsyntax.Node) bool {
+	found := false
+	_ = hclsyntax.VisitAll(n, func(n hclsyntax.Node) hcl.Diagnostics {
+		if b, ok := n.(*hclsyntax.Block); ok && refusing[b.Type] {
+			found = true
+		}
+		return nil
+	})
+	return found
+}
+
 // covered decides whether a unit is executed by something in the test suite.
-func covered(t *testing.T, u unit, sources map[string]string, run []string, floors map[string]float64) bool {
+func covered(t *testing.T, u unit, tests map[string]*hclsyntax.Body, run []string, floors map[string]float64) bool {
 	t.Helper()
 	switch u.tier {
 	case "go":
@@ -258,28 +269,28 @@ func covered(t *testing.T, u unit, sources map[string]string, run []string, floo
 		// Exercised when a .tftest.hcl expects one of its declared identifiers
 		// to fail. A plan alone runs the file; only expect_failures proves the
 		// assertion was ever reached.
-		body, err := os.ReadFile(filepath.Join(repoRoot(t), u.path))
-		if err != nil {
-			t.Fatalf("reading %s: %v", u.path, err)
+		body, ok := repository(t).HCL(t, u.path).Body.(*hclsyntax.Body)
+		if !ok {
+			t.Fatalf("%s is not OpenTofu's native syntax", u.path)
 		}
 		// Every declaration in the file that refuses something, and each
 		// has to be one a test of this root expects to fail. Read from the
 		// tests' expect_failures lists, not from their text: a test that
 		// merely mentions a name, or lists nothing, has not seen it refuse.
 		expected := map[string]bool{}
-		for name, src := range sources {
+		for name, test := range tests {
 			// Its own root's tests, and no other's. A test runs the root
 			// it sits in, so one in another root that happens to name the
 			// same identifier never reached this file's assertion - which
 			// is how a second root's `variable "site"` validation counted
 			// as exercised by the first root's test of its own.
-			if strings.HasSuffix(name, ".tftest.hcl") && testsTheRootOf(name, u.path) {
-				for _, addr := range expectedFailures(src) {
+			if testsTheRootOf(name, u.path) {
+				for _, addr := range expectedFailures(test) {
 					expected[addr] = true
 				}
 			}
 		}
-		asserting := assertingDeclarations(string(body))
+		asserting := assertingDeclarations(body)
 		for _, addr := range asserting {
 			if !expected[addr] {
 				return false
@@ -291,72 +302,46 @@ func covered(t *testing.T, u unit, sources map[string]string, run []string, floo
 	return false
 }
 
-var (
-	tofuBlockHeader = regexp.MustCompile(`^(variable|output|check|resource|data)\s+"([^"]+)"(?:\s+"([^"]+)")?\s*\{`)
-	expectFailures  = regexp.MustCompile(`(?s)expect_failures\s*=\s*\[([^\]]*)\]`)
-)
-
 // assertingDeclarations is the address of every top-level block in an
 // OpenTofu file that refuses something - a validation, a precondition, a
 // postcondition, or a check - as a test names it in expect_failures.
-func assertingDeclarations(body string) []string {
+func assertingDeclarations(body *hclsyntax.Body) []string {
 	var out []string
-	var header []string
-	var block strings.Builder
-	flush := func() {
-		if header == nil {
-			return
-		}
-		if header[1] == "check" || assertsSomething.MatchString(block.String()) {
-			switch header[1] {
-			case "variable":
-				out = append(out, "var."+header[2])
-			case "output", "check":
-				out = append(out, header[1]+"."+header[2])
-			case "resource":
-				out = append(out, header[2]+"."+header[3])
-			case "data":
-				out = append(out, "data."+header[2]+"."+header[3])
-			}
-		}
-		header = nil
-		block.Reset()
-	}
-	for _, line := range strings.Split(body, "\n") {
-		if m := tofuBlockHeader.FindStringSubmatch(line); m != nil {
-			flush()
-			header = m
+	for _, b := range body.Blocks {
+		if b.Type != "check" && !refuses(b.Body) {
 			continue
 		}
-		if strings.HasPrefix(line, "}") {
-			flush()
-			continue
-		}
-		if code := strings.TrimSpace(line); header != nil && !strings.HasPrefix(code, "#") && !strings.HasPrefix(code, "//") {
-			block.WriteString(line)
-			block.WriteByte('\n')
+		switch {
+		case b.Type == "variable" && len(b.Labels) == 1:
+			out = append(out, "var."+b.Labels[0])
+		case (b.Type == "output" || b.Type == "check") && len(b.Labels) == 1:
+			out = append(out, b.Type+"."+b.Labels[0])
+		case b.Type == "resource" && len(b.Labels) == 2:
+			out = append(out, b.Labels[0]+"."+b.Labels[1])
+		case b.Type == "data" && len(b.Labels) == 2:
+			out = append(out, "data."+b.Labels[0]+"."+b.Labels[1])
 		}
 	}
-	flush()
 	sort.Strings(out)
 	return out
 }
 
-// expectedFailures is every address a test file lists in an expect_failures,
-// comments aside.
-func expectedFailures(src string) []string {
-	var code strings.Builder
-	for _, line := range strings.Split(src, "\n") {
-		if t := strings.TrimSpace(line); !strings.HasPrefix(t, "#") && !strings.HasPrefix(t, "//") {
-			code.WriteString(line)
-			code.WriteByte('\n')
-		}
-	}
+// expectedFailures is every address a test file's runs list in their
+// expect_failures, in the order written.
+func expectedFailures(test *hclsyntax.Body) []string {
 	var out []string
-	for _, m := range expectFailures.FindAllStringSubmatch(code.String(), -1) {
-		for _, addr := range strings.Split(m[1], ",") {
-			if addr = strings.TrimSpace(addr); addr != "" {
-				out = append(out, addr)
+	for _, b := range test.Blocks {
+		attr, ok := b.Body.Attributes["expect_failures"]
+		if b.Type != "run" || !ok {
+			continue
+		}
+		list, ok := attr.Expr.(*hclsyntax.TupleConsExpr)
+		if !ok {
+			continue
+		}
+		for _, e := range list.Exprs {
+			if ref, ok := e.(*hclsyntax.ScopeTraversalExpr); ok {
+				out = append(out, traversalName(ref.Traversal))
 			}
 		}
 	}
@@ -380,9 +365,7 @@ func testsTheRootOf(test, file string) bool {
 func blocklistEntries(t *testing.T) map[string]bool {
 	t.Helper()
 	var list coverageBlocklist
-	if err := yaml.Unmarshal([]byte(readRepoFile(t, "tests/coverage-blocklist.yml")), &list); err != nil {
-		t.Fatalf("parsing tests/coverage-blocklist.yml: %v", err)
-	}
+	repository(t).YAMLInto(t, "tests/coverage-blocklist.yml", &list)
 	out := map[string]bool{}
 	for _, b := range list.Blocked {
 		out[strings.TrimSpace(b)] = true
@@ -391,17 +374,14 @@ func blocklistEntries(t *testing.T) map[string]bool {
 }
 
 func TestEveryUnitIsExecutedByATestOrIsADeclaredDebt(t *testing.T) {
+	tree := repository(t)
 	var list coverageBlocklist
-	if err := yaml.Unmarshal([]byte(readRepoFile(t, "tests/coverage-blocklist.yml")), &list); err != nil {
-		t.Fatalf("parsing tests/coverage-blocklist.yml: %v", err)
-	}
+	tree.YAMLInto(t, "tests/coverage-blocklist.yml", &list)
 
 	var floors struct {
 		Baselines map[string]float64 `json:"baselines"`
 	}
-	if err := json.Unmarshal([]byte(readRepoFile(t, "tests/coverage-baseline.json")), &floors); err != nil {
-		t.Fatalf("parsing tests/coverage-baseline.json: %v", err)
-	}
+	tree.JSONInto(t, "tests/coverage-baseline.json", &floors)
 
 	blocked := map[string]bool{}
 	for _, b := range list.Blocked {
@@ -418,7 +398,7 @@ tested, or arrived untested - either way it is a debt and it does not get to
 raise its own limit.`, len(list.Blocked), list.Ceiling)
 	}
 
-	sources := testSources(t)
+	tests := tofuTests(t)
 	run := programStrings(t)
 	units := discover(t)
 	if len(units) == 0 {
@@ -427,7 +407,7 @@ raise its own limit.`, len(list.Blocked), list.Ceiling)
 
 	var uncovered, stale []string
 	for _, u := range units {
-		isCovered := covered(t, u, sources, run, floors.Baselines)
+		isCovered := covered(t, u, tests, run, floors.Baselines)
 		switch {
 		case isCovered && blocked[u.String()]:
 			stale = append(stale, u.String())
@@ -505,7 +485,14 @@ check "reachable" {
 }
 `
 	want := []string{"check.reachable", "data.thing.read", "output.grants", "terraform_data.invariants", "var.site"}
-	if got := assertingDeclarations(body); strings.Join(got, " ") != strings.Join(want, " ") {
+	parse := func(src string) *hclsyntax.Body {
+		f, diags := hclsyntax.ParseConfig([]byte(src), "made-up.tf", hcl.InitialPos)
+		if diags.HasErrors() {
+			t.Fatal(diags.Error())
+		}
+		return f.Body.(*hclsyntax.Body)
+	}
+	if got := assertingDeclarations(parse(body)); strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("asserting declarations are %v, want %v", got, want)
 	}
 
@@ -525,7 +512,7 @@ run "c" {
 # a run that mentions var.plain and the word expect_failures expects nothing
 `
 	wantExpected := []string{"var.site", "terraform_data.invariants", "output.grants"}
-	if got := expectedFailures(test); strings.Join(got, " ") != strings.Join(wantExpected, " ") {
+	if got := expectedFailures(parse(test)); strings.Join(got, " ") != strings.Join(wantExpected, " ") {
 		t.Errorf("expected failures are %v, want %v", got, wantExpected)
 	}
 }

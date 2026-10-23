@@ -1,16 +1,20 @@
 package repo
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
 
+	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/hclsyntax"
+	"github.com/zclconf/go-cty/cty"
+
 	"homelab/contractor/config"
+	"homelab/tests/parsed"
 )
 
 // A hypervisor's facts are declared once, and never written into the code.
@@ -43,32 +47,24 @@ var (
 		"workstation/provision.yml": "where the devbox itself lives",
 	}
 	// The address plan declares the vnet a site's nodes sit on, beside its
-	// network id.
-	declPlanVNet     = "vnet_vni ="
-	planVNet         = regexp.MustCompile(`(?m)^\s*vnet\s*=\s*"([^"]+)"`)
-	literalPlacement = regexp.MustCompile(`(?m)^\s*(datastore_id|bridge)\s*=\s*"`)
+	// network id: found by the file that writes that id.
+	declPlanVNet = "vnet_vni"
 )
 
 func TestAHypervisorsFactsAreDeclaredOnceAndNeverInTheCode(t *testing.T) {
-	root := repoRoot(t)
-
-	names := declaredHypervisorFacts(t, root)
+	heavy(t, "semgrep reads every file for the hypervisor's names, a few seconds")
+	tree := repository(t)
+	planFile := writing(t, tree, declPlanVNet).Path
+	names := declaredHypervisorFacts(t, tree, planFile)
 	if len(names) < 2 {
 		t.Fatalf("only %d hypervisor fact(s) were read from the declarations, so this checked almost nothing: %v", len(names), names)
 	}
-	var patterns []*regexp.Regexp
-	for _, n := range names {
-		patterns = append(patterns, regexp.MustCompile(`(^|[^A-Za-z0-9_-])`+regexp.QuoteMeta(n)+`($|[^A-Za-z0-9_-])`))
-	}
 
 	// The files that declare the facts are where the names belong.
-	declarations := map[string]bool{}
+	declarations := map[string]bool{planFile: true}
 	for rel := range hypervisorFactFiles {
 		declarations[rel] = true
 	}
-	planFile, _ := tofuDeclaring(t, declPlanVNet)
-	declarations[planFile] = true
-
 	files := tracked(t, func(rel string) bool {
 		if declarations[rel] {
 			return false
@@ -88,13 +84,11 @@ func TestAHypervisorsFactsAreDeclaredOnceAndNeverInTheCode(t *testing.T) {
 		t.Fatalf("only %d files were read, so the enumeration has stopped matching", len(files))
 	}
 
-	var found []string
-	for _, rel := range files {
-		body, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatalf("reading %s: %v", rel, err)
+	found := hypervisorFactsIn(t, tree, files, names)
+	for _, f := range tree.OpenTofu(t) {
+		if !declarations[f.Path] {
+			found = append(found, placementsWritten(f)...)
 		}
-		found = append(found, hypervisorFactsIn(rel, string(body), names, patterns)...)
 	}
 	sort.Strings(found)
 	for _, f := range found {
@@ -102,16 +96,37 @@ func TestAHypervisorsFactsAreDeclaredOnceAndNeverInTheCode(t *testing.T) {
 	}
 }
 
+// writing is the one OpenTofu file that writes an argument or a key of that
+// name, wherever it is.
+func writing(t *testing.T, tree *parsed.Tree, name string) parsed.OpenTofuFile {
+	t.Helper()
+	var found []parsed.OpenTofuFile
+	for _, f := range tree.OpenTofu(t) {
+		has := slices.ContainsFunc(objectItems(f.Body), func(item hclsyntax.ObjectConsItem) bool { return parsed.KeyName(item) == name })
+		_ = hclsyntax.VisitAll(f.Body, func(n hclsyntax.Node) hcl.Diagnostics {
+			if a, ok := n.(*hclsyntax.Attribute); ok && a.Name == name {
+				has = true
+			}
+			return nil
+		})
+		if has {
+			found = append(found, f)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("%d OpenTofu files write %s, and one was expected", len(found), name)
+	}
+	return found[0]
+}
+
 // declaredHypervisorFacts reads every name the declarations hold: each node's
 // datastores in the config template, and the address plan's vnet.
-func declaredHypervisorFacts(t *testing.T, root string) []string {
+func declaredHypervisorFacts(t *testing.T, tree *parsed.Tree, planFile string) []string {
 	t.Helper()
 	// Decoded with the config's own types, so the shape is the contractor's
 	// and not a second copy of it.
 	var tpl config.Config
-	if err := json.Unmarshal([]byte(readRepoFile(t, "config/management.tpl.json")), &tpl); err != nil {
-		t.Fatalf("config/management.tpl.json: %v", err)
-	}
+	tree.JSONInto(t, "config/management.tpl.json", &tpl)
 	seen := map[string]bool{}
 	for _, s := range tpl.Sites {
 		for _, n := range s.Hypervisor.Nodes {
@@ -119,9 +134,18 @@ func declaredHypervisorFacts(t *testing.T, root string) []string {
 			seen[n.Datastores.Images] = true
 		}
 	}
-	_, plan := tofuDeclaring(t, declPlanVNet)
-	for _, m := range planVNet.FindAllStringSubmatch(plan, -1) {
-		seen[m[1]] = true
+	for _, f := range tree.OpenTofu(t) {
+		if f.Path != planFile {
+			continue
+		}
+		for _, item := range objectItems(f.Body) {
+			if parsed.KeyName(item) != "vnet" {
+				continue
+			}
+			if v, ok := parsed.Literal(item.ValueExpr); ok && !v.IsNull() && v.Type() == cty.String {
+				seen[v.AsString()] = true
+			}
+		}
 	}
 	out := make([]string, 0, len(seen))
 	for n := range seen {
@@ -133,44 +157,68 @@ func declaredHypervisorFacts(t *testing.T, root string) []string {
 	return out
 }
 
-// hypervisorFactsIn is what one file gets wrong.
-func hypervisorFactsIn(rel, body string, names []string, patterns []*regexp.Regexp) []string {
+// hypervisorFactsIn is each place in the files that names one of the facts,
+// comments and all: a name written down twice is a host that cannot be
+// described without editing it, wherever it is written.
+func hypervisorFactsIn(t *testing.T, tree *parsed.Tree, files, names []string) []string {
+	t.Helper()
+	var rules []map[string]any
+	for i, n := range names {
+		rules = append(rules, map[string]any{
+			"id": fmt.Sprintf("hypervisor-fact-%d", i), "languages": []string{"generic"}, "severity": "INFO",
+			"message": n, "metadata": map[string]any{"about": n},
+			"pattern-regex": `(^|[^A-Za-z0-9_-])` + regexp.QuoteMeta(n) + `($|[^A-Za-z0-9_-])`,
+		})
+	}
 	var out []string
-	for i, line := range strings.Split(body, "\n") {
-		for j, p := range patterns {
-			if p.MatchString(line) {
-				out = append(out, fmt.Sprintf("%s:%d names %q, a hypervisor fact the config declares. Read it from the declaration instead (a node's datastores, or the address plan's vnet).", rel, i+1, names[j]))
-			}
-		}
-		if (strings.HasSuffix(rel, ".tf")) && literalPlacement.MatchString(line) {
-			out = append(out, fmt.Sprintf("%s:%d writes a Proxmox storage or network as a quoted string. Read it from the hypervisor node's datastores or the address plan.", rel, i+1))
-		}
+	for _, f := range scanText(t, tree, rules, files) {
+		out = append(out, fmt.Sprintf("%s:%d names %q, a hypervisor fact the config declares. Read it from the declaration instead (a node's datastores, or the address plan's vnet).", f.Path, f.Line, f.About))
 	}
 	return out
 }
 
+// placementsWritten is each Proxmox storage or network an OpenTofu file
+// writes as a string, where it should read one from a declaration.
+func placementsWritten(f parsed.OpenTofuFile) []string {
+	var out []string
+	_ = hclsyntax.VisitAll(f.Body, func(n hclsyntax.Node) hcl.Diagnostics {
+		a, ok := n.(*hclsyntax.Attribute)
+		if !ok || (a.Name != "datastore_id" && a.Name != "bridge") {
+			return nil
+		}
+		if _, written := a.Expr.(*hclsyntax.TemplateExpr); written {
+			out = append(out, fmt.Sprintf("%s:%d writes a Proxmox storage or network as a quoted string. Read it from the hypervisor node's datastores or the address plan.", f.Path, a.SrcRange.Start.Line))
+		}
+		return nil
+	})
+	return out
+}
+
 func TestHypervisorFactsInCatchesEachWayToWriteOne(t *testing.T) {
+	heavy(t, "semgrep reads the fixture's files")
 	names := []string{"tank-images", "vnetx"}
-	var patterns []*regexp.Regexp
-	for _, n := range names {
-		patterns = append(patterns, regexp.MustCompile(`(^|[^A-Za-z0-9_-])`+regexp.QuoteMeta(n)+`($|[^A-Za-z0-9_-])`))
-	}
 	for _, c := range []struct {
 		name, rel, body string
 		want            bool
 	}{
-		{"a Go string", "a.go", `const p = "tank-images:iso/talos-"`, true},
-		{"a comment", "a.tf", `# lives in tank-images`, true},
-		{"a playbook value", "a.yml", `sdn_vnet: vnetx`, true},
-		{"a quoted datastore never declared", "a.tf", `  datastore_id = "other"`, true},
-		{"a quoted bridge", "a.tf", `    bridge = "vmbr9"`, true},
-		{"a longer name is another name", "a.go", `"tank-images-old"`, false},
-		{"read from the declaration", "a.tf", `  datastore_id = local.datastores[each.value].images`, false},
-		{"a quoted datastore outside OpenTofu is the first check's", "a.yml", `datastore_id = "other"`, false},
+		{"a Go string", "a.go", "package a\n\nconst p = \"tank-images:iso/talos-\"\n", true},
+		{"a comment", "a.tf", "# lives in tank-images\n", true},
+		{"a playbook value", "a.yml", "sdn_vnet: vnetx\n", true},
+		{"a quoted datastore never declared", "a.tf", "resource \"x\" \"y\" {\n  datastore_id = \"other\"\n}\n", true},
+		{"a quoted bridge", "a.tf", "resource \"x\" \"y\" {\n  network_device {\n    bridge = \"vmbr9\"\n  }\n}\n", true},
+		{"a longer name is another name", "a.go", "package a\n\nconst p = \"tank-images-old\"\n", false},
+		{"read from the declaration", "a.tf", "resource \"x\" \"y\" {\n  datastore_id = local.datastores[each.value].images\n}\n", false},
+		{"a quoted datastore outside OpenTofu is the first check's", "a.yml", "datastore_id: other\n", false},
 	} {
-		got := len(hypervisorFactsIn(c.rel, c.body, names, patterns)) > 0
-		if got != c.want {
-			t.Errorf("%s: found=%v, want %v", c.name, got, c.want)
+		tree := parsed.Empty(t)
+		tree.Write(t, c.rel, c.body)
+		tree.Index(t)
+		found := hypervisorFactsIn(t, tree, []string{c.rel}, names)
+		for _, f := range tree.OpenTofu(t) {
+			found = append(found, placementsWritten(f)...)
+		}
+		if got := len(found) > 0; got != c.want {
+			t.Errorf("%s: found=%v, want %v: %v", c.name, got, c.want, found)
 		}
 	}
 }

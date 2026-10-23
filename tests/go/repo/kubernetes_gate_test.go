@@ -1,9 +1,7 @@
 package repo
 
 import (
-	"os"
-	"path/filepath"
-	"regexp"
+	"path"
 	"slices"
 	"sort"
 	"strings"
@@ -11,6 +9,7 @@ import (
 
 	"homelab/contractor/config"
 	"homelab/contractor/steps"
+	"homelab/tests/parsed"
 )
 
 // Nothing may talk to Kubernetes before the cluster is known to be up, and
@@ -40,18 +39,7 @@ import (
 // is a resource in the wrong root, or the order of the steps, and those are
 // what this checks.
 func TestKubernetesIsOnlyInThePlatformRootAndThatRootComesLast(t *testing.T) {
-	root := repoRoot(t)
-	files := tracked(t, func(rel string) bool {
-		return strings.HasSuffix(rel, ".tf") && !strings.Contains(rel, "/tests/")
-	})
-	sources := map[string]string{}
-	for _, rel := range files {
-		body, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatal(err)
-		}
-		sources[rel] = string(body)
-	}
+	sources := repository(t).OpenTofu(t)
 	for _, p := range kubernetesOutsideThePlatform(sources) {
 		t.Error(p)
 	}
@@ -63,40 +51,33 @@ func TestKubernetesIsOnlyInThePlatformRootAndThatRootComesLast(t *testing.T) {
 	// it, and the health read is what makes "applied" mean "every node is
 	// Ready". Found by what it declares; all that matters about where is that
 	// it is not in the root that waits on it.
-	health, _ := tofuDeclaring(t, declClusterHealth)
-	if _, places := platformPlaces(sources); slices.Contains(places, filepath.ToSlash(filepath.Dir(health))) {
+	health := declaring(t, declClusterHealth).File
+	if _, places := platformPlaces(sources); slices.Contains(places, path.Dir(health)) {
 		t.Errorf("%s reads the cluster's health from the %s root, which is applied after the %s root has returned: nothing then waits for the nodes before the platform is put on them", health, config.PlatformRoot, config.ClusterRoot)
 	}
 }
 
-var (
-	kubernetesBlock         = regexp.MustCompile(`(?m)^\s*(resource|data)\s+"(kubernetes_[A-Za-z0-9_]+)"\s+"([A-Za-z0-9_]+)"`)
-	kubernetesProviderBlock = regexp.MustCompile(`(?m)^\s*provider\s+"kubernetes"`)
-	kubernetesRequired      = regexp.MustCompile(`(?m)^\s*kubernetes\s*=\s*\{`)
-)
-
-var moduleSource = regexp.MustCompile(`(?m)^\s*source\s*=\s*"(\.[^"]*)"`)
-
-// platformPlaces is where the platform keeps what it creates: its root, and
-// every module that root calls by a local path. Read from the root rather
-// than named, so the platform's resources are found wherever the root says
-// they are.
-func platformPlaces(sources map[string]string) (root string, places []string) {
+// platformPlaces is the platform root and every module it calls: where
+// anything that talks to the cluster's API may be. A module is called by its
+// path in the release, or by a path from the root.
+func platformPlaces(sources []parsed.OpenTofuFile) (root string, places []string) {
 	root = "management/" + config.PlatformRoot
 	places = []string{root}
-	for rel, body := range sources {
-		if filepath.ToSlash(filepath.Dir(rel)) != root {
+	for _, f := range sources {
+		if path.Dir(f.Path) != root {
 			continue
 		}
-		for _, m := range moduleSourceLine.FindAllStringSubmatch(stripHCLComments(body), -1) {
-			// A site's root fetches its modules as released; the module
-			// itself is at the same path from the repository's top.
-			if released := releasedSource.FindStringSubmatch(m[1]); released != nil {
-				places = append(places, filepath.ToSlash(filepath.Clean(released[1])))
+		for _, b := range f.Body.Blocks {
+			source, ok := b.Body.Attributes["source"]
+			if b.Type != "module" || !ok {
 				continue
 			}
-			if local := moduleSource.FindStringSubmatch(m[0]); local != nil {
-				places = append(places, filepath.ToSlash(filepath.Join(root, local[1])))
+			if _, released, ok := releasedModule(source.Expr); ok {
+				places = append(places, path.Clean(released))
+				continue
+			}
+			if local, ok := parsed.Strings(source.Expr); ok && len(local) == 1 && strings.HasPrefix(local[0], ".") {
+				places = append(places, path.Join(root, local[0]))
 			}
 		}
 	}
@@ -104,32 +85,28 @@ func platformPlaces(sources map[string]string) (root string, places []string) {
 	return root, places
 }
 
-// kubernetesOutsideThePlatform is every kubernetes resource declared anywhere
-// but the platform - its root or a module that root calls - every provider
-// block configured anywhere but the platform's root, and the complaint that
-// the platform holds no kubernetes resource at all, which would mean this
-// looked in the wrong place.
-func kubernetesOutsideThePlatform(sources map[string]string) []string {
+// kubernetesOutsideThePlatform is each place outside the platform that
+// declares, configures or requires the kubernetes provider.
+func kubernetesOutsideThePlatform(sources []parsed.OpenTofuFile) []string {
 	root, places := platformPlaces(sources)
-	inPlatform := func(rel string) bool {
-		return slices.Contains(places, filepath.ToSlash(filepath.Dir(rel)))
-	}
+	inPlatform := func(rel string) bool { return slices.Contains(places, path.Dir(rel)) }
 	var problems []string
 	found := 0
-	for rel, body := range sources {
-		code := stripHCLComments(body)
-		for _, m := range kubernetesBlock.FindAllStringSubmatch(code, -1) {
-			if inPlatform(rel) {
-				found++
-				continue
+	for _, f := range sources {
+		rel := f.Path
+		for _, b := range f.Body.Blocks {
+			switch {
+			case (b.Type == "resource" || b.Type == "data") && len(b.Labels) == 2 && strings.HasPrefix(b.Labels[0], "kubernetes_"):
+				if inPlatform(rel) {
+					found++
+					continue
+				}
+				problems = append(problems, rel+" declares "+b.Labels[0]+"."+b.Labels[1]+`. Everything that talks to the cluster's API belongs to the platform (`+strings.Join(places, ", ")+`): it is applied only after every node is Ready, and it is never destroyed. Here it would be planned before the cluster exists, and a teardown would wait on the cluster to delete it.`)
+			case b.Type == "provider" && len(b.Labels) == 1 && b.Labels[0] == "kubernetes" && path.Dir(rel) != root:
+				problems = append(problems, rel+" configures the kubernetes provider outside "+root+". A provider is configured once, in the root that is handed the cluster's access; configured where the cluster is built, it cannot be resolved until the cluster exists.")
+			case b.Type == "terraform" && parsed.Attribute(b.Body, "required_providers", "kubernetes") != nil && !inPlatform(rel):
+				problems = append(problems, rel+" requires the kubernetes provider outside the platform ("+strings.Join(places, ", ")+"), so something there means to talk to a cluster that may not exist yet.")
 			}
-			problems = append(problems, rel+" declares "+m[2]+"."+m[3]+`. Everything that talks to the cluster's API belongs to the platform (`+strings.Join(places, ", ")+`): it is applied only after every node is Ready, and it is never destroyed. Here it would be planned before the cluster exists, and a teardown would wait on the cluster to delete it.`)
-		}
-		if kubernetesProviderBlock.MatchString(code) && filepath.ToSlash(filepath.Dir(rel)) != root {
-			problems = append(problems, rel+" configures the kubernetes provider outside "+root+". A provider is configured once, in the root that is handed the cluster's access; configured where the cluster is built, it cannot be resolved until the cluster exists.")
-		}
-		if kubernetesRequired.MatchString(code) && !inPlatform(rel) {
-			problems = append(problems, rel+" requires the kubernetes provider outside the platform ("+strings.Join(places, ", ")+"), so something there means to talk to a cluster that may not exist yet.")
 		}
 	}
 	if found == 0 {
@@ -137,16 +114,6 @@ func kubernetesOutsideThePlatform(sources map[string]string) []string {
 	}
 	sort.Strings(problems)
 	return problems
-}
-
-// stripHCLComments drops each line's comment, so a resource described in one
-// is not read as a resource.
-func stripHCLComments(body string) string {
-	lines := strings.Split(body, "\n")
-	for i, line := range lines {
-		lines[i], _, _ = strings.Cut(line, "#")
-	}
-	return strings.Join(lines, "\n")
 }
 
 // stepOrderProblems is what is wrong with the order of the converge's steps:
@@ -182,14 +149,15 @@ func TestKubernetesOutsideThePlatformIsRefused(t *testing.T) {
 	platform, cluster := "management/"+config.PlatformRoot+"/", "management/"+config.ClusterRoot+"/"
 	// The platform's root calls one module, and that is where its resources
 	// are; the cluster's calls another.
+	const requires = "terraform {\n  required_providers {\n    kubernetes = { source = \"hashicorp/kubernetes\" }\n  }\n}\n"
 	good := map[string]string{
 		platform + "calls.tf":  "module \"p\" {\n  source = \"../../parts/on-it\"\n}\n",
-		platform + "access.tf": "provider \"kubernetes\" {}\n    kubernetes = { source = \"hashicorp/kubernetes\" }\n",
-		"parts/on-it/a.tf":     "resource \"kubernetes_namespace\" \"a\" {}\n    kubernetes = { source = \"hashicorp/kubernetes\" }\n",
+		platform + "access.tf": "provider \"kubernetes\" {}\n" + requires,
+		"parts/on-it/a.tf":     "resource \"kubernetes_namespace\" \"a\" {}\n" + requires,
 		cluster + "calls.tf":   "module \"c\" {\n  source = \"../../parts/machines\"\n}\n",
-		"parts/machines/n.tf":  "# resource \"kubernetes_namespace\" \"commented\" {}\n  kubernetes_version = local.kubernetes_version\n",
+		"parts/machines/n.tf":  "# resource \"kubernetes_namespace\" \"commented\" {}\nlocals {\n  kubernetes_version = local.kubernetes_version\n}\n",
 	}
-	if got := kubernetesOutsideThePlatform(good); len(got) != 0 {
+	if got := kubernetesOutsideThePlatform(tofuOf(t, good)); len(got) != 0 {
 		t.Errorf("a site with kubernetes only in the platform was refused: %v", got)
 	}
 	for name, tc := range map[string]struct{ file, add string }{
@@ -199,17 +167,17 @@ func TestKubernetesOutsideThePlatformIsRefused(t *testing.T) {
 		"a resource in a module nothing calls":   {"parts/stray/extra.tf", "resource \"kubernetes_secret\" \"s\" {}\n"},
 		"the provider configured in the cluster": {cluster + "extra.tf", "provider \"kubernetes\" {}\n"},
 		"the provider configured in the module":  {"parts/on-it/extra.tf", "provider \"kubernetes\" {}\n"},
-		"the provider required by the cluster":   {"parts/machines/extra.tf", "    kubernetes = { source = \"hashicorp/kubernetes\" }\n"},
+		"the provider required by the cluster":   {"parts/machines/extra.tf", requires},
 	} {
 		bad := map[string]string{tc.file: tc.add}
 		for k, v := range good {
 			bad[k] = v
 		}
-		if got := kubernetesOutsideThePlatform(bad); len(got) != 1 {
+		if got := kubernetesOutsideThePlatform(tofuOf(t, bad)); len(got) != 1 {
 			t.Errorf("%s: got %v", name, got)
 		}
 	}
-	if got := kubernetesOutsideThePlatform(map[string]string{cluster + "calls.tf": ""}); len(got) != 1 || !strings.Contains(got[0], "wrong place") {
+	if got := kubernetesOutsideThePlatform(tofuOf(t, map[string]string{cluster + "calls.tf": ""})); len(got) != 1 || !strings.Contains(got[0], "wrong place") {
 		t.Errorf("a platform with nothing in it was accepted: %v", got)
 	}
 }

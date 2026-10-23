@@ -1,25 +1,23 @@
 package repo
 
 import (
-	"encoding/json"
-	"errors"
 	"go/ast"
-	"go/parser"
 	"go/token"
-	"homelab/details/capacity"
-	"io"
-	"path/filepath"
-	"regexp"
+	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/hclsyntax"
+	"github.com/zclconf/go-cty/cty"
 	"gopkg.in/yaml.v3"
 
 	"homelab/contractor/config"
 	"homelab/details/applications"
+	"homelab/details/capacity"
 	"homelab/details/holds"
+	"homelab/tests/parsed"
 )
 
 // Everything that keeps data says what it holds, and for how long.
@@ -34,15 +32,9 @@ import (
 // that names something no longer here is refused too, because it is a
 // promise about nothing.
 func TestEverythingThatKeepsDataSaysWhatItHolds(t *testing.T) {
-	root := repoRoot(t)
-	apps, err := applications.Read(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	core, err := holds.ReadCore(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	tree := repository(t)
+	apps := tree.Applications(t)
+	core := tree.CoreHolds(t)
 	declared := map[string]map[string]bool{holds.Core: {}}
 	for _, a := range core {
 		declared[holds.Core][a.HeldBy] = true
@@ -205,16 +197,7 @@ func storageDeclared(t *testing.T) []keeper {
 		if rest, ok := strings.CutPrefix(rel, applications.Dir+"/"); ok {
 			owner, _, _ = strings.Cut(rest, "/")
 		}
-		dec := yaml.NewDecoder(strings.NewReader(readRepoFile(t, rel)))
-		for {
-			var doc yaml.Node
-			err := dec.Decode(&doc)
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			if err != nil {
-				t.Fatalf("%s does not parse as YAML, so what it keeps was not read: %v", rel, err)
-			}
+		for _, doc := range repository(t).YAMLNodes(t, rel) {
 			if len(doc.Content) == 0 {
 				continue
 			}
@@ -273,16 +256,13 @@ func hasKey(n *yaml.Node, keys ...string) bool {
 func TestNoTeardownStartsUntilTheSafetyOfficerClearsIt(t *testing.T) {
 	const teardown, officer, undoesItsOwnBuild = "tearDown", "clearedBySafetyOfficer", "EmergencyDestroy"
 
-	root := repoRoot(t)
+	tree := repository(t)
 	var starts, asked, exempt int
 	for _, rel := range goFiles(t) {
 		if strings.HasSuffix(rel, "_test.go") {
 			continue
 		}
-		file, err := parser.ParseFile(token.NewFileSet(), filepath.Join(root, rel), nil, 0)
-		if err != nil {
-			t.Fatalf("%s does not parse, so its teardowns were not read: %v", rel, err)
-		}
+		file := tree.Go(t, token.NewFileSet(), rel)
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
 			if !ok || fn.Body == nil {
@@ -338,18 +318,19 @@ return what it returns.`, rel, fn.Name.Name, officer, teardown)
 // pool with no machines in it, or the driver is pointed at a storage it has
 // no right to - and each half is correct when read alone.
 func TestTheStorageDriversNamesAreTheSameWhereverTheyAreWritten(t *testing.T) {
+	tree := repository(t)
 	workers := (&config.SiteNetwork{Name: "${local.site_name}"}).WorkerPool()
-	if _, body := tofuDeclaring(t, `resource "proxmox_virtual_environment_pool" "workers"`); !strings.Contains(body, `"`+workers+`"`) {
+	if !writesTemplate(t, tree, tree.Declaring(t, "resource", "proxmox_virtual_environment_pool", "workers"), workers) {
 		t.Errorf("the pool a site's workers are put in is not %q, which is the pool the hypervisor confines the storage driver's token to", workers)
 	}
 	// The sweeper's token is confined the same way, to the pool of the
 	// machines it gives back as they were built.
 	untrusted := (&config.SiteNetwork{Name: "${local.site_name}"}).UntrustedPool()
-	if _, body := tofuDeclaring(t, `resource "proxmox_virtual_environment_pool" "untrusted"`); !strings.Contains(body, `"`+untrusted+`"`) {
+	if !writesTemplate(t, tree, tree.Declaring(t, "resource", "proxmox_virtual_environment_pool", "untrusted"), untrusted) {
 		t.Errorf("the pool a site's untrusted machines are put in is not %q, which is the pool the hypervisor confines the sweeper's token to", untrusted)
 	}
 	volumes := config.VolumeStorage("${var.site}")
-	if _, body := tofuDeclaring(t, `resource "kubernetes_secret" "storage_vars"`); !strings.Contains(body, `"`+volumes+`"`) {
+	if !writesTemplate(t, tree, tree.Declaring(t, "resource", "kubernetes_secret", "storage_vars"), volumes) {
 		t.Errorf("the storage the driver is told to keep volumes in is not %q, which is the one the hypervisor makes for it and grants it", volumes)
 	}
 }
@@ -359,37 +340,63 @@ func TestTheStorageDriversNamesAreTheSameWhereverTheyAreWritten(t *testing.T) {
 // budgets a hypervisor's memory before anything is built. If the two drift,
 // the budget passes a site its host cannot hold, or refuses one it can.
 func TestAMachinesMemoryIsTheSameWhereItIsMadeAndWhereItIsBudgeted(t *testing.T) {
-	given := regexp.MustCompile(`dedicated\s*=\s*(\d+)`)
-	givenByLocal := regexp.MustCompile(`dedicated\s*=\s*local\.(\w+)\.memory\b`)
-	localMemory := regexp.MustCompile(`\n\s*memory\s*=\s*(\d+)`)
+	tree := repository(t)
 	for resource, role := range map[string]config.MachineRole{
 		"talos_cp": config.ControlPlane, "talos_worker": config.Worker, "dmz": config.Untrusted,
 	} {
-		_, body := tofuDeclaring(t, `resource "proxmox_virtual_environment_vm" "`+resource+`"`)
-		_, block, found := strings.Cut(body, `resource "proxmox_virtual_environment_vm" "`+resource+`"`)
-		if !found {
-			t.Fatalf("the machine %s is not declared where it was found", resource)
+		machine := tree.Declaring(t, "resource", "proxmox_virtual_environment_vm", resource)
+		given := parsed.Attribute(machine.Body, "memory", "dedicated")
+		if given == nil {
+			t.Fatalf("the machine %s is given no memory", resource)
 		}
-		if next := strings.Index(block, "\nresource "); next >= 0 {
-			block = block[:next]
-		}
-		m := given.FindStringSubmatch(block)
 		// A machine whose size is also what rebuilds it reads its memory from
 		// a local both share (the zone's machine): the figure is there.
-		if r := givenByLocal.FindStringSubmatch(block); m == nil && r != nil {
-			if _, object, found := strings.Cut(body, "\n  "+r[1]+" = {"); found {
-				object, _, _ = strings.Cut(object, "\n  }")
-				m = localMemory.FindStringSubmatch(object)
-			}
+		v, ok := parsed.Literal(tree.Resolve(t, machine.Dir(), given.Expr))
+		if !ok || v.IsNull() || v.Type() != cty.Number {
+			t.Fatalf("the machine %s is given memory that is not a figure written out: %s", resource, tree.Source(t, given.Expr))
 		}
-		if m == nil {
-			t.Fatalf("the machine %s is given no memory this can read", resource)
-		}
-		mebibytes, _ := strconv.ParseInt(m[1], 10, 64)
+		mebibytes, _ := v.AsBigFloat().Int64()
 		if made, budgeted := mebibytes<<20, config.MemoryOf[role]; made != budgeted {
 			t.Errorf("a %s is made with %d MiB and budgeted at %d MiB. The budget is what refuses a site its host cannot hold, and it is holding the wrong figure", role, made>>20, budgeted>>20)
 		}
 	}
+}
+
+// writesTemplate says whether a block writes a string that is this template
+// - the same text and the same references, in the same order - itself or in
+// a local value it reads. The template given is the program's own spelling
+// of the name, with the references the OpenTofu fills it from.
+func writesTemplate(t *testing.T, tree *parsed.Tree, b parsed.Block, want string) bool {
+	t.Helper()
+	wantExpr, diags := hclsyntax.ParseTemplate([]byte(want), "the program's spelling", hcl.InitialPos)
+	if diags.HasErrors() {
+		t.Fatalf("%q is not a template: %s", want, diags.Error())
+	}
+	wantParts, ok := templateParts(wantExpr)
+	if !ok {
+		t.Fatalf("%q is not a template this reads", want)
+	}
+	found := false
+	var look func(n hclsyntax.Node)
+	look = func(n hclsyntax.Node) {
+		_ = hclsyntax.VisitAll(n, func(n hclsyntax.Node) hcl.Diagnostics {
+			switch e := n.(type) {
+			case *hclsyntax.TemplateExpr:
+				if parts, ok := templateParts(e); ok && slices.Equal(parts, wantParts) {
+					found = true
+				}
+			case *hclsyntax.ScopeTraversalExpr:
+				if e.Traversal.RootName() == "local" && len(e.Traversal) >= 2 {
+					if into := tree.Resolve(t, b.Dir(), &hclsyntax.ScopeTraversalExpr{Traversal: e.Traversal[:2], SrcRange: e.SrcRange}); into != hclsyntax.Expression(e) {
+						look(into)
+					}
+				}
+			}
+			return nil
+		})
+	}
+	look(b.Block)
+	return found
 }
 
 // A second hypervisor reopens how idle capacity is lent.
@@ -409,9 +416,7 @@ func TestASecondHypervisorReopensHowIdleCapacityIsLent(t *testing.T) {
 	// Read as the program reads it, so this is not a second idea of what
 	// the config holds.
 	var template config.Config
-	if err := json.Unmarshal([]byte(readRepoFile(t, "config/management.tpl.json")), &template); err != nil {
-		t.Fatalf("the config template is not JSON this reads: %v", err)
-	}
+	repository(t).JSONInto(t, "config/management.tpl.json", &template)
 	if len(template.Sites) == 0 {
 		t.Fatal("the config template declares no site, so this looked at nothing")
 	}

@@ -117,6 +117,11 @@ unprovable:
     reason: meta
   - path: tests/go/repo/preconditions_are_called_test.go
     reason: meta
+  # The no-text guard's own table: each way a guard could read the
+  # repository is a case in it that must be refused, so the table is the
+  # proof, and the guard itself is proved by the ledger.
+  - test: TestTextReadsFindsEveryWayAGuardCouldReadTheRepository
+    reason: meta
   # A check on a declaration list rather than on the estate: it asserts that
   # every declared retry implementation still exists, so mutating what it reads
   # means mutating another guard's declaration, which that guard's own entry

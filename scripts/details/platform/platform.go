@@ -202,15 +202,18 @@ func ParsePin(line string) (Pin, error) {
 	return Pin{Version: m[1], Digest: m[2]}, nil
 }
 
+// Line is a site's entry in the versions file, as the file is written.
+type Line struct {
+	Platform string `json:"platform"`
+}
+
 // Pins reads every site's line.
 func Pins(repoRoot string) (map[string]Pin, error) {
 	raw, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(VersionsFile)))
 	if err != nil {
 		return nil, fmt.Errorf("reading which version of the platform each site runs: %w", err)
 	}
-	var sites map[string]struct {
-		Platform string `json:"platform"`
-	}
+	var sites map[string]Line
 	dec := json.NewDecoder(strings.NewReader(string(raw)))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&sites); err != nil {
