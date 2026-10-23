@@ -702,8 +702,9 @@ runs a build, a converge and a teardown through the real phases with `tofu`,
 `op`, `age` and `rclone` replaced on PATH by programs that log what they were
 asked. It asserts what reaches tofu and in which root, not what a phase
 prints. A phase added to a verb has to be run there or declared not to be.
-`plan_unbuilt_test.go` plans both roots from nothing with the real providers
-and a stand-in for every vault value.
+`steps.PlanUnbuilt` plans both roots from nothing with the real providers
+and a stand-in for every vault value; its test holds the plan to that, and
+the configuration rules judge OpenTofu on the plan it makes.
 
 Coverage is a ratchet, not a threshold: `tests/coverage-baseline.json` is a
 floor a pull request may not drop below and is free to leave alone.

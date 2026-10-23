@@ -1,4 +1,4 @@
-package phases
+package steps
 
 import (
 	"errors"
@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"homelab/contractor/config"
-	"homelab/contractor/steps"
 	"homelab/details/asbuilt"
 	"homelab/details/repopath"
 )
@@ -45,7 +44,7 @@ func TestEveryRootPlansFromNothingAndKeysNoResourceByAVaultValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plans, err := steps.PlanUnbuilt(repo, site)
+	plans, err := PlanUnbuilt(repo, site)
 	if err != nil {
 		t.Fatal(err)
 	}
