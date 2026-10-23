@@ -1,0 +1,9 @@
+guard: TestTheWorkstationIsProvisionedOntoTheOverlay
+file: workstation/provision.yml
+find: '"tailscale up --auth-key='
+replace: '"tailscale login --auth-key='
+mentions: "never joins the overlay"
+why: >
+  The workstation logs in to the tailnet and never brings the connection
+  up, so it has an identity on the overlay and no route over it. Every
+  build then hangs on a hypervisor address the LAN gateway black-holes.

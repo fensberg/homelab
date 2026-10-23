@@ -1,0 +1,8 @@
+guard: TestTheWorkstationIsProvisionedOntoTheOverlay
+file: workstation/provision.yml
+find: "echo \\\"deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com"
+replace: "echo \\\"deb https://pkgs.tailscale.com"
+mentions: "not installed from its signed apt repository"
+why: >
+  The source line names the right repository and no key, so apt takes the
+  client from it without checking who signed it.

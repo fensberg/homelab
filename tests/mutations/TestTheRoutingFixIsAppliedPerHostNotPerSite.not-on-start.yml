@@ -1,0 +1,10 @@
+guard: TestTheRoutingFixIsAppliedPerHostNotPerSite
+file: management/hypervisor/hypervisor-prep.yml
+find: "ExecStartPost=/bin/sh -c 'ip rule list"
+replace: "ExecStopPost=/bin/sh -c 'ip rule list"
+mentions: "does not survive a daemon restart"
+why: >
+  The drop-in still exists and still adds the rule, but when the daemon
+  stops rather than when it starts. The running host has the rule from the
+  task that applies it now; the next restart of the daemon loses it, and
+  nothing reports that the host has left the overlay.

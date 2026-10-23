@@ -1,12 +1,13 @@
 package repo
 
 import (
-	"homelab/tests/parsed"
-	"regexp"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
+
+	"homelab/tests/parsed"
 )
 
 // The hypervisor's network configuration has two properties that a night of
@@ -28,34 +29,79 @@ import (
 // priority is indistinguishable from no rule at all, and the failure it
 // produces looks like a broken cluster rather than a routing rule.
 func TestMarkedRepliesReachTheLocalTable(t *testing.T) {
-	body := readHypervisorPlaybook(t)
+	for _, p := range localTableRuleProblems(hypervisorCommands(t)) {
+		t.Error(p)
+	}
+}
 
-	if !strings.Contains(body, "fwmark 0x80000/0xff0000 lookup local") {
-		t.Fatal("the playbook no longer adds a rule sending the overlay daemon's " +
+// overlayFirstRule is the priority of the overlay's own first rule.
+const overlayFirstRule = 5210
+
+// ipRule is an `ip rule add` a command runs: its priority, the mark it
+// matches and the table it looks up.
+type ipRule struct {
+	pref          int
+	fwmark, table string
+}
+
+// ipRuleOf is the rule a command adds, when it adds one.
+func ipRuleOf(c parsed.Command) (ipRule, bool) {
+	w := c.Words
+	if len(w) < 3 || w[0] != "ip" || w[1] != "rule" || w[2] != "add" {
+		return ipRule{}, false
+	}
+	r := ipRule{pref: -1}
+	for i := 3; i+1 < len(w); i++ {
+		switch w[i] {
+		case "pref", "priority", "preference":
+			if n, err := strconv.Atoi(w[i+1]); err == nil {
+				r.pref = n
+			}
+		case "fwmark":
+			r.fwmark = w[i+1]
+		case "lookup", "table":
+			r.table = w[i+1]
+		}
+	}
+	return r, true
+}
+
+// overlayMark is the mark the overlay puts on what its daemon sends.
+const overlayMark = "0x80000/0xff0000"
+
+// localTableRules is each rule a set of commands adds that sends the
+// overlay's marked replies to the local table.
+func localTableRules(commands []parsed.Command) []ipRule {
+	var out []ipRule
+	for _, c := range commands {
+		if r, ok := ipRuleOf(c); ok && r.fwmark == overlayMark && r.table == "local" {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// localTableRuleProblems is what is wrong with the rule that sends the
+// overlay's marked replies to the local table: that nothing adds it, or
+// that it is added where the overlay's own rules come first.
+func localTableRuleProblems(commands []parsed.Command) []string {
+	rules := localTableRules(commands)
+	if len(rules) == 0 {
+		return []string{"the playbook no longer adds a rule sending the overlay daemon's " +
 			"own marked replies to the local table.\n" +
 			"Without it a marked reply is routed to a table with no local route " +
-			"and never reaches the socket, and the host silently leaves the overlay.")
+			"and never reaches the socket, and the host silently leaves the overlay."}
 	}
-
-	// The priority has to be below the overlay's own rules, which start at
-	// 5210. Above them, the reply is matched and discarded before this rule
-	// is ever consulted.
-	pref := regexp.MustCompile(`pref (\d+) from all fwmark 0x80000/0xff0000 lookup local`)
-	m := pref.FindStringSubmatch(body)
-	if m == nil {
-		t.Fatal("the local-table rule is present but its priority could not be read")
+	var out []string
+	for _, r := range rules {
+		if r.pref < 0 || r.pref >= overlayFirstRule {
+			out = append(out, fmt.Sprintf("the local-table rule is at priority %d, which is not before the "+
+				"overlay's own rules at %d.\n"+
+				"A marked reply is matched by those first and discarded, so this rule "+
+				"never runs and the host leaves the overlay.", r.pref, overlayFirstRule))
+		}
 	}
-	got, err := strconv.Atoi(m[1])
-	if err != nil {
-		t.Fatalf("unreadable priority %q: %v", m[1], err)
-	}
-	const overlayFirstRule = 5210
-	if got >= overlayFirstRule {
-		t.Errorf("the local-table rule is at priority %d, which is not before the "+
-			"overlay's own rules at %d.\n"+
-			"A marked reply is matched by those first and discarded, so this rule "+
-			"never runs and the host leaves the overlay.", got, overlayFirstRule)
-	}
+	return out
 }
 
 // Every hypervisor has this collision, not just the first one.
@@ -65,20 +111,46 @@ func TestMarkedRepliesReachTheLocalTable(t *testing.T) {
 // playbook rather than recorded once against one machine - which is what makes
 // it survive a second hypervisor in this site, or a second site entirely.
 func TestTheRoutingFixIsAppliedPerHostNotPerSite(t *testing.T) {
-	body := readHypervisorPlaybook(t)
+	if !restartsWithTheRule(t, hypervisorPlay(t)) {
+		t.Error("the routing fix does not survive a daemon restart: no drop-in for tailscaled " +
+			"adds the local-table rule when the daemon starts.\n" +
+			"Applied only to the running host, it is lost on the next restart and " +
+			"the host leaves the overlay with nothing reporting it.")
+	}
+}
 
-	// It is applied both to the running daemon and by a drop-in, so a restart
-	// or a crash does not silently drop the host off the overlay.
-	for _, want := range []string{
-		"tailscaled.service.d",
-		"ExecStartPost=",
-	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("the routing fix does not survive a daemon restart: %q is absent.\n"+
-				"Applied only to the running host, it is lost on the next restart and "+
-				"the host leaves the overlay with nothing reporting it.", want)
+// overlayDaemonDropIns is where a drop-in for the overlay's daemon is written.
+const overlayDaemonDropIns = "/etc/systemd/system/tailscaled.service.d/"
+
+// restartsWithTheRule says whether the play writes a drop-in for the
+// overlay's daemon whose ExecStartPost adds the local-table rule, so that
+// every start of the daemon puts it back.
+func restartsWithTheRule(t *testing.T, play parsed.Play) bool {
+	t.Helper()
+	for _, task := range play.Tasks {
+		dest, content, ok := task.Writes()
+		if !ok || !strings.HasPrefix(dest, overlayDaemonDropIns) {
+			continue
+		}
+		settings, err := parsed.UnitOf(content)
+		if err != nil {
+			t.Fatalf("%s writes %s, which is not a unit: %v", task.Name, dest, err)
+		}
+		var onStart []parsed.Setting
+		for _, s := range settings {
+			if s.Section == "Service" && s.Key == "ExecStartPost" {
+				onStart = append(onStart, s)
+			}
+		}
+		commands, err := parsed.UnitCommands(task.Name, onStart)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(localTableRules(commands)) > 0 {
+			return true
 		}
 	}
+	return false
 }
 
 // IPv6 must be absent rather than half-present.
@@ -87,24 +159,91 @@ func TestTheRoutingFixIsAppliedPerHostNotPerSite(t *testing.T) {
 // clients see an IPv6-capable host, prefer it, and fail with EADDRNOTAVAIL.
 // That took the overlay's control plane down for hours.
 func TestIPv6IsDisabledAtTheStack(t *testing.T) {
-	body := readHypervisorPlaybook(t)
-	for _, want := range []string{
-		"net.ipv6.conf.all.disable_ipv6",
-		"net.ipv6.conf.default.disable_ipv6",
-	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("%s is no longer set.\n"+
+	set := kernelSettings(hypervisorPlay(t))
+	for _, want := range []string{"net.ipv6.conf.all.disable_ipv6", "net.ipv6.conf.default.disable_ipv6"} {
+		if set[want] != "1" {
+			t.Errorf("%s is not set to 1.\n"+
 				"An enabled IPv6 stack with no addresses makes clients prefer a family "+
 				"they cannot send from; the absence has to be honest.", want)
 		}
 	}
 }
 
-// readHypervisorPlaybook is every value the hypervisor playbook holds, one
-// to a line: what its tasks run and write, and none of what its comments say.
-func readHypervisorPlaybook(t *testing.T) string {
+// kernelSettings is every kernel setting a play's sysctl tasks set, and to
+// what: a task naming one, or naming {{ item }} over a loop of them.
+func kernelSettings(play parsed.Play) map[string]string {
+	out := map[string]string{}
+	for _, task := range play.Tasks {
+		if !task.Is("sysctl") {
+			continue
+		}
+		name, _ := task.Args["name"].(string)
+		value := fmt.Sprint(task.Args["value"])
+		names := []string{name}
+		if strings.Contains(name, "{{") {
+			names = nil
+			if slices.Equal(parsed.JinjaNames(name), []string{"item"}) {
+				for _, item := range task.Loop {
+					if s, ok := item.(string); ok {
+						names = append(names, s)
+					}
+				}
+			}
+		}
+		for _, n := range names {
+			out[n] = value
+		}
+	}
+	return out
+}
+
+// The rule is read from the commands that add it, whatever order its
+// words come in, and judged by where it sits against the overlay's own.
+func TestTheLocalTableRuleIsJudgedByThePlaceItIsAddedAt(t *testing.T) {
+	command := func(line string) []parsed.Command {
+		c, err := parsed.TemplateCommands("fixture", line)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	for name, c := range map[string]struct {
+		line string
+		want string
+	}{
+		"before the overlay":     {"ip rule add pref 5200 from all fwmark 0x80000/0xff0000 lookup local", ""},
+		"words in another order": {"ip rule add fwmark 0x80000/0xff0000 table local priority 5100", ""},
+		"after the overlay":      {"ip rule add pref 5300 from all fwmark 0x80000/0xff0000 lookup local", "not before the overlay's own rules"},
+		"with no priority":       {"ip rule add from all fwmark 0x80000/0xff0000 lookup local", "not before the overlay's own rules"},
+		"another table":          {"ip rule add pref 5200 from all fwmark 0x80000/0xff0000 lookup main", "no longer adds a rule"},
+		"listed, not added":      {"ip rule list pref 5200 fwmark 0x80000/0xff0000 lookup local", "no longer adds a rule"},
+	} {
+		got := strings.Join(localTableRuleProblems(command(c.line)), "|")
+		if (c.want == "") != (got == "") || !strings.Contains(got, c.want) {
+			t.Errorf("%s: got %q, want %q", name, got, c.want)
+		}
+	}
+}
+
+// hypervisorPlay is the hypervisor playbook's one play.
+func hypervisorPlay(t *testing.T) parsed.Play {
 	t.Helper()
-	return strings.Join(parsed.Values(repository(t).YAMLDocuments(t, hypervisorPlaybook)), "\n")
+	plays := repository(t).Playbook(t, hypervisorPlaybook)
+	if len(plays) != 1 {
+		t.Fatalf("%s holds %d plays, and this reads its one", hypervisorPlaybook, len(plays))
+	}
+	return plays[0]
+}
+
+// hypervisorCommands is every command the hypervisor's play runs or
+// installs to be run.
+func hypervisorCommands(t *testing.T) []parsed.Command {
+	t.Helper()
+	commands, err := hypervisorPlay(t).Commands()
+	if err != nil {
+		t.Fatalf("%s: %v", hypervisorPlaybook, err)
+	}
+	return commands
 }
 
 // Signing has to be set up by the setup script, not by a chat message.

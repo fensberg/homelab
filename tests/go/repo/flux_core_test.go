@@ -139,10 +139,11 @@ func (l fluxLayout) problems(files map[string][]any) []string {
 		if topOf(rel) != l.core || strings.HasPrefix(rel, l.vendored) && filepath.Base(rel) != applications.Kustomization && filepath.Base(rel) != "gotk-sync.yaml" {
 			continue
 		}
-		values := parsed.Values(body)
+		values := parsed.Scalars(body)
 		for _, site := range l.sites {
 			names := regexp.MustCompile(`(^|[^A-Za-z0-9_])` + regexp.QuoteMeta(site) + `($|[^A-Za-z0-9_])`).MatchString
-			if slices.ContainsFunc(values, names) {
+			// A value naming the site, or a key on the way to one.
+			if slices.ContainsFunc(values, func(v parsed.Scalar) bool { return names(v.Value) || slices.ContainsFunc(v.Path, names) }) {
 				out = append(out, fmt.Sprintf("%s names %s. The core is what every site runs, written once: what differs by site is a variable Flux fills in from the site's own cluster-vars (${SITE}), or belongs in %s/%s/.", rel, site, fluxTree, site))
 			}
 		}

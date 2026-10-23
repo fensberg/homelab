@@ -1,0 +1,435 @@
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index d88e366c..b324decb 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -35,7 +35,7 @@ permissions: read-all
+ # the Meta-tests lane runs only them, both through this variable, so a test
+ # cannot be dropped by the two lists disagreeing.
+ env:
+-  META_TESTS: "^(TestTheLedgerProvesEachGuardFailsWhenItShould|TestNoTestIsSatisfiedByAComment)$"
++  META_TESTS: "^(TestTheLedgerProvesEachGuardFailsWhenItShould)$"
+ 
+ # Cancel in-progress runs if a new commit is pushed to the PR
+ concurrency:
+@@ -892,13 +892,13 @@ jobs:
+     # exactly what the pull request already tested (already-tested).
+     needs: already-tested
+     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
+-    name: "Meta-tests (${{ matrix.part == 0 && 'comment stripping' || format('mutation ledger, part {0}', matrix.part) }})"
++    name: "Meta-tests (mutation ledger, part ${{ matrix.part }})"
+     runs-on: pr-builds-${{ vars.pull_request_runners_site }}
+-    # Part 0 runs the comment test and the others share the ledger's proofs,
+-    # each in a job of its own. One job, it ran past ten minutes. Each job
+-    # learns which part it is from GitHub's own count (META_PART, below), so
+-    # no number written here can come to disagree with how many parts there
+-    # are, and a proof falls in exactly one of them.
++    # The parts share the ledger's proofs, each in a job of its own. One job,
++    # it ran past ten minutes. Each job learns which part it is from GitHub's
++    # own count (META_PART, below), so no number written here can come to
++    # disagree with how many parts there are, and a proof falls in exactly
++    # one of them.
+     #
+     # Four ledger parts, not sixteen. On GitHub's runners a part was free and
+     # sixteen ran at once. In the builds pool four run at once, so more parts
+@@ -906,7 +906,7 @@ jobs:
+     strategy:
+       fail-fast: false
+       matrix:
+-        part: [0, 1, 2, 3, 4]
++        part: [0, 1, 2, 3]
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows. Above the tests' own
+     # bound below, so that a slow run is reported by Go, naming the test,
+@@ -962,11 +962,10 @@ jobs:
+         # the configuration rules themselves (TestOnlyTheSelectorsReadTheInput).
+         run: scripts/take-delivery.sh opentofu kustomize conftest opa semgrep
+ 
+-      # The two tests that prove the other tests: the mutation ledger breaks
+-      # each guarded file and checks its guard fails, and the comment test
+-      # strips every comment and re-runs the guards to prove none is satisfied
+-      # by prose. Each re-runs a large part of the tier, so together they were
+-      # about half its time, and here they run beside it instead of after it.
++      # The test that proves the other tests: the mutation ledger breaks each
++      # guarded file and checks its guard fails. It re-runs a large part of
++      # the tier, so it was about half its time, and here it runs beside it
++      # instead of after it.
+       - name: Prove the guards fail when they should
+         working-directory: tests/go
+         env:
+diff --git a/tests/go/repo/mutation_ledger_test.go b/tests/go/repo/mutation_ledger_test.go
+index 7473b487..5de7bb17 100644
+--- a/tests/go/repo/mutation_ledger_test.go
++++ b/tests/go/repo/mutation_ledger_test.go
+@@ -6,7 +6,6 @@ import (
+ 	"os"
+ 	"path/filepath"
+ 	"regexp"
+-	"sort"
+ 	"strconv"
+ 	"strings"
+ 	"sync"
+@@ -42,12 +41,8 @@ import (
+ type mutation = parsed.Proof
+ 
+ type ledger struct {
+-	Floor            int        `yaml:"floor"`
+-	Mutations        []mutation `yaml:"mutations"`
+-	CommentDependent []struct {
+-		Test   string `yaml:"test"`
+-		Reason string `yaml:"reason"`
+-	} `yaml:"comment_dependent"`
++	Floor     int        `yaml:"floor"`
++	Mutations []mutation `yaml:"mutations"`
+ }
+ 
+ // applicationLedger is where an application keeps the proofs that are about
+@@ -225,9 +220,6 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
+ 	heavy(t, "a check on the checks: it copies the repository and runs a guard per mutation, side by side")
+ 
+ 	part := readMetaPartOrFail(t)
+-	if !part.provesAny() {
+-		t.Skipf("this is part %d of %d of the meta lane, which is the comment test's; the ledger's proofs are in the others", part.index, part.total)
+-	}
+ 
+ 	l := readLedger(t)
+ 
+@@ -425,9 +417,8 @@ func TestRefusedByReadsTheRuleFromEachHarnesssReport(t *testing.T) {
+ 
+ // metaPartEnv says which of the meta lane's jobs this is, as "<index>/<total>"
+ // - GitHub's own count of the jobs it made from one definition, so no number
+-// is written down that could stop matching how many there are. Part 0 runs
+-// the comment test; parts 1 to total-1 share the ledger's proofs. Unset, as at
+-// a terminal or on the nightly run, one run is the whole of both.
++// is written down that could stop matching how many there are. The parts
++// share the ledger's proofs. Unset, as at a terminal, one run is all of them.
+ const metaPartEnv = "META_PART"
+ 
+ // metaPart is which part of the meta lane a run is. The zero value is the
+@@ -442,7 +433,7 @@ func readMetaPart(value string) (metaPart, error) {
+ 	index, errI := strconv.Atoi(i)
+ 	total, errN := strconv.Atoi(n)
+ 	if !ok || errI != nil || errN != nil || total < 2 || index < 0 || index >= total {
+-		return metaPart{}, fmt.Errorf("%s is %q, which is not a part of the meta lane: it is <index>/<total>, with at least two parts, part 0 the comment test's", metaPartEnv, value)
++		return metaPart{}, fmt.Errorf("%s is %q, which is not a part of the meta lane: it is <index>/<total>, with at least two parts", metaPartEnv, value)
+ 	}
+ 	return metaPart{index, total}, nil
+ }
+@@ -460,23 +451,16 @@ func readMetaPartOrFail(t *testing.T) metaPart {
+ 
+ func (p metaPart) whole() bool { return p.total == 0 }
+ 
+-func (p metaPart) runsComments() bool { return p.whole() || p.index == 0 }
+-
+-func (p metaPart) provesAny() bool { return p.whole() || p.index > 0 }
+-
+ // proves reports whether this part proves the proof written at source. Each
+-// proof falls in exactly one of parts 1 to total-1, by a hash of where it is
+-// written, so a proof added or removed moves no other.
++// proof falls in exactly one part, by a hash of where it is written, so a
++// proof added or removed moves no other.
+ func (p metaPart) proves(source string) bool {
+ 	if p.whole() {
+ 		return true
+ 	}
+-	if p.index == 0 {
+-		return false
+-	}
+ 	h := fnv.New32a()
+ 	h.Write([]byte(source))
+-	return int(h.Sum32()%uint32(p.total-1)) == p.index-1
++	return int(h.Sum32()%uint32(p.total)) == p.index
+ }
+ 
+ func TestReadMetaPartTakesOnlyAPartItCanPlace(t *testing.T) {
+@@ -503,24 +487,21 @@ func TestReadMetaPartTakesOnlyAPartItCanPlace(t *testing.T) {
+ 
+ func TestEveryProofFallsInExactlyOnePartOfTheLedger(t *testing.T) {
+ 	sources := []string{"TestA.1.yml", "TestA.2.yml", "TestB.x.yml", "modules/applications/a/tests/mutations.yml#0", "", "TestC.long-name-of-a-proof.yml"}
+-	for _, total := range []int{2, 5, 17} {
++	for _, total := range []int{2, 4, 17} {
+ 		for _, s := range sources {
+-			if (metaPart{0, total}).proves(s) {
+-				t.Errorf("part 0 of %d, the comment test's, proves %q", total, s)
+-			}
+ 			held := 0
+-			for i := 1; i < total; i++ {
++			for i := 0; i < total; i++ {
+ 				if (metaPart{i, total}).proves(s) {
+ 					held++
+ 				}
+ 			}
+ 			if held != 1 {
+-				t.Errorf("%q falls in %d of the %d ledger parts, not one", s, held, total-1)
++				t.Errorf("%q falls in %d of the %d ledger parts, not one", s, held, total)
+ 			}
+ 		}
+ 	}
+-	if !(metaPart{}).proves("TestA.1.yml") || !(metaPart{}).runsComments() {
+-		t.Error("the whole of the meta lane does not run everything")
++	if !(metaPart{}).proves("TestA.1.yml") {
++		t.Error("the whole of the meta lane does not prove everything")
+ 	}
+ }
+ 
+@@ -531,100 +512,6 @@ type unbrokenRun struct {
+ 	output string
+ }
+ 
+-// Nothing may be satisfied by a comment.
+-//
+-// A guard that matches a string anywhere in a file can be satisfied by the
+-// prose explaining the thing rather than by the thing. That has happened twice
+-// here - most recently a tripwire check satisfied by the comment ABOVE the step
+-// it was meant to be asserting, so deleting the step passed.
+-//
+-// This strips every whole-line comment from the configuration and workflows the
+-// guards read, and requires every test that passed to still pass. Only
+-// whole-line comments: a `#` inside a quoted value is not a comment, and
+-// stripping it would break the file rather than test anything.
+-func TestNoTestIsSatisfiedByAComment(t *testing.T) {
+-	skipIfInner(t)
+-	heavy(t, "a check on the checks: it re-runs the whole package with comments stripped, about a minute")
+-	if part := readMetaPartOrFail(t); !part.runsComments() {
+-		t.Skipf("this is part %d of %d of the meta lane, which proves a share of the ledger; the comment test is part 0", part.index, part.total)
+-	}
+-
+-	l := readLedger(t)
+-	exempt := map[string]string{}
+-	for _, e := range l.CommentDependent {
+-		if strings.TrimSpace(e.Reason) == "" {
+-			t.Errorf("%s is exempt from the comment check with no reason given", e.Test)
+-		}
+-		exempt[e.Test] = e.Reason
+-	}
+-
+-	bin := testBinary(t)
+-	// scratchRepo materialises the tree as it will be and removes the
+-	// patches, which matters twice over here: an outstanding patch's context
+-	// lines include comments, so it would not apply to a comment-stripped file
+-	// and every workflow guard would fail for that reason instead of the one
+-	// being tested.
+-	before := scratchRepo(t)
+-	baseline := runAll(t, bin, before)
+-
+-	after := scratchRepo(t)
+-	stripped := stripComments(t, after)
+-	if stripped == 0 {
+-		t.Fatal("no comment was stripped from anything, so this test compared a tree " +
+-			"with itself and proved nothing")
+-	}
+-
+-	for _, name := range satisfiedByProse(baseline, runAll(t, bin, after), exempt) {
+-		t.Errorf("%s passes with comments and fails without them, so a comment "+
+-			"was satisfying it rather than the thing it is meant to be "+
+-			"asserting.\n\n"+
+-			"Anchor the assertion to structure a comment cannot reach - "+
+-			"indentation, a parsed key, a resolved path. If it genuinely means to "+
+-			"read prose, say so in comment_dependent: in tests/mutations.yml with "+
+-			"a reason.", name)
+-	}
+-}
+-
+-// satisfiedByProse names the tests that flipped from passing to failing when
+-// the comments went.
+-//
+-// Split out from the plumbing so it can be shown saying no as well as yes -
+-// the same split scripts/attestation makes, for the same reason. A decision
+-// that only ever runs against the real repository has never been demonstrated
+-// to reject anything.
+-//
+-// Only a pass -> fail flip counts. A test already failing on the unmodified
+-// tree is failing for some other reason, and reporting it here would blame a
+-// comment for it.
+-func satisfiedByProse(baseline, stripped map[string]bool, exempt map[string]string) []string {
+-	var out []string
+-	for name, passedBefore := range baseline {
+-		if !passedBefore {
+-			continue
+-		}
+-		passedAfter, ran := stripped[name]
+-		if !ran || passedAfter {
+-			continue
+-		}
+-		if _, ok := exempt[name]; ok {
+-			continue
+-		}
+-		out = append(out, name)
+-	}
+-	sort.Strings(out)
+-	return out
+-}
+-
+-// runAll returns each test's verdict, by name.
+-func runAll(t *testing.T, bin string, tree *parsed.Tree) map[string]bool {
+-	t.Helper()
+-	verdicts, out := allVerdicts(bin, tree)
+-	if len(verdicts) == 0 {
+-		t.Fatalf("no test verdict was parsed from the run in %s:\n%s", tree, out)
+-	}
+-	return verdicts
+-}
+-
+ // allVerdicts is runAll with nothing of the test in it, so that two runs
+ // can be made side by side: a test may only be failed from its own
+ // goroutine.
+@@ -716,73 +603,6 @@ func field(line, prefix string) string {
+ 	return rest
+ }
+ 
+-// stripComments removes whole-line `#` comments from the files the guards read,
+-// and reports how many lines went.
+-func stripComments(t *testing.T, scratch *parsed.Tree) int {
+-	t.Helper()
+-	return scratch.StripYAMLComments(t)
+-}
+-
+-// The comment check's decision, shown saying no as well as yes.
+-//
+-// Running it only against the real repository demonstrates that it does not
+-// fire today, which is not the same as demonstrating it would.
+-func TestSatisfiedByProseOnlyNamesAPassToFailFlip(t *testing.T) {
+-	cases := []struct {
+-		name     string
+-		baseline map[string]bool
+-		stripped map[string]bool
+-		exempt   map[string]string
+-		want     []string
+-	}{
+-		{
+-			name:     "a test satisfied by a comment flips and is named",
+-			baseline: map[string]bool{"TestReadsProse": true},
+-			stripped: map[string]bool{"TestReadsProse": false},
+-			want:     []string{"TestReadsProse"},
+-		},
+-		{
+-			name:     "a test that was already failing is not blamed on a comment",
+-			baseline: map[string]bool{"TestBroken": false},
+-			stripped: map[string]bool{"TestBroken": false},
+-			want:     nil,
+-		},
+-		{
+-			name:     "a test that passes either way is not named",
+-			baseline: map[string]bool{"TestAnchored": true},
+-			stripped: map[string]bool{"TestAnchored": true},
+-			want:     nil,
+-		},
+-		{
+-			name:     "an exempt test is not named",
+-			baseline: map[string]bool{"TestReadsProse": true},
+-			stripped: map[string]bool{"TestReadsProse": false},
+-			exempt:   map[string]string{"TestReadsProse": "it asserts a documented reason"},
+-			want:     nil,
+-		},
+-		{
+-			name:     "a test that did not run in the second pass is not named",
+-			baseline: map[string]bool{"TestVanished": true},
+-			stripped: map[string]bool{},
+-			want:     nil,
+-		},
+-	}
+-
+-	for _, c := range cases {
+-		t.Run(c.name, func(t *testing.T) {
+-			got := satisfiedByProse(c.baseline, c.stripped, c.exempt)
+-			if len(got) != len(c.want) {
+-				t.Fatalf("got %v, want %v", got, c.want)
+-			}
+-			for i := range got {
+-				if got[i] != c.want[i] {
+-					t.Errorf("got %v, want %v", got, c.want)
+-				}
+-			}
+-		})
+-	}
+-}
+-
+ // placeProblems is everything wrong with a ledger entry that can be told
+ // without running its guard: a field it lacks, Go source it may not judge, a
+ // file that is not where it says or already is where it would plant one, and
+diff --git a/tests/mutations/TestHeavyGuardsRunOnEveryPullRequest.139f9741.yml b/tests/mutations/TestHeavyGuardsRunOnEveryPullRequest.139f9741.yml
+index cbc9ac53..e9a530d4 100644
+--- a/tests/mutations/TestHeavyGuardsRunOnEveryPullRequest.139f9741.yml
++++ b/tests/mutations/TestHeavyGuardsRunOnEveryPullRequest.139f9741.yml
+@@ -1,10 +1,10 @@
+ guard: TestHeavyGuardsRunOnEveryPullRequest
+ file: .github/workflows/pr-validation.yml
+-find: "TestNoTestIsSatisfiedByAComment)$"
+-replace: "TestNoTestIsSatisfiedByComments)$"
++find: "TestTheLedgerProvesEachGuardFailsWhenItShould)$"
++replace: "TestTheLedgerProvesEachGuardFailsWhenItShoud)$"
+ mentions: "which is not a test in tests/go/repo"
+ why: >
+   The meta-tests run in their own lane, named by META_TESTS. A misspelt
+   name is skipped by the invariants lane and matched by nothing in the
+   meta lane, and `go test -run` with no match passes. So a typo would
+-  switch off the comment-stripping re-run with every lane green.
++  switch off the mutation ledger with every lane green.
+diff --git a/tests/go/parsed/proofs.go b/tests/go/parsed/proofs.go
+index 935a11fa..49a3fe3c 100644
+--- a/tests/go/parsed/proofs.go
++++ b/tests/go/parsed/proofs.go
+@@ -140,31 +140,3 @@ func (r *Tree) Apply(t testing.TB, p Proof) bool {
+ // Inner reports whether this run is one a meta test started against a
+ // scratch tree: the guards run, the harness does not.
+ func Inner() bool { return os.Getenv(RootEnv) != "" }
+-
+-// StripYAMLComments takes every whole-line comment out of a scratch tree's
+-// workflows, its scripts' YAML, the pre-commit configuration and the
+-// taskfile - the configuration the guards read - so a meta test can ask
+-// which guards a comment was satisfying, and says how many it took.
+-func (r *Tree) StripYAMLComments(t testing.TB) int {
+-	t.Helper()
+-	r.mustBeScratch(t, "strip")
+-	removed := 0
+-	for _, rel := range r.Files(t) {
+-		yml := strings.HasSuffix(rel, ".yml") || strings.HasSuffix(rel, ".yaml")
+-		read := strings.HasPrefix(rel, ".github/workflows/") || strings.HasPrefix(rel, "scripts/") ||
+-			rel == ".pre-commit-config.yaml" || rel == "taskfile.yml"
+-		if !yml || !read {
+-			continue
+-		}
+-		var kept []string
+-		for _, line := range strings.Split(string(r.read(t, rel)), "\n") {
+-			if strings.HasPrefix(strings.TrimSpace(line), "#") {
+-				removed++
+-				continue
+-			}
+-			kept = append(kept, line)
+-		}
+-		r.Write(t, rel, strings.Join(kept, "\n"))
+-	}
+-	return removed
+-}
+diff --git a/tests/mutations.yml b/tests/mutations.yml
+index 7625db5a..5dc32759 100644
+--- a/tests/mutations.yml
++++ b/tests/mutations.yml
+@@ -395,28 +395,3 @@ unprovable:
+   # closure is an assignment too.
+   - path: tests/go/repo/pinned_endpoints_test.go
+     reason: go-source
+-
+-# Tests that legitimately read a comment.
+-#
+-# TestNoTestIsSatisfiedByAComment runs the whole package against a copy with
+-# every whole-line comment stripped out of the YAML it reads, and requires
+-# every test that passed to still pass. A test that flips was being satisfied
+-# by prose - which has happened twice here, most recently a tripwire check
+-# satisfied by the comment ABOVE the step it was meant to be asserting.
+-#
+-# An entry here is an exemption, so it costs what an exemption costs: a reason
+-# somebody can read later.
+-comment_dependent:
+-  - test: TestEveryProofStillFindsItsPlace
+-    reason: >
+-      Its subject is where each proof's find lands in the file as written,
+-      which is the text the ledger applies the mutation to. A find may take in
+-      the comment beside the code it breaks, and with the comments stripped
+-      such a find has nowhere to land. That moves the anchor, not the guard's
+-      verdict on any code.
+-  - test: TestEverySilencedFindingNamesTheGuardThatProvesItMayBe
+-    reason: >
+-      The comment is its subject. A tool's own configuration cannot carry a
+-      reason anywhere else, so the guard a silenced entry names is written in
+-      the comment above that entry, and a copy with the comments stripped is
+-      a copy in which every such entry names nothing.

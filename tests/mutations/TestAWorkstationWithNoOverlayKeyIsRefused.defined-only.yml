@@ -1,0 +1,9 @@
+guard: TestAWorkstationWithNoOverlayKeyIsRefused
+file: workstation/provision.yml
+find: "          - overlay_auth_key | length > 0"
+replace: "          - overlay_auth_key is defined"
+mentions: "nothing refuses an empty overlay_auth_key"
+why: >
+  The check asks only that the key is defined, and the play defines it as
+  an empty string. An empty key passes it, and tailscale up with an empty
+  key exits zero having joined nothing.

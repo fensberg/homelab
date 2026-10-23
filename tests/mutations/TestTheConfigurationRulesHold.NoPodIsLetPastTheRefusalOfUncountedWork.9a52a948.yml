@@ -1,4 +1,5 @@
-guard: TestNoPodIsLetPastTheRefusalOfUncountedWork
+guard: TestTheConfigurationRulesHold
+rule: uncounted_pods
 file: clusters/core/infrastructure/controllers/uncounted-pods.yaml
 find: "  policyName: uncounted-pods\n"
 replace: "  policyName: uncounted-pods\n  matchResources:\n    namespaceSelector:\n      matchLabels:\n        counted: enforced\n"

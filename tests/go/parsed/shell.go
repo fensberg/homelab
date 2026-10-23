@@ -123,10 +123,26 @@ func wordValue(w *syntax.Word) string {
 // each stands in for a token of its own for the parse and is put back, as
 // written, in the words and assignments it was part of.
 func WorkflowCommands(name, run string) ([]Command, error) {
+	return commandsAround(name, run, githubExpression)
+}
+
+// TemplateCommands is every simple command in a script Ansible renders
+// before running it: a task's command, a shell line, a line a task writes.
+// Its {{ expressions }} and {% statements %} stand in for tokens of their
+// own for the parse and are put back as written, the way WorkflowCommands
+// keeps GitHub's.
+func TemplateCommands(name, script string) ([]Command, error) {
+	return commandsAround(name, script, jinjaExpression)
+}
+
+// commandsAround parses a script whose templating language is not shell:
+// each span the expression matches stands in for one token while the shell
+// parses it, and is put back as written in every word and assignment.
+func commandsAround(name, src string, templating *regexp.Regexp) ([]Command, error) {
 	var exprs []string
-	src := githubExpression.ReplaceAllStringFunc(run, func(e string) string {
+	src = templating.ReplaceAllStringFunc(src, func(e string) string {
 		exprs = append(exprs, e)
-		return fmt.Sprintf("__github_expression_%d__", len(exprs)-1)
+		return fmt.Sprintf("__template_expression_%d__", len(exprs)-1)
 	})
 	f, err := ShellOf(name, src)
 	if err != nil {
@@ -135,7 +151,7 @@ func WorkflowCommands(name, run string) ([]Command, error) {
 	restore := func(s string) string {
 		return standIn.ReplaceAllStringFunc(s, func(tok string) string {
 			var i int
-			fmt.Sscanf(tok, "__github_expression_%d__", &i)
+			fmt.Sscanf(tok, "__template_expression_%d__", &i)
 			return exprs[i]
 		})
 	}
@@ -153,5 +169,6 @@ func WorkflowCommands(name, run string) ([]Command, error) {
 
 var (
 	githubExpression = regexp.MustCompile(`\$\{\{.*?\}\}`)
-	standIn          = regexp.MustCompile(`__github_expression_\d+__`)
+	jinjaExpression  = regexp.MustCompile(`\{\{.*?\}\}|\{%.*?%\}`)
+	standIn          = regexp.MustCompile(`__template_expression_\d+__`)
 )

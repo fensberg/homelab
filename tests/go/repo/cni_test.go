@@ -35,11 +35,18 @@ func cniPath(t *testing.T) string {
 	return path
 }
 
-// cniValues is every value the rendered CNI manifest holds.
-func cniValues(t *testing.T) []string {
+// cniImages is every image the rendered CNI manifest runs: each value
+// under an image key, in every document of the file.
+func cniImages(t *testing.T) []string {
 	t.Helper()
 	_, docs := fluxObject(t, cniKind, cniName)
-	return parsed.Values(docs)
+	var out []string
+	for _, v := range parsed.Scalars(docs) {
+		if v.Key() == "image" {
+			out = append(out, v.Value)
+		}
+	}
+	return out
 }
 
 func cniValuesPath(t *testing.T) string {
@@ -161,11 +168,13 @@ func TestTheRenderedCNIManifestMatchesThePinnedChartVersion(t *testing.T) {
 
 	// cilium-envoy carries its own upstream version and is deliberately not
 	// checked here; the agent and the operator are the chart's own images.
-	tagged := regexp.MustCompile(`quay\.io/cilium/(cilium|operator-generic):v([0-9][^@"\s]*)`)
+	tagged := regexp.MustCompile(`^quay\.io/cilium/(cilium|operator-generic):v([0-9][^@]*)(@sha256:[0-9a-f]{64})?$`)
 	found := 0
 	var images [][]string
-	for _, v := range cniValues(t) {
-		images = append(images, tagged.FindAllStringSubmatch(v, -1)...)
+	for _, image := range cniImages(t) {
+		if m := tagged.FindStringSubmatch(image); m != nil {
+			images = append(images, m)
+		}
 	}
 	for _, m := range images {
 		found++

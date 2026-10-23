@@ -92,7 +92,7 @@
 # entry - which is also where the comment check's own decision is proved, in
 # TestSatisfiedByProseOnlyNamesAPassToFailFlip.
 
-owed_ceiling: 23
+owed_ceiling: 16
 
 unprovable:
   # --- cannot be proved by mutation ----------------------------------------
@@ -274,7 +274,7 @@ unprovable:
   # its own ledger entry proves. Its table holds each way to share a group.
   - test: TestAPoolsPolicyIsHeldToItsListAndItsRunnersToNothingOfTheClusters
     reason: table
-  - test: TestAMachineWithNoAddressIsSeenAndATemplateIsNotAMachine
+  - test: TestTheLocalTableRuleIsJudgedByThePlaceItIsAddedAt
     reason: table
   - test: TestAConfigurationThatDrawsOnTheListIsToldFromOneThatDoesNot
     reason: table
@@ -334,8 +334,6 @@ unprovable:
   #
   # Tracked as an epoch 06 issue; burning it down is a sitting, not a
   # sprint, and doing it badly would produce entries that prove nothing.
-  - test: TestAWorkstationWithNoOverlayKeyIsRefused
-    owed: true
   - test: TestEveryPhaseHasASourceFileNamedAfterIt
     owed: true
   - test: TestEverySensitivePathExists
@@ -343,10 +341,6 @@ unprovable:
   - test: TestEverySensitivePathExplainsItself
     owed: true
   - test: TestGuardAndSignedpushAgreeOnTheScratchRef
-    owed: true
-  - test: TestIPv6IsDisabledAtTheStack
-    owed: true
-  - test: TestMarkedRepliesReachTheLocalTable
     owed: true
   - test: TestNoCompiledBinaryIsTracked
     owed: true
@@ -369,14 +363,6 @@ unprovable:
   - test: TestSetupConfiguresCommitSigning
     owed: true
   - test: TestTheCodeLawsAreCoveredBySensitivePaths
-    owed: true
-  - test: TestTheRoutingFixIsAppliedPerHostNotPerSite
-    owed: true
-  - test: TestTheWorkstationDoesNotWearTheRouterTag
-    owed: true
-  - test: TestTheWorkstationIsProvisionedOntoTheOverlay
-    owed: true
-  - test: TestTheWorkstationTagIsDocumentedInThePolicy
     owed: true
   - test: TestVersionsAreDeclaredOnceAndSharedByBoth
     owed: true

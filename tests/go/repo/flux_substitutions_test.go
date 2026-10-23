@@ -1,13 +1,13 @@
 package repo
 
 import (
-	"homelab/tests/parsed"
 	"regexp"
 	"sort"
 	"strings"
 	"testing"
 
 	"homelab/details/applications"
+	"homelab/tests/parsed"
 )
 
 // Every variable Flux substitutes has a stand-in, and every stand-in is used.
@@ -40,7 +40,6 @@ import (
 // are ignored, because kustomize drops them before anything substitutes
 // anything, so a `${VAR}` used as prose in a comment is not a variable.
 var (
-	fluxVariable   = regexp.MustCompile(`\$\{([A-Z][A-Z0-9_]*)\}`)
 	substitutionKV = regexp.MustCompile(`(?m)^([A-Z][A-Z0-9_]*)=`)
 )
 
@@ -93,10 +92,8 @@ func TestEveryFluxSubstitutionHasAStandInAndTheReverse(t *testing.T) {
 		}
 		// Values, never comments: kustomize drops those before anything
 		// substitutes anything.
-		for _, v := range parsed.Values(tree.YAMLDocuments(t, rel)) {
-			for _, m := range fluxVariable.FindAllStringSubmatch(v, -1) {
-				used[m[1]] = append(used[m[1]], rel)
-			}
+		for _, name := range parsed.FluxVariables(tree.YAMLDocuments(t, rel)) {
+			used[name] = append(used[name], rel)
 		}
 	}
 
