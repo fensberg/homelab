@@ -1,4 +1,5 @@
-guard: TestEveryMachineIsGivenItsAddressWhenItIsBuilt
+guard: TestTheConfigurationRulesHold
+rule: machine_addresses
 file: modules/infrastructure/cluster/compute.tf
 find: "        address = \"${each.value.ip}/24\"\n        gateway = local.dmz_zones[each.value.zone].gateway\n"
 replace: "        gateway = local.dmz_zones[each.value.zone].gateway\n"

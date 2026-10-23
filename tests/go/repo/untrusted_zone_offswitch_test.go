@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/hashicorp/hcl/v2"
-
-	"homelab/tests/parsed"
 )
 
 // The untrusted zone has an off switch, and it has to keep working.
@@ -79,35 +77,22 @@ there are none.`, block.Address(), repository(t).Source(t, forEach.Expr))
 // a count to named zones broke it while the behaviour it cared about was
 // unchanged - which is the failure the mutation ledger exists to make visible.
 func TestEveryZoneTaskLoopsOverTheZones(t *testing.T) {
-	var plays []struct {
-		Tasks []map[string]any `yaml:"tasks"`
-	}
-	repository(t).YAMLInto(t, hypervisorPlaybook, &plays)
-
 	var checked int
-	for _, play := range plays {
-		for _, task := range play.Tasks {
-			// A zone task is one that reads a zone's own values. The shared vnet
-			// listing is not one: it lists every vnet, and looping it over the
-			// zones would hide the node vnet from the task that creates it.
-			if !slices.ContainsFunc(parsed.Values(task), func(v string) bool { return strings.Contains(v, "item.vnet") }) {
-				continue
-			}
-			checked++
-
-			if _, loops := task["loop"]; !loops {
-				name, _ := task["name"].(string)
-				t.Errorf(`the task "%s" reads a zone's values without looping over the zones.
+	for _, task := range hypervisorPlay(t).Tasks {
+		if !task.Uses("item.vnet") {
+			continue
+		}
+		checked++
+		if task.Loop == nil && task.LoopExpr == "" {
+			t.Errorf(`the task "%s" reads a zone's values without looping over the zones.
 
 Without the loop it runs once against an undefined item on every estate,
 including one with no untrusted workload at all. The loop is what makes "no
 zones" mean "nothing is built" - Ansible creates and never removes, so anything
 this leaves behind stays until somebody finds it and wonders what it is for.`,
-					name)
-			}
+				task.Name)
 		}
 	}
-
 	if checked == 0 {
 		t.Fatal("no task in hypervisor-prep.yml reads a zone's values, so this test proves nothing.\n\n" +
 			"Either the zones' SDN tasks were removed or their loop variable was renamed.")

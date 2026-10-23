@@ -1,0 +1,8 @@
+guard: TestTheWorkstationDoesNotWearTheRouterTag
+file: workstation/provision.yml
+find: 'overlay_tag: "tag:homelab-workstation"'
+replace: 'overlay_tag: "tag:homelab-router"'
+mentions: "uses the router tag"
+why: >
+  The workstation's tag becomes the one the tailnet's policy trusts to
+  approve subnet routes, so the workstation could claim a site's range.

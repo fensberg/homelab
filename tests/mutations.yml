@@ -92,7 +92,7 @@
 # entry - which is also where the comment check's own decision is proved, in
 # TestSatisfiedByProseOnlyNamesAPassToFailFlip.
 
-owed_ceiling: 23
+owed_ceiling: 16
 
 unprovable:
   # --- cannot be proved by mutation ----------------------------------------
@@ -274,7 +274,7 @@ unprovable:
   # its own ledger entry proves. Its table holds each way to share a group.
   - test: TestAPoolsPolicyIsHeldToItsListAndItsRunnersToNothingOfTheClusters
     reason: table
-  - test: TestAMachineWithNoAddressIsSeenAndATemplateIsNotAMachine
+  - test: TestTheLocalTableRuleIsJudgedByThePlaceItIsAddedAt
     reason: table
   - test: TestAConfigurationThatDrawsOnTheListIsToldFromOneThatDoesNot
     reason: table
@@ -334,8 +334,6 @@ unprovable:
   #
   # Tracked as an epoch 06 issue; burning it down is a sitting, not a
   # sprint, and doing it badly would produce entries that prove nothing.
-  - test: TestAWorkstationWithNoOverlayKeyIsRefused
-    owed: true
   - test: TestEveryPhaseHasASourceFileNamedAfterIt
     owed: true
   - test: TestEverySensitivePathExists
@@ -343,10 +341,6 @@ unprovable:
   - test: TestEverySensitivePathExplainsItself
     owed: true
   - test: TestGuardAndSignedpushAgreeOnTheScratchRef
-    owed: true
-  - test: TestIPv6IsDisabledAtTheStack
-    owed: true
-  - test: TestMarkedRepliesReachTheLocalTable
     owed: true
   - test: TestNoCompiledBinaryIsTracked
     owed: true
@@ -369,14 +363,6 @@ unprovable:
   - test: TestSetupConfiguresCommitSigning
     owed: true
   - test: TestTheCodeLawsAreCoveredBySensitivePaths
-    owed: true
-  - test: TestTheRoutingFixIsAppliedPerHostNotPerSite
-    owed: true
-  - test: TestTheWorkstationDoesNotWearTheRouterTag
-    owed: true
-  - test: TestTheWorkstationIsProvisionedOntoTheOverlay
-    owed: true
-  - test: TestTheWorkstationTagIsDocumentedInThePolicy
     owed: true
   - test: TestVersionsAreDeclaredOnceAndSharedByBoth
     owed: true
@@ -409,28 +395,3 @@ unprovable:
   # closure is an assignment too.
   - path: tests/go/repo/pinned_endpoints_test.go
     reason: go-source
-
-# Tests that legitimately read a comment.
-#
-# TestNoTestIsSatisfiedByAComment runs the whole package against a copy with
-# every whole-line comment stripped out of the YAML it reads, and requires
-# every test that passed to still pass. A test that flips was being satisfied
-# by prose - which has happened twice here, most recently a tripwire check
-# satisfied by the comment ABOVE the step it was meant to be asserting.
-#
-# An entry here is an exemption, so it costs what an exemption costs: a reason
-# somebody can read later.
-comment_dependent:
-  - test: TestEveryProofStillFindsItsPlace
-    reason: >
-      Its subject is where each proof's find lands in the file as written,
-      which is the text the ledger applies the mutation to. A find may take in
-      the comment beside the code it breaks, and with the comments stripped
-      such a find has nowhere to land. That moves the anchor, not the guard's
-      verdict on any code.
-  - test: TestEverySilencedFindingNamesTheGuardThatProvesItMayBe
-    reason: >
-      The comment is its subject. A tool's own configuration cannot carry a
-      reason anywhere else, so the guard a silenced entry names is written in
-      the comment above that entry, and a copy with the comments stripped is
-      a copy in which every such entry names nothing.

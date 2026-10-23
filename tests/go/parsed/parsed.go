@@ -333,36 +333,6 @@ func (r *Tree) Conftest(t testing.TB, rel, kind string) any {
 	return parsed[0].Contents
 }
 
-// Values is every string a parsed document holds, keys and values, in the
-// order they were written where a parser keeps one. Never a comment, which no
-// parser here hands over as a value.
-func Values(doc any) []string {
-	var out []string
-	var walk func(any)
-	walk = func(v any) {
-		switch v := v.(type) {
-		case string:
-			out = append(out, v)
-		case map[string]any:
-			keys := make([]string, 0, len(v))
-			for k := range v {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				out = append(out, k)
-				walk(v[k])
-			}
-		case []any:
-			for _, x := range v {
-				walk(x)
-			}
-		}
-	}
-	walk(doc)
-	return out
-}
-
 // Run is a program run in the tree: in a directory of it, from the
 // repository's top when dir is "", with the environment given beside the
 // process's own. When judged is set it also runs judging this tree, as a guard

@@ -238,15 +238,7 @@ func applied(t testing.TB, tree *parsed.Tree, dir string, seen map[string]bool) 
 
 // named is every variable a manifest's values name. Flux substitutes into
 // what kustomize built, which keeps no comment, so a comment names nothing.
-func named(docs any) []string {
-	var out []string
-	for _, v := range parsed.Values(docs) {
-		for _, m := range fluxVariable.FindAllStringSubmatch(v, -1) {
-			out = append(out, m[1])
-		}
-	}
-	return out
-}
+func named(docs any) []string { return parsed.FluxVariables(docs) }
 
 // notGiven is every variable a layer names that nothing it is given carries,
 // each said once with the first manifest that names it.

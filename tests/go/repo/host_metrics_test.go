@@ -1,9 +1,9 @@
 package repo
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -42,7 +42,7 @@ func TestMeasuringTheHostChangesAllThreeHalvesTogether(t *testing.T) {
 	playbook := hostPlaybook(t)
 	scrape, scraped := hostScrape(t)
 
-	installed := slices.Contains(parsed.Values(playbook.doc), hostExporterPackage)
+	installed := slices.Contains(playbook.packages, hostExporterPackage)
 	// OpenTofu writes where the exporter answers, and the secret the scrape
 	// reads its certificates from.
 	written := len(tree.Blocks(t, "resource", "kubernetes_endpoint_slice_v1", "hypervisor")) == 1
@@ -64,7 +64,7 @@ func TestMeasuringTheHostChangesAllThreeHalvesTogether(t *testing.T) {
 		return
 	}
 
-	if !slices.Contains(playbook.exporterArgs, "--web.listen-address={{ansible_host}}:9100") {
+	if !slices.Contains(playbook.exporterArgs, "--web.listen-address={{ ansible_host }}:9100") {
 		t.Error("the host's exporter is not told to listen on the host's own address.\n\n" +
 			"That is the address the Service OpenTofu writes points Prometheus at. On the site's " +
 			"gateway it is inside the zone's VRF, where a program on the host can neither answer " +
@@ -114,32 +114,38 @@ func TestTheHostsExporterHasOneName(t *testing.T) {
 }
 
 // playbookFacts is what the hypervisor's playbook says of the exporter: the
-// whole playbook as YAML, the arguments its service is started with, what
-// its TLS config asks of a caller, and the name it is asked to answer to.
+// packages it installs, the arguments the exporter is started with, what its
+// TLS config asks of a caller, and the name it is asked to answer to.
 type playbookFacts struct {
-	doc          any
+	packages     []string
 	exporterArgs []string
 	clientAuth   string
 	name         string
 }
 
-// hostPlaybook reads the playbook, and the two files it writes for the
-// exporter, each by its own parser: the TLS config as YAML, and the
-// service's environment as shell.
+// hostPlaybook reads the hypervisor's play, and the two files it writes for
+// the exporter, each by its own parser: the TLS config as YAML, and the
+// service's environment as the words its ARGS hands the exporter.
 func hostPlaybook(t *testing.T) playbookFacts {
 	t.Helper()
+	play := hypervisorPlay(t)
 	var out playbookFacts
-	repository(t).YAMLInto(t, "management/hypervisor/hypervisor-prep.yml", &out.doc)
-	for _, m := range mapsIn(out.doc) {
-		if name, ok := m["host_metrics_name"].(string); ok {
-			out.name = name
+	out.name, _ = play.Vars["host_metrics_name"].(string)
+	for _, task := range play.Tasks {
+		if task.Is("apt") {
+			switch names := task.Args["name"].(type) {
+			case string:
+				out.packages = append(out.packages, names)
+			case []any:
+				for _, n := range names {
+					out.packages = append(out.packages, fmt.Sprint(n))
+				}
+			}
 		}
-		copied, ok := m["ansible.builtin.copy"].(map[string]any)
+		dest, content, ok := task.Writes()
 		if !ok {
 			continue
 		}
-		dest, _ := copied["dest"].(string)
-		content, _ := copied["content"].(string)
 		switch dest {
 		case "/etc/prometheus-node-exporter/web.yml":
 			var web struct {
@@ -152,43 +158,23 @@ func hostPlaybook(t *testing.T) playbookFacts {
 			}
 			out.clientAuth = web.TLS.ClientAuth
 		case "/etc/default/prometheus-node-exporter":
-			commands, err := parsed.WorkflowCommands(dest, content)
+			commands, err := parsed.TemplateCommands(dest, content)
 			if err != nil {
 				t.Fatalf("the exporter's environment, as the playbook writes it, is not shell: %v", err)
 			}
 			for _, c := range commands {
-				// Ansible renders each {{ expression }} before the service's
-				// manager splits the line, so one is one word whatever its
-				// spacing.
-				args := jinja.ReplaceAllString(c.Assigns["ARGS"], "{{$1}}")
-				out.exporterArgs = append(out.exporterArgs, strings.Fields(args)...)
+				// The service's manager splits ARGS into the exporter's
+				// arguments, once Ansible has rendered it.
+				args, err := parsed.TemplateCommands("ARGS", c.Assigns["ARGS"])
+				if err != nil {
+					t.Fatalf("the exporter's ARGS is not words: %v", err)
+				}
+				for _, a := range args {
+					out.exporterArgs = append(out.exporterArgs, a.Words...)
+				}
 			}
 		}
 	}
-	return out
-}
-
-// jinja is an expression Ansible renders, with its spacing.
-var jinja = regexp.MustCompile(`\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}`)
-
-// mapsIn is every mapping anywhere in a decoded YAML document.
-func mapsIn(doc any) []map[string]any {
-	var out []map[string]any
-	var walk func(any)
-	walk = func(v any) {
-		switch v := v.(type) {
-		case map[string]any:
-			out = append(out, v)
-			for _, each := range v {
-				walk(each)
-			}
-		case []any:
-			for _, each := range v {
-				walk(each)
-			}
-		}
-	}
-	walk(doc)
 	return out
 }
 

@@ -4,8 +4,8 @@ file: clusters/core/infrastructure/configs/runner-scale-set.yaml
 # Anchored on the priority class above it, because this file now carries
 # the same anti-control-plane rule twice - once for the runner and once for
 # the listener - and "operator: DoesNotExist" alone no longer names one spot.
-# The anchor is YAML rather than the comment beside it on purpose:
-# TestNoTestIsSatisfiedByAComment strips comments and re-runs everything.
+# The anchor is YAML rather than the comment beside it: a proof is about
+# what the file says to its reader, not what its prose says.
 find: "priorityClassName: interactive\n        affinity:\n          nodeAffinity:\n            requiredDuringSchedulingIgnoredDuringExecution:\n              nodeSelectorTerms:\n                - matchExpressions:\n                    - key: node-role.kubernetes.io/control-plane\n                      operator: DoesNotExist"
 replace: "priorityClassName: interactive\n        affinity:\n          nodeAffinity:\n            requiredDuringSchedulingIgnoredDuringExecution:\n              nodeSelectorTerms:\n                - matchExpressions:\n                    - key: node-role.kubernetes.io/control-plane\n                      operator: Exists"
 mentions: "would schedule onto a control-plane node"

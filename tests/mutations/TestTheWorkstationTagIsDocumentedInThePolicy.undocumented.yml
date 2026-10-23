@@ -1,0 +1,8 @@
+guard: TestTheWorkstationTagIsDocumentedInThePolicy
+file: workstation/provision.yml
+find: 'overlay_tag: "tag:homelab-workstation"'
+replace: 'overlay_tag: "tag:homelab-laptop"'
+mentions: "never mentions it"
+why: >
+  The workstation advertises a tag the tailnet's policy was never set up
+  for, so tailscale up fails at first boot on a machine nobody watches.
