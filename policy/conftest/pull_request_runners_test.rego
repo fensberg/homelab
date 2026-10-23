@@ -67,13 +67,8 @@ test_an_expression_cannot_be_read_so_it_is_refused if {
 	count(refusals(on_pr({"runs-on": "${{ inputs.runner }}"}))) == 1
 }
 
-test_the_nightly_form_a_pool_by_night_and_githubs_by_day if {
+test_a_pool_by_night_and_githubs_by_day_is_an_expression_and_refused if {
 	i := with_workflow({"on": {"pull_request": null, "schedule": [{"cron": "0 3 * * *"}]}, "jobs": {"test": {"runs-on": "${{ github.event_name == 'schedule' && format('pr-builds-{0}', vars.pull_request_runners_site) || 'ubuntu-latest' }}"}}})
-	count(pull_request_runners.deny) == 0 with input as i
-}
-
-test_the_nightly_form_with_the_estates_runner_by_day if {
-	i := with_workflow({"on": {"pull_request": null, "schedule": [{"cron": "0 3 * * *"}]}, "jobs": {"test": {"runs-on": "${{ github.event_name == 'schedule' && format('pr-builds-{0}', vars.pull_request_runners_site) || 'homelab-site0' }}"}}})
 	count(refusals(i)) == 1
 }
 
