@@ -2,12 +2,13 @@ package repo
 
 import (
 	"homelab/details/capacity"
+	"homelab/details/ghapi"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 
+	"homelab/tests/parsed"
 	"slices"
 	"sort"
 )
@@ -33,7 +34,7 @@ func runnerSets(t *testing.T) []string {
 		if kind != kindHelmRelease {
 			continue
 		}
-		if regexp.MustCompile(`(?m)^\s*chart:\s*gha-runner-scale-set\s*$`).MatchString(helmReleaseDocument(t, r.file, name)) {
+		if chart, _ := scalarAt(helmReleaseDocument(t, r.file, name), "chart"); chart == ghapi.RunnerScaleSetChart {
 			sets = append(sets, name)
 		}
 	}
@@ -46,29 +47,85 @@ func runnerSets(t *testing.T) []string {
 
 // helmReleaseDocument is the one document of a manifest that declares the
 // named release, so that two releases in one file are read apart.
-func helmReleaseDocument(t *testing.T, rel, name string) string {
+func helmReleaseDocument(t *testing.T, rel, name string) any {
 	t.Helper()
-	for _, doc := range strings.Split(readRepoFile(t, rel), "\n---") {
-		if regexp.MustCompile(`(?m)^kind:\s*HelmRelease\s*$`).MatchString(doc) &&
-			regexp.MustCompile(`(?m)^  name:\s*`+regexp.QuoteMeta(name)+`\s*$`).MatchString(doc) {
+	for _, doc := range repository(t).YAMLDocuments(t, rel) {
+		var d struct {
+			Kind     string `yaml:"kind"`
+			Metadata struct {
+				Name string `yaml:"name"`
+			} `yaml:"metadata"`
+		}
+		if as(doc, &d) == nil && d.Kind == kindHelmRelease && d.Metadata.Name == name {
 			return doc
 		}
 	}
 	t.Fatalf("%s does not declare the release %s", rel, name)
+	return nil
+}
+
+// yamlScalar is the first `key: value` scalar anywhere in a manifest's
+// documents, and the test fails when there is none.
+func yamlScalar(t *testing.T, docs []any, key string) string {
+	t.Helper()
+	if v, ok := scalarAt(docs, key); ok {
+		return v
+	}
+	t.Fatalf("no %s: scalar in the scale set manifest", key)
 	return ""
 }
 
-// yamlScalar pulls one `key: value` scalar out of a manifest. Deliberately not
-// a YAML parse: the file carries a ${VAR} Flux substitutes at reconcile time,
-// which is not a thing a strict decode has to cope with just to read one field.
-func yamlScalar(t *testing.T, body, key string) string {
-	t.Helper()
-	re := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(key) + `:\s*(\S+)\s*$`)
-	m := re.FindStringSubmatch(body)
-	if m == nil {
-		t.Fatalf("no %s: scalar in the scale set manifest", key)
+// scalarAt is the first string value under a key anywhere in parsed
+// documents, keys walked in order so the answer does not depend on a map's.
+func scalarAt(node any, key string) (string, bool) {
+	switch v := node.(type) {
+	case []any:
+		for _, x := range v {
+			if s, ok := scalarAt(x, key); ok {
+				return s, true
+			}
+		}
+	case map[string]any:
+		if s, ok := v[key].(string); ok {
+			return s, true
+		}
+		keys := make([]string, 0, len(v))
+		for k := range v {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			if s, ok := scalarAt(v[k], key); ok {
+				return s, true
+			}
+		}
 	}
-	return m[1]
+	return "", false
+}
+
+// scalarsAt is every string value under a key anywhere in parsed documents,
+// in the order scalarAt walks them.
+func scalarsAt(node any, key string) []string {
+	var out []string
+	switch v := node.(type) {
+	case []any:
+		for _, x := range v {
+			out = append(out, scalarsAt(x, key)...)
+		}
+	case map[string]any:
+		if s, ok := v[key].(string); ok {
+			out = append(out, s)
+		}
+		keys := make([]string, 0, len(v))
+		for k := range v {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			out = append(out, scalarsAt(v[k], key)...)
+		}
+	}
+	return out
 }
 
 func readRepoFile(t *testing.T, rel string) string {
@@ -129,4 +186,58 @@ func nodeAffinityAdmits(t *testing.T, terms []any, labels map[string]string) boo
 		}
 	}
 	return false
+}
+
+// versionPins is where every version the estate takes is pinned.
+const versionPins = "scripts/versions.env"
+
+// pinned is a version scripts/versions.env pins, read as the env file it is.
+func pinned(t *testing.T, name string) string {
+	t.Helper()
+	v, ok := versionsPinned(t)[name]
+	if !ok || strings.TrimSpace(v) == "" {
+		t.Fatalf("%s declares no %s.\n\nEvery version this estate takes is pinned in that one file.", versionPins, name)
+	}
+	return strings.TrimSpace(v)
+}
+
+// versionsPinned is every version scripts/versions.env pins, by key, as
+// Conftest's dotenv parser reads the file.
+func versionsPinned(t *testing.T) map[string]string {
+	t.Helper()
+	declared, _ := repository(t).Conftest(t, versionPins, "dotenv").(map[string]any)
+	pins := map[string]string{}
+	for k, v := range declared {
+		pins[k], _ = v.(string)
+	}
+	return pins
+}
+
+// header is the comment a rendered file opens with: who rendered it, and
+// from what. It sits before the first document, where no YAML parser keeps
+// a comment, so Semgrep reads it: the run of comment lines the file starts
+// with.
+func header(t *testing.T, rel string) string {
+	t.Helper()
+	rule := map[string]any{
+		"id": "a-header", "languages": []string{"generic"}, "severity": "INFO",
+		"message": "$HEADER", "metadata": map[string]any{"about": "header"},
+		"pattern-regex": `\A(?P<HEADER>(?:#[^\n]*\n)+)`,
+	}
+	for _, f := range scanText(t, repository(t), []map[string]any{rule}, []string{rel}) {
+		return f.Text
+	}
+	return ""
+}
+
+// mappings is every document of a YAML file that is a mapping.
+func mappings(t *testing.T, tree *parsed.Tree, rel string) []map[string]any {
+	t.Helper()
+	var out []map[string]any
+	for _, doc := range tree.YAMLDocuments(t, rel) {
+		if m, ok := doc.(map[string]any); ok {
+			out = append(out, m)
+		}
+	}
+	return out
 }

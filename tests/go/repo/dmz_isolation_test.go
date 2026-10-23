@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/yaml.v3"
-
 	"homelab/details/privatenet"
 )
 
@@ -62,17 +60,10 @@ esac
 // loop variables Ansible would.
 func shippedDMZScript(t *testing.T, subnet, gateway string) string {
 	t.Helper()
-	body, err := os.ReadFile(filepath.Join(repoRoot(t), "management", "hypervisor", "hypervisor-prep.yml"))
-	if err != nil {
-		t.Fatalf("reading the playbook: %v", err)
-	}
-
 	var doc []struct {
 		Tasks []map[string]any `yaml:"tasks"`
 	}
-	if err := yaml.Unmarshal(body, &doc); err != nil {
-		t.Fatalf("parsing the playbook: %v", err)
-	}
+	repository(t).YAMLInto(t, hypervisorPlaybook, &doc)
 
 	for _, play := range doc {
 		for _, task := range play.Tasks {

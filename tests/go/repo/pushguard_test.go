@@ -1,12 +1,8 @@
 package repo
 
 import (
-	"os"
-	"path/filepath"
-	"strings"
+	"slices"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 // A plain `git push` must stay refused.
@@ -42,14 +38,8 @@ type preCommitConfig struct {
 
 func parsePreCommitConfig(t *testing.T) preCommitConfig {
 	t.Helper()
-	body, err := os.ReadFile(filepath.Join(repoRoot(t), ".pre-commit-config.yaml"))
-	if err != nil {
-		t.Fatalf("reading .pre-commit-config.yaml: %v", err)
-	}
 	var cfg preCommitConfig
-	if err := yaml.Unmarshal(body, &cfg); err != nil {
-		t.Fatalf("parsing .pre-commit-config.yaml: %v", err)
-	}
+	repository(t).YAMLInto(t, ".pre-commit-config.yaml", &cfg)
 	if len(cfg.Repos) == 0 {
 		t.Fatal("the hook configuration parsed to nothing, so every test reading it proves nothing")
 	}
@@ -61,22 +51,11 @@ func parsePreCommitConfig(t *testing.T) preCommitConfig {
 // one push it is supposed to permit - so the two are checked against each
 // other here as well as in scripts/superintendent's own tests.
 func TestGuardAndSignedpushAgreeOnTheScratchRef(t *testing.T) {
-	root := repoRoot(t)
-
-	guard, err := os.ReadFile(filepath.Join(root, "scripts", "superintendent", "enforce-push.go"))
-	if err != nil {
-		t.Fatalf("reading scripts/superintendent/enforce-push.go: %v", err)
-	}
-	signed, err := os.ReadFile(filepath.Join(root, "scripts", "signedpush", "main.go"))
-	if err != nil {
-		t.Fatalf("reading scripts/signedpush/main.go: %v", err)
-	}
-
-	const scratch = `"refs/signing/"`
-	if !strings.Contains(string(guard), scratch) {
+	const scratch = "refs/signing/"
+	if !slices.Contains(stringLiterals(t, "scripts/superintendent/enforce-push.go"), scratch) {
 		t.Errorf("pushguard no longer allows %s", scratch)
 	}
-	if !strings.Contains(string(signed), scratch) {
+	if !slices.Contains(stringLiterals(t, "scripts/signedpush/main.go"), scratch) {
 		t.Errorf("signedpush no longer pushes to %s, so pushguard is now "+
 			"refusing the only supported way to publish", scratch)
 	}

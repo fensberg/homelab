@@ -1,7 +1,4 @@
-// Package repo holds checks about this repository's own files, rather than
-// about the infrastructure it describes.
-//
-// It exists because of a specific class of defect: a key written twice in one
+// Duplicate keys. This part of the package exists because of a specific class of defect: a key written twice in one
 // file, where the parser silently keeps the last one and reports nothing.
 // Every format this project configures itself in behaves that way. An
 // env-file read by `docker --env-file` takes the last assignment. A JSON
@@ -17,16 +14,17 @@
 // package is what stops the next one needing that kind of luck, and the class
 // it guards is not specific to that file: the formats named above are the ones
 // this repository still configures itself in.
-package repo
+
+package parsed
 
 import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"regexp"
 	"sort"
 	"strings"
+	"testing"
 
 	"gopkg.in/yaml.v3"
 )
@@ -63,10 +61,10 @@ func collect(seen map[string]int, path string, out *[]Duplicate) {
 
 var envAssignment = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=`)
 
-// EnvDuplicates finds keys assigned more than once in a KEY=VALUE file.
+// envDuplicates finds keys assigned more than once in a KEY=VALUE file.
 // Comments and blank lines are ignored; so is anything that is not an
 // assignment, since these files also carry prose.
-func EnvDuplicates(content string) []Duplicate {
+func envDuplicates(content string) []Duplicate {
 	seen := map[string]int{}
 	for _, line := range strings.Split(content, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "#") {
@@ -83,10 +81,10 @@ func EnvDuplicates(content string) []Duplicate {
 
 // --- JSON -------------------------------------------------------------------
 
-// JSONDuplicates walks the token stream rather than unmarshalling, because
+// jsonDuplicates walks the token stream rather than unmarshalling, because
 // unmarshalling is exactly the step that discards the evidence: by the time
 // there is a map[string]any, the earlier value is already gone.
-func JSONDuplicates(content string) ([]Duplicate, error) {
+func jsonDuplicates(content string) ([]Duplicate, error) {
 	dec := json.NewDecoder(strings.NewReader(content))
 	var out []Duplicate
 	if err := jsonValue(dec, "", &out); err != nil && err != io.EOF {
@@ -141,9 +139,9 @@ func jsonValue(dec *json.Decoder, path string, out *[]Duplicate) error {
 
 // --- YAML -------------------------------------------------------------------
 
-// YAMLDuplicates handles multi-document files, which Kubernetes manifests
+// yamlDuplicates handles multi-document files, which Kubernetes manifests
 // legitimately are.
-func YAMLDuplicates(content string) ([]Duplicate, error) {
+func yamlDuplicates(content string) ([]Duplicate, error) {
 	dec := yaml.NewDecoder(strings.NewReader(content))
 	var out []Duplicate
 	for i := 0; ; i++ {
@@ -191,24 +189,26 @@ func yamlNode(n *yaml.Node, path string, out *[]Duplicate) {
 
 // --- reading ----------------------------------------------------------------
 
-// Check dispatches on file extension and returns whatever duplicates the
-// matching parser found. An unrecognised extension is not an error - it is a
-// file this check has nothing to say about.
-func Check(path string) ([]Duplicate, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	content := string(data)
-
+// DuplicateKeys returns whatever duplicates the parser for rel's extension
+// found. An unrecognised extension is not an error - it is a file this check
+// has nothing to say about - and neither is one that does not parse, which
+// the format's own validator owns.
+func (r *Tree) DuplicateKeys(t testing.TB, rel string) (dupes []Duplicate, checked bool) {
+	t.Helper()
+	var parse func(string) ([]Duplicate, error)
 	switch {
-	case strings.HasSuffix(path, ".json"):
-		return JSONDuplicates(content)
-	case strings.HasSuffix(path, ".yaml"), strings.HasSuffix(path, ".yml"):
-		return YAMLDuplicates(content)
-	case strings.HasSuffix(path, ".vars"), strings.HasSuffix(path, ".env"):
-		return EnvDuplicates(content), nil
+	case strings.HasSuffix(rel, ".json"):
+		parse = jsonDuplicates
+	case strings.HasSuffix(rel, ".yaml"), strings.HasSuffix(rel, ".yml"):
+		parse = yamlDuplicates
+	case strings.HasSuffix(rel, ".vars"), strings.HasSuffix(rel, ".env"):
+		parse = func(s string) ([]Duplicate, error) { return envDuplicates(s), nil }
 	default:
-		return nil, nil
+		return nil, false
 	}
+	dupes, err := parse(string(r.read(t, rel)))
+	if err != nil {
+		return nil, false
+	}
+	return dupes, true
 }

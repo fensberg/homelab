@@ -1,9 +1,8 @@
 package repo
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
+	"homelab/tests/parsed"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -68,23 +67,20 @@ func runConftest(t *testing.T, args ...string) (string, bool) {
 	if _, err := exec.LookPath(conftestProgram); err != nil {
 		t.Fatal("conftest is not on PATH; take delivery of it: scripts/take-delivery.sh conftest")
 	}
-	cmd := exec.Command(conftestProgram, args...)
-	cmd.Dir = repoRoot(t)
-	cmd.Env = append(os.Environ(), "NO_COLOR=1")
-	out, err := cmd.CombinedOutput()
+	stdout, stderr, err := repository(t).Invoke(parsed.Run{Env: []string{"NO_COLOR=1"}}, conftestProgram, args...)
+	out := string(stdout) + string(stderr)
 	if err != nil {
 		if _, failed := err.(*exec.ExitError); !failed {
 			t.Fatalf("conftest could not be run: %v", err)
 		}
-		return string(out), false
+		return out, false
 	}
-	return string(out), true
+	return out, true
 }
 
 func TestTheConfigurationRulesHold(t *testing.T) {
-	root := repoRoot(t)
-	if _, err := os.Stat(filepath.Join(root, conftestRules)); err != nil {
-		t.Fatalf("%s is not there, so no configuration rule runs: %v", conftestRules, err)
+	if !repository(t).IsDir(conftestRules) {
+		t.Fatalf("%s is not there, so no configuration rule runs", conftestRules)
 	}
 	// How it is run - every package, every file at once - is conftest.toml's
 	// to say, so this, the lane and a person at a terminal run it alike.
@@ -129,32 +125,26 @@ type regoTree struct {
 	Tree    any
 }
 
-// parseRego asks OPA for a policy file's syntax tree.
+// parseRego is a policy file as OPA parses it, with its package read off.
 func parseRego(t *testing.T, rel string) regoTree {
 	t.Helper()
-	if _, err := exec.LookPath(opaProgram); err != nil {
-		t.Fatal("opa is not on PATH; take delivery of it: scripts/take-delivery.sh opa")
-	}
-	out, err := exec.Command(opaProgram, "parse", "--format", "json", "--json-include", "locations", filepath.Join(repoRoot(t), rel)).Output()
-	if err != nil {
-		t.Fatalf("opa could not parse %s: %v", rel, err)
-	}
-	var tree struct {
-		Package struct {
-			Path []struct {
-				Value string `json:"value"`
-			} `json:"path"`
-		} `json:"package"`
-	}
-	var whole any
-	if err := json.Unmarshal(out, &tree); err != nil || json.Unmarshal(out, &whole) != nil {
-		t.Fatalf("opa's syntax tree for %s could not be read: %v", rel, err)
-	}
+	whole := repository(t).Rego(t, rel)
+	return regoTree{regoPackage(whole), whole}
+}
+
+// regoPackage is the package a policy file's syntax tree declares, past data.
+func regoPackage(tree any) string {
+	root, _ := tree.(map[string]any)
+	pkg, _ := root["package"].(map[string]any)
+	path, _ := pkg["path"].([]any)
 	var parts []string
-	for _, p := range tree.Package.Path[1:] { // past data
-		parts = append(parts, p.Value)
+	for i, p := range path {
+		if i == 0 {
+			continue // data
+		}
+		parts = append(parts, termValue(p))
 	}
-	return regoTree{strings.Join(parts, "."), whole}
+	return strings.Join(parts, ".")
 }
 
 // readsInput is how many times a syntax tree names the input.
@@ -261,18 +251,16 @@ func collectedPackages(t *testing.T) {
 			continue
 		}
 		files++
-		m := packageClause.FindStringSubmatch(readRepoFile(t, rel))
-		if m == nil {
+		pkg := parseRego(t, rel).Package
+		if pkg == "" {
 			t.Errorf("%s declares no package, so nothing can say whether its rules run", rel)
 			continue
 		}
-		if !rulePackage.MatchString(m[1]) {
-			t.Errorf("%s is package %s. Conftest asks main alone, and main collects the packages under rules; a rule anywhere else never runs and says nothing. Make it package rules.%s.", rel, m[1], m[1])
+		if !rulePackage.MatchString(pkg) {
+			t.Errorf("%s is package %s. Conftest asks main alone, and main collects the packages under rules; a rule anywhere else never runs and says nothing. Make it package rules.%s.", rel, pkg, pkg)
 		}
 	}
 	if files == 0 {
 		t.Fatalf("no policy file was found under %s, so no package was checked", conftestRules)
 	}
 }
-
-var packageClause = regexp.MustCompile(`(?m)^package\s+([A-Za-z0-9_.]+)\s*$`)

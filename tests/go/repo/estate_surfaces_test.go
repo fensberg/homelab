@@ -1,14 +1,11 @@
 package repo
 
 import (
-	"os"
 	"path/filepath"
-	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 // The tiers that are hard to write get the same treatment as the ones that are
@@ -56,23 +53,13 @@ import (
 // either way - what this catches is a surface nobody thought about at all.
 func claimedBy(t *testing.T, dirs []string, needle string) bool {
 	t.Helper()
-	root := repoRoot(t)
-	for _, dir := range dirs {
-		entries, err := os.ReadDir(filepath.Join(root, dir))
-		if err != nil {
-			continue // A tier with no directory yet names nothing.
+	tree := repository(t)
+	for _, rel := range tree.Files(t) {
+		if !slices.Contains(dirs, filepath.Dir(rel)) || !strings.HasSuffix(rel, ".go") {
+			continue // a tier with no directory yet names nothing
 		}
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
-				continue
-			}
-			body, readErr := os.ReadFile(filepath.Join(root, dir, e.Name()))
-			if readErr != nil {
-				t.Fatalf("reading %s/%s: %v", dir, e.Name(), readErr)
-			}
-			if strings.Contains(string(body), "covers: "+needle) {
-				return true
-			}
+		if strings.Contains(goComments(t, tree, rel), "covers: "+needle) {
+			return true
 		}
 	}
 	return false
@@ -85,27 +72,19 @@ func claimedBy(t *testing.T, dirs []string, needle string) bool {
 // tier already reaches it through the label CloudNativePG puts on its pods.
 func deployedWorkloads(t *testing.T) []string {
 	t.Helper()
-	root := repoRoot(t)
+	tree := repository(t)
 	var names []string
 	for _, rel := range tracked(t, func(rel string) bool {
 		return strings.HasPrefix(rel, "clusters/") && strings.HasSuffix(rel, ".yaml")
 	}) {
-		body, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatalf("reading %s: %v", rel, err)
-		}
-		dec := yaml.NewDecoder(strings.NewReader(string(body)))
-		for {
+		for _, d := range tree.YAMLDocuments(t, rel) {
 			var doc struct {
 				Kind     string `yaml:"kind"`
 				Metadata struct {
 					Name string `yaml:"name"`
 				} `yaml:"metadata"`
 			}
-			if err := dec.Decode(&doc); err != nil {
-				break
-			}
-			if doc.Kind == "HelmRelease" && !strings.Contains(doc.Metadata.Name, "$") {
+			if as(d, &doc) == nil && doc.Kind == kindHelmRelease && !strings.Contains(doc.Metadata.Name, "$") {
 				names = append(names, doc.Metadata.Name)
 			}
 		}
@@ -123,12 +102,28 @@ func deployedWorkloads(t *testing.T) []string {
 // `git.github_repo_url`. An api test asserts that whoever serves a concern
 // still behaves; which company that is belongs in the config, not the test.
 func vendorBackedConcerns(t *testing.T) []string {
-	template := readRepoFile(t, "config/management.tpl.json")
-	declaresProvider := regexp.MustCompile(`"(\w+)":\s*\{[^{}]*"provider"`)
+	var template any
+	repository(t).JSONInto(t, configTemplate, &template)
 	seen := map[string]bool{"source_control": true}
-	for _, m := range declaresProvider.FindAllStringSubmatch(template, -1) {
-		seen[m[1]] = true
+	var walk func(any)
+	walk = func(node any) {
+		switch v := node.(type) {
+		case map[string]any:
+			for k, x := range v {
+				if inner, ok := x.(map[string]any); ok {
+					if _, names := inner["provider"]; names {
+						seen[k] = true
+					}
+				}
+				walk(x)
+			}
+		case []any:
+			for _, x := range v {
+				walk(x)
+			}
+		}
 	}
+	walk(template)
 	var out []string
 	for c := range seen {
 		out = append(out, c)
@@ -140,21 +135,7 @@ func vendorBackedConcerns(t *testing.T) []string {
 // lifecycleVerbs is what the contractor offers, read from the one list the
 // program itself dispatches on.
 func lifecycleVerbs(t *testing.T) []string {
-	body := readRepoFile(t, "scripts/contractor/main.go")
-	_, after, ok := strings.Cut(body, "var knownVerbs = []string{")
-	if !ok {
-		t.Fatal("scripts/contractor/main.go declares no knownVerbs, so this asserts nothing about the lifecycle")
-	}
-	list, _, ok := strings.Cut(after, "}")
-	if !ok {
-		t.Fatal("knownVerbs is not terminated, which should not compile")
-	}
-	var verbs []string
-	for _, field := range strings.Split(list, ",") {
-		if v := strings.Trim(strings.TrimSpace(field), `"`); v != "" {
-			verbs = append(verbs, v)
-		}
-	}
+	verbs := contractorVerbs(t, repository(t), "scripts/contractor/main.go")
 	sort.Strings(verbs)
 	return verbs
 }

@@ -1,9 +1,10 @@
 package repo
 
 import (
-	"os"
+	"homelab/tests/parsed"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -23,10 +24,12 @@ import (
 
 func TestTheHookShimRunsTheGuardBeforePreCommit(t *testing.T) {
 	for _, hook := range []string{"pre-commit", "pre-push"} {
-		body := readShim(t, hook)
+		commands := readShim(t, hook)
 
-		guard := strings.Index(body, "security guard-deliveries")
-		precommit := strings.Index(body, "exec pre-commit")
+		guard := slices.IndexFunc(commands, runsTheDeliveryGuard)
+		precommit := slices.IndexFunc(commands, func(c parsed.Command) bool {
+			return len(c.Words) > 1 && c.Words[0] == "exec" && c.Words[1] == "pre-commit"
+		})
 
 		if guard < 0 {
 			t.Errorf("githooks/%s does not run `security guard-deliveries`, so an unapproved "+
@@ -49,8 +52,10 @@ func TestTheHookShimRunsTheGuardBeforePreCommit(t *testing.T) {
 // refuses. `set -e` is what makes the guard's exit code stop the commit.
 func TestTheHookShimFailsOnAFailingGuard(t *testing.T) {
 	for _, hook := range []string{"pre-commit", "pre-push", "commit-msg"} {
-		body := readShim(t, hook)
-		if !strings.Contains(body, "set -euo pipefail") {
+		setsE := slices.ContainsFunc(readShim(t, hook), func(c parsed.Command) bool {
+			return slices.Equal(c.Words, []string{"set", "-euo", "pipefail"})
+		})
+		if !setsE {
 			t.Errorf("githooks/%s does not set -e, so a failing guard would be reported "+
 				"and the commit would proceed anyway", hook)
 		}
@@ -60,7 +65,7 @@ func TestTheHookShimFailsOnAFailingGuard(t *testing.T) {
 // git will not run a shim it cannot execute, and will not say so loudly.
 func TestTheHookShimsAreExecutable(t *testing.T) {
 	for _, hook := range []string{"pre-commit", "pre-push", "commit-msg"} {
-		info, err := os.Stat(filepath.Join(repoRoot(t), "githooks", hook))
+		info, err := repository(t).Stat("githooks/" + hook)
 		if err != nil {
 			t.Fatalf("githooks/%s: %v", hook, err)
 		}
@@ -75,16 +80,16 @@ func TestTheHookShimsAreExecutable(t *testing.T) {
 // .git/hooks - which pre-commit owns and overwrites - and the guard is a file
 // nobody runs.
 func TestSetupPointsGitAtTheShims(t *testing.T) {
-	body, err := os.ReadFile(filepath.Join(repoRoot(t), "scripts", "install-dependencies.sh"))
-	if err != nil {
-		t.Fatalf("reading install-dependencies.sh: %v", err)
-	}
-	s := string(body)
-	if !strings.Contains(s, "core.hooksPath githooks") {
+	setup := parsed.Commands(repository(t).Shell(t, installDependencies))
+	points := slices.ContainsFunc(setup, func(c parsed.Command) bool {
+		i := slices.Index(c.Words, "core.hooksPath")
+		return len(c.Words) > 0 && c.Words[0] == "git" && i >= 0 && i+1 < len(c.Words) && c.Words[i+1] == "githooks"
+	})
+	if !points {
 		t.Fatal("setup does not point git at githooks/, so the shims are files nobody " +
 			"runs and pre-commit's own hook is what git invokes")
 	}
-	if strings.Contains(s, "pre-commit install\n") {
+	if slices.ContainsFunc(setup, func(c parsed.Command) bool { return slices.Equal(c.Words, []string{"pre-commit", "install"}) }) {
 		t.Error("setup still runs `pre-commit install`, which writes .git/hooks/pre-commit " +
 			"and takes precedence over nothing - but it is the mechanism the shim " +
 			"replaces, and leaving both means whichever git picks decides whether the " +
@@ -92,13 +97,16 @@ func TestSetupPointsGitAtTheShims(t *testing.T) {
 	}
 }
 
-func readShim(t *testing.T, hook string) string {
+// readShim is every command a hook shim runs, in order.
+func readShim(t *testing.T, hook string) []parsed.Command {
 	t.Helper()
-	body, err := os.ReadFile(filepath.Join(repoRoot(t), "githooks", hook))
-	if err != nil {
-		t.Fatalf("reading githooks/%s: %v", hook, err)
-	}
-	return string(body)
+	return parsed.Commands(repository(t).Shell(t, "githooks/"+hook))
+}
+
+// runsTheDeliveryGuard reports whether a command is the security program's
+// guard-deliveries verb.
+func runsTheDeliveryGuard(c parsed.Command) bool {
+	return len(c.Words) > 1 && filepath.Base(c.Words[0])+" "+c.Words[1] == "security guard-deliveries"
 }
 
 // The Format lane runs the same .pre-commit-config.yaml a developer runs, and
@@ -158,21 +166,21 @@ func TestEverySystemHookIsSkippedInTheFormatLane(t *testing.T) {
 			"comparing an empty set against the skip list and proving nothing")
 	}
 
-	body := workflowText(t, "pr-validation.yml")
-	m := regexp.MustCompile(`(?m)^\s+SKIP:\s*(\S+)`).FindStringSubmatch(body)
-	if m == nil {
+	workflow := repository(t).YAMLDocuments(t, workflowPath("pr-validation.yml"))
+	skip, ok := scalarAt(workflow, "SKIP")
+	if !ok {
 		t.Fatal("the Format lane no longer sets SKIP, so every system hook now runs " +
 			"there - each will fail on a binary that lane does not install")
 	}
 	skipped := map[string]bool{}
-	for _, name := range strings.Split(m[1], ",") {
+	for _, name := range strings.Split(skip, ",") {
 		if name = strings.TrimSpace(name); name != "" {
 			skipped[name] = true
 		}
 	}
 
-	delivered := formatLaneDeliveries(t, body)
-	lock := readRepoFile(t, "scripts/deliveries.lock")
+	delivered := formatLaneDeliveries(t, workflow)
+	lock := repository(t).DeliveriesLock(t)
 	for id := range system {
 		if !skipped[id] {
 			if pkg, ok := lockedPythonPackage(entries[id]); ok {
@@ -182,7 +190,7 @@ func TestEverySystemHookIsSkippedInTheFormatLane(t *testing.T) {
 						"It will run there and fail with \"No module named\". Add %s to the lane's "+
 						"scripts/take-delivery.sh step, or skip the hook and name its owner.",
 						id, entries[id], pkg, pkg)
-				} else if !strings.Contains(lock, "# [pypi: "+pkg+" ") {
+				} else if _, locked := lock["pypi:"+pkg]; !locked {
 					t.Errorf("hook %q runs `%s`, and scripts/deliveries.lock has no pypi: section for %s, "+
 						"so the lane's delivery of it fails before any hook runs", id, entries[id], pkg)
 				}
@@ -208,27 +216,41 @@ func TestEverySystemHookIsSkippedInTheFormatLane(t *testing.T) {
 
 // formatLaneDeliveries is every name the Format lane passes to
 // scripts/take-delivery.sh before it runs pre-commit.
-func formatLaneDeliveries(t *testing.T, workflow string) map[string]bool {
+func formatLaneDeliveries(t *testing.T, workflow []any) map[string]bool {
 	t.Helper()
-	start := strings.Index(workflow, "\n  format:\n")
-	if start < 0 {
+	var wf struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				Run string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if len(workflow) != 1 || as(workflow[0], &wf) != nil {
+		t.Fatal("pr-validation.yml is not one workflow that can be read")
+	}
+	lane, ok := wf.Jobs["format"]
+	if !ok {
 		t.Fatal("pr-validation.yml has no format job, so which packages the Format lane installs cannot be read")
 	}
-	lane := workflow[start+1:]
-	if end := regexp.MustCompile(`\n  [a-z0-9_-]+:\n`).FindStringIndex(lane[1:]); end != nil {
-		lane = lane[:end[0]+1]
-	}
-	run := strings.Index(lane, "pre-commit run --all-files")
-	if run < 0 {
-		t.Fatal("the Format lane does not run pre-commit, so nothing it installs can be judged against the hooks")
-	}
 	out := map[string]bool{}
-	for _, m := range regexp.MustCompile(`scripts/take-delivery\.sh((?: [a-z0-9-]+)+)`).FindAllStringSubmatchIndex(lane[:run], -1) {
-		for _, name := range strings.Fields(lane[m[2]:m[3]]) {
-			out[name] = true
+	for _, step := range lane.Steps {
+		commands, err := parsed.WorkflowCommands("the Format lane", step.Run)
+		if err != nil {
+			t.Fatalf("a step of the Format lane is not shell that can be read: %v", err)
+		}
+		for _, c := range commands {
+			if len(c.Words) >= 3 && slices.Equal(c.Words[:3], []string{"pre-commit", "run", "--all-files"}) {
+				return out
+			}
+			if len(c.Words) > 0 && strings.HasSuffix(c.Words[0], "scripts/take-delivery.sh") {
+				for _, name := range c.Words[1:] {
+					out[name] = true
+				}
+			}
 		}
 	}
-	return out
+	t.Fatal("the Format lane does not run pre-commit, so nothing it installs can be judged against the hooks")
+	return nil
 }
 
 // lockedPythonPackage reads `delivered-python -m <module>...` and returns the PyPI name
@@ -259,25 +281,17 @@ func lockedPythonPackage(entry string) (string, bool) {
 // is not that one hook was missing. It is that adding a stage to the config
 // looks complete and is not, and the next stage added would go the same way.
 func TestEveryInstalledHookTypeHasAShim(t *testing.T) {
-	cfg := readRepoFile(t, ".pre-commit-config.yaml")
-
-	m := regexp.MustCompile(`default_install_hook_types:\s*\[([^\]]*)\]`).FindStringSubmatch(cfg)
-	if m == nil {
-		t.Fatal("could not find default_install_hook_types in .pre-commit-config.yaml.\n\nIf it was restructured, this contract needs re-examining rather than re-pointing: the property is that every stage git is told to run has a shim to run.")
+	var cfg struct {
+		Types []string `yaml:"default_install_hook_types"`
 	}
-
-	var stages []string
-	for _, raw := range strings.Split(m[1], ",") {
-		if s := strings.TrimSpace(raw); s != "" {
-			stages = append(stages, s)
-		}
-	}
+	repository(t).YAMLInto(t, ".pre-commit-config.yaml", &cfg)
+	stages := cfg.Types
 	if len(stages) == 0 {
 		t.Fatal("default_install_hook_types is empty, so this check is asserting nothing")
 	}
 
 	for _, stage := range stages {
-		if _, err := os.Stat(filepath.Join(repoRoot(t), "githooks", stage)); err != nil {
+		if !repository(t).Exists("githooks/" + stage) {
 			t.Errorf("%q is in default_install_hook_types but githooks/%s does not exist.\n\ncore.hooksPath replaces .git/hooks rather than merging with it, so the hook pre-commit installs for this stage is never invoked. It looks installed and does nothing.", stage, stage)
 		}
 	}

@@ -2,9 +2,7 @@ package repo
 
 import (
 	"go/ast"
-	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -41,7 +39,7 @@ func TestNoFunctionIsReachableOnlyFromItsTests(t *testing.T) {
 				"call it has been removed and every test still passed - which is how a "+
 				"guard gets switched off without anybody noticing. Delete it, or assert "+
 				"the behaviour at the level that calls it.",
-				rel(t, pkg), name)
+				pkg, name)
 		}
 		for _, name := range dead {
 			t.Errorf("%s: %s is called from nowhere at all.\n\n"+
@@ -49,7 +47,7 @@ func TestNoFunctionIsReachableOnlyFromItsTests(t *testing.T) {
 				"up, or a call site that was deleted - and the second is indistinguishable "+
 				"from the first once it has happened, which is why this is checked rather "+
 				"than noticed.",
-				rel(t, pkg), name)
+				pkg, name)
 		}
 	}
 }
@@ -59,33 +57,23 @@ func TestNoFunctionIsReachableOnlyFromItsTests(t *testing.T) {
 // function in it is reachable only from tests by construction.
 func goPackages(t *testing.T) []string {
 	t.Helper()
-	root := filepath.Join(repoRoot(t), "scripts")
+	seen := map[string]bool{}
 	var dirs []string
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
+	for _, rel := range repository(t).Files(t) {
+		dir := filepath.Dir(rel)
+		if !strings.HasPrefix(rel, "scripts/") || !strings.HasSuffix(rel, "_test.go") || seen[dir] {
+			continue
 		}
-		if !info.IsDir() {
-			return nil
+		skipped := false
+		for _, part := range strings.Split(dir, "/") {
+			skipped = skipped || part == "testdata" || strings.HasPrefix(part, ".")
 		}
-		if info.Name() == "testdata" || strings.HasPrefix(info.Name(), ".") {
-			return filepath.SkipDir
+		if !skipped {
+			seen[dir] = true
+			dirs = append(dirs, dir)
 		}
-		entries, err := os.ReadDir(path)
-		if err != nil {
-			return err
-		}
-		for _, e := range entries {
-			if strings.HasSuffix(e.Name(), "_test.go") {
-				dirs = append(dirs, path)
-				return nil
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking %s: %v", root, err)
 	}
+	sort.Strings(dirs)
 	if len(dirs) == 0 {
 		t.Fatal("found no Go packages with tests, so this check would pass on nothing")
 	}
@@ -108,53 +96,54 @@ func goPackages(t *testing.T) []string {
 // has caught was unexported.
 func unwiredFunctions(t *testing.T, dir string) (testOnly, dead []string) {
 	t.Helper()
+	tree := repository(t)
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, dir, nil, 0)
-	if err != nil {
-		t.Fatalf("parsing %s: %v", dir, err)
+	files := map[string]*ast.File{}
+	for _, rel := range tree.Files(t) {
+		if filepath.Dir(rel) == dir && strings.HasSuffix(rel, ".go") {
+			files[rel] = tree.Go(t, fset, rel)
+		}
 	}
 
 	declared := map[string]bool{}
 	usedInProd := map[string]bool{}
 	usedInTest := map[string]bool{}
 
-	for _, pkg := range pkgs {
-		for name, file := range pkg.Files {
-			isTest := strings.HasSuffix(name, "_test.go")
-			for _, d := range file.Decls {
-				fn, ok := d.(*ast.FuncDecl)
-				if ok && !isTest && fn.Recv == nil && !ast.IsExported(fn.Name.Name) {
-					declared[fn.Name.Name] = true
-				}
+	for name, file := range files {
+		isTest := strings.HasSuffix(name, "_test.go")
+		for _, d := range file.Decls {
+			fn, ok := d.(*ast.FuncDecl)
+			if ok && !isTest && fn.Recv == nil && !ast.IsExported(fn.Name.Name) {
+				declared[fn.Name.Name] = true
 			}
-			ast.Inspect(file, func(n ast.Node) bool {
-				// A declaration is not a use of itself.
-				if fn, ok := n.(*ast.FuncDecl); ok {
-					if fn.Body != nil {
-						ast.Inspect(fn.Body, func(b ast.Node) bool {
-							if id, ok := b.(*ast.Ident); ok {
-								mark(usedInProd, usedInTest, id.Name, isTest)
-							}
-							return true
-						})
-					}
-					// Types in the signature still count as uses.
-					ast.Inspect(fn.Type, func(b ast.Node) bool {
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			// A declaration is not a use of itself.
+			if fn, ok := n.(*ast.FuncDecl); ok {
+				if fn.Body != nil {
+					ast.Inspect(fn.Body, func(b ast.Node) bool {
 						if id, ok := b.(*ast.Ident); ok {
 							mark(usedInProd, usedInTest, id.Name, isTest)
 						}
 						return true
 					})
-					return false
 				}
-				// Everything outside a function body: var blocks, consts,
-				// composite literals holding function values.
-				if id, ok := n.(*ast.Ident); ok {
-					mark(usedInProd, usedInTest, id.Name, isTest)
-				}
-				return true
-			})
-		}
+				// Types in the signature still count as uses.
+				ast.Inspect(fn.Type, func(b ast.Node) bool {
+					if id, ok := b.(*ast.Ident); ok {
+						mark(usedInProd, usedInTest, id.Name, isTest)
+					}
+					return true
+				})
+				return false
+			}
+			// Everything outside a function body: var blocks, consts,
+			// composite literals holding function values.
+			if id, ok := n.(*ast.Ident); ok {
+				mark(usedInProd, usedInTest, id.Name, isTest)
+			}
+			return true
+		})
 	}
 
 	for name := range declared {
@@ -178,13 +167,4 @@ func mark(prod, test map[string]bool, name string, isTest bool) {
 		return
 	}
 	prod[name] = true
-}
-
-func rel(t *testing.T, path string) string {
-	t.Helper()
-	r, err := filepath.Rel(repoRoot(t), path)
-	if err != nil {
-		return path
-	}
-	return r
 }

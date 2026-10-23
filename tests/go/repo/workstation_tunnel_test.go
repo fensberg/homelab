@@ -1,7 +1,7 @@
 package repo
 
 import (
-	"os/exec"
+	"homelab/tests/parsed"
 	"regexp"
 	"strings"
 	"testing"
@@ -14,9 +14,8 @@ import (
 // covers: shell:workstation/tunnel.sh
 func lockRules(t *testing.T, args ...string) (string, error) {
 	t.Helper()
-	root := repoRoot(t)
-	out, err := exec.Command("bash", append([]string{root + "/workstation/tunnel.sh", "rules"}, args...)...).CombinedOutput()
-	return string(out), err
+	stdout, stderr, err := repository(t).Invoke(parsed.Run{Outside: true}, "bash", append([]string{parsed.Here("workstation/tunnel.sh"), "rules"}, args...)...)
+	return string(stdout) + string(stderr), err
 }
 
 var (

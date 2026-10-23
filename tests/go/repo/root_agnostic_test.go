@@ -217,19 +217,16 @@ const (
 // fluxObjectPath is the one tracked manifest in the Flux tree that declares
 // an object of this kind and name, wherever in the tree it is. The reader is
 // the harness's, so every tier finds a manifest the same way.
-func fluxObjectPath(kind, name string) (string, error) {
-	return harness.FluxManifest(kind, name)
+func fluxObjectPath(t *testing.T, kind, name string) (string, error) {
+	t.Helper()
+	return repository(t).FluxObjectPath(t, kind, name)
 }
 
-// fluxObject is that manifest's path and body. The test fails if no manifest
-// declares the object or several do.
-func fluxObject(t *testing.T, kind, name string) (path, body string) {
+// fluxObject is that manifest's path and every document it holds, decoded.
+// The test fails if no manifest declares the object or several do.
+func fluxObject(t *testing.T, kind, name string) (path string, docs []any) {
 	t.Helper()
-	path, err := fluxObjectPath(kind, name)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return path, readRepoFile(t, path)
+	return repository(t).FluxObject(t, kind, name)
 }
 
 // beside is a file in the same directory as a manifest found by what it

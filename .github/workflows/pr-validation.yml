@@ -812,8 +812,10 @@ jobs:
     name: "Repository invariants"
     runs-on: pr-builds-${{ vars.pull_request_runners_site }}
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
-    # which is what GitHub's default timeout allows.
-    timeout-minutes: 15
+    # which is what GitHub's default timeout allows; above Go's own bound
+    # on the tests below, so a slow run fails as a timeout that names the
+    # test rather than as a cancelled job that names nothing.
+    timeout-minutes: 35
     permissions:
       contents: read
     steps:
@@ -876,6 +878,13 @@ jobs:
         # The two meta-tests run in the lane below, in parallel with this one.
         # They are skipped by the same variable that selects them there, so
         # one declaration decides both and no test can fall between the two.
+        env:
+          # Go's default of ten minutes is not a budget anybody set, and the
+          # guards passed it on #790 while they moved onto tests/parsed: the
+          # application-removal guard runs every guard once per application.
+          # This is a ceiling for a stuck run, not the target. -v prints each
+          # guard's time, which is what says where the time went.
+          GOFLAGS: -timeout=30m -v
         run: go test ./... -skip "$META_TESTS"
 
   meta:

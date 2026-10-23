@@ -1,4 +1,4 @@
-package repo
+package parsed
 
 import (
 	"strings"
@@ -44,16 +44,16 @@ func FuzzYAMLDuplicates(f *testing.F) {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, in string) {
-		dupes, err := YAMLDuplicates(in)
+		dupes, err := yamlDuplicates(in)
 		if err != nil {
 			// Refusing to parse is a fine answer for arbitrary bytes; claiming
 			// findings while refusing is not.
 			if len(dupes) != 0 {
-				t.Errorf("YAMLDuplicates failed on %q and still returned %d finding(s)", in, len(dupes))
+				t.Errorf("yamlDuplicates failed on %q and still returned %d finding(s)", in, len(dupes))
 			}
 			return
 		}
-		assertWellFormed(t, "YAMLDuplicates", in, dupes)
+		assertWellFormed(t, "yamlDuplicates", in, dupes)
 	})
 }
 
@@ -68,14 +68,14 @@ func FuzzJSONDuplicates(f *testing.F) {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, in string) {
-		dupes, err := JSONDuplicates(in)
+		dupes, err := jsonDuplicates(in)
 		if err != nil {
 			if len(dupes) != 0 {
-				t.Errorf("JSONDuplicates failed on %q and still returned %d finding(s)", in, len(dupes))
+				t.Errorf("jsonDuplicates failed on %q and still returned %d finding(s)", in, len(dupes))
 			}
 			return
 		}
-		assertWellFormed(t, "JSONDuplicates", in, dupes)
+		assertWellFormed(t, "jsonDuplicates", in, dupes)
 	})
 }
 
@@ -89,12 +89,12 @@ func FuzzEnvDuplicates(f *testing.F) {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, in string) {
-		dupes := EnvDuplicates(in)
-		assertWellFormed(t, "EnvDuplicates", in, dupes)
+		dupes := envDuplicates(in)
+		assertWellFormed(t, "envDuplicates", in, dupes)
 		// An env file has no nesting, so nothing may claim a path into one.
 		for _, d := range dupes {
 			if strings.Contains(d.Path, ".") {
-				t.Errorf("EnvDuplicates reported a nested path %q for a flat format, on %q", d.Path, in)
+				t.Errorf("envDuplicates reported a nested path %q for a flat format, on %q", d.Path, in)
 			}
 		}
 	})

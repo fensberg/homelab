@@ -4,16 +4,13 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
-	"go/parser"
 	"go/printer"
 	"go/token"
-	"os"
+	"homelab/tests/parsed"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 
 	"homelab/details/applications"
 )
@@ -60,21 +57,17 @@ type customBlocks struct {
 func readCustomBlocks(t *testing.T) customBlocks {
 	t.Helper()
 	var c customBlocks
-	if err := yaml.Unmarshal([]byte(readRepoFile(t, customBlocksFile)), &c); err != nil {
-		t.Fatalf("%s: %v", customBlocksFile, err)
-	}
+	repository(t).YAMLInto(t, customBlocksFile, &c)
 	return c
 }
 
 func TestAnApplicationsSettingsBuildOnItsBaseAndStayInItsDirectory(t *testing.T) {
-	root := repoRoot(t)
+	tree := repository(t)
 	// No floor on how many there are: an estate with no application has
 	// none, and what this refuses is proved against applications written
 	// here, in TestApplicationShapeProblemsRefusesWhatIsNotTheShape.
 	for _, rel := range tracked(t, func(rel string) bool { return strings.HasPrefix(rel, applications.Dir+"/") }) {
-		for _, p := range applicationShapeProblems(rel, func(name string) ([]byte, error) {
-			return os.ReadFile(filepath.Join(root, name))
-		}) {
+		for _, p := range applicationShapeProblems(t, tree, rel) {
 			t.Error(p)
 		}
 	}
@@ -91,7 +84,8 @@ var notSettings = map[string]bool{applications.Base: true, "image": true, applic
 // no declaration; the thing that runs is the base's. And nothing an
 // application builds from is outside its own directory, so removing one is
 // removing that directory.
-func applicationShapeProblems(rel string, read func(string) ([]byte, error)) []string {
+func applicationShapeProblems(t *testing.T, tree *parsed.Tree, rel string) []string {
+	t.Helper()
 	parts := strings.Split(strings.TrimPrefix(rel, applications.Dir+"/"), "/")
 	// A file of the application's own beside its directories: its
 	// declaration, its pins, its notes. And anything in a directory Flux
@@ -101,9 +95,10 @@ func applicationShapeProblems(rel string, read func(string) ([]byte, error)) []s
 	}
 	app, dir := parts[0], parts[1]
 	if len(parts) == 3 && parts[2] == applications.Kustomization {
-		k, err := readKustomization(read, rel)
-		if err != nil {
-			return []string{err.Error()}
+		var k kustomizationResources
+		docs, isYAML := tree.MaybeYAML(t, rel)
+		if !isYAML || len(docs) != 1 || as(docs[0], &k) != nil {
+			return []string{rel + " is not a kustomization that can be read"}
 		}
 		var out []string
 		onBase := false
@@ -123,12 +118,12 @@ func applicationShapeProblems(rel string, read func(string) ([]byte, error)) []s
 	if dir == applications.Base || !(strings.HasSuffix(rel, ".yaml") || strings.HasSuffix(rel, ".yml")) {
 		return nil
 	}
-	body, err := read(rel)
-	if err != nil {
-		return []string{err.Error()}
+	docs, isYAML := tree.MaybeYAML(t, rel)
+	if !isYAML {
+		return nil // not a manifest; the YAML lint owns that
 	}
 	var out []string
-	for _, o := range environmentObjects(body) {
+	for _, o := range environmentObjects(docs) {
 		if workloadKinds[o.kind] {
 			out = append(out, fmt.Sprintf("%s declares %s %s. What runs comes from the application's base; an environment says only how it is configured and reached. Move it into %s/%s/%s and patch it here.", rel, o.kind, o.name, applications.Dir, app, applications.Base))
 		}
@@ -145,25 +140,12 @@ type kustomizationResources struct {
 	Resources []string `yaml:"resources"`
 }
 
-func readKustomization(read func(string) ([]byte, error), rel string) (kustomizationResources, error) {
-	var k kustomizationResources
-	body, err := read(rel)
-	if err != nil {
-		return k, err
-	}
-	if err := yaml.Unmarshal(body, &k); err != nil {
-		return k, fmt.Errorf("%s: %w", rel, err)
-	}
-	return k, nil
-}
-
 type environmentObject struct{ kind, name string }
 
 // environmentObjects is every Kubernetes object in one manifest.
-func environmentObjects(body []byte) []environmentObject {
+func environmentObjects(docs []any) []environmentObject {
 	var out []environmentObject
-	dec := yaml.NewDecoder(bytes.NewReader(body))
-	for {
+	for _, d := range docs {
 		var doc struct {
 			Kind     string `yaml:"kind"`
 			Metadata struct {
@@ -171,8 +153,8 @@ func environmentObjects(body []byte) []environmentObject {
 				Namespace string `yaml:"namespace"`
 			} `yaml:"metadata"`
 		}
-		if dec.Decode(&doc) != nil {
-			break
+		if as(d, &doc) != nil {
+			continue
 		}
 		if doc.Kind != "" {
 			out = append(out, environmentObject{doc.Kind, doc.Metadata.Namespace + "/" + doc.Metadata.Name})
@@ -182,7 +164,7 @@ func environmentObjects(body []byte) []environmentObject {
 }
 
 func TestAGoFunctionWrittenTwiceIsDeclared(t *testing.T) {
-	root := repoRoot(t)
+	tree := repository(t)
 	declared := map[string]bool{}
 	for _, d := range readCustomBlocks(t).Go {
 		if strings.TrimSpace(d.Reason) == "" {
@@ -197,18 +179,11 @@ func TestAGoFunctionWrittenTwiceIsDeclared(t *testing.T) {
 	if len(files) < 100 {
 		t.Fatalf("only %d Go files were read, so the enumeration has stopped matching", len(files))
 	}
-	sources := map[string][]byte{}
+	sources := map[string]*ast.File{}
 	for _, rel := range files {
-		body, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatal(err)
-		}
-		sources[rel] = body
+		sources[rel] = tree.Go(t, token.NewFileSet(), rel)
 	}
-	groups, err := duplicateFunctions(sources)
-	if err != nil {
-		t.Fatal(err)
-	}
+	groups := duplicateFunctions(sources)
 	found := map[string]bool{}
 	for _, g := range groups {
 		found[g] = true
@@ -221,15 +196,9 @@ func TestAGoFunctionWrittenTwiceIsDeclared(t *testing.T) {
 // signature and body print identically, and returns each group that spans
 // more than one package directory as its sorted members joined by two spaces.
 // Names are not compared: a copy renamed is still a copy.
-func duplicateFunctions(sources map[string][]byte) ([]string, error) {
+func duplicateFunctions(sources map[string]*ast.File) []string {
 	byShape := map[string][]string{}
-	for rel, src := range sources {
-		f, err := parser.ParseFile(token.NewFileSet(), rel, src, 0)
-		if err != nil {
-			// A file that does not parse cannot be compared, and going on
-			// would report "no copies" for it.
-			return nil, fmt.Errorf("could not compare %s, so a copy there would go unseen: %w", rel, err)
-		}
+	for rel, f := range sources {
 		addShapes(byShape, rel, f)
 	}
 	var groups []string
@@ -245,7 +214,7 @@ func duplicateFunctions(sources map[string][]byte) ([]string, error) {
 		groups = append(groups, strings.Join(members, "  "))
 	}
 	sort.Strings(groups)
-	return groups, nil
+	return groups
 }
 
 // addShapes records each function of three or more statements in f by the
@@ -293,7 +262,9 @@ func TestDuplicateFunctionsFindsCopiesAcrossPackagesOnly(t *testing.T) {
 	body := func(pkg, name string) []byte {
 		return []byte("package " + pkg + "\nfunc " + name + "(s string) int {\n\tn := len(s)\n\tn++\n\treturn n\n}\n")
 	}
-	got, err := duplicateFunctions(map[string][]byte{
+	fixture := parsed.Empty(t)
+	sources := map[string]*ast.File{}
+	for rel, src := range map[string][]byte{
 		"a/x.go": body("a", "count"),
 		"b/y.go": body("b", "tally"), // renamed, still a copy
 		"c/z.go": []byte("package c\nfunc count(s string) int {\n\tn := len(s)\n\tn += 2\n\treturn n\n}\n"),
@@ -301,14 +272,12 @@ func TestDuplicateFunctionsFindsCopiesAcrossPackagesOnly(t *testing.T) {
 		"d/q.go": body("d", "two"), // same package: not this guard's question
 		"e/r.go": []byte("package e\nfunc short() int { return 1 }\n"),
 		"f/s.go": []byte("package f\nfunc short() int { return 1 }\n"), // too small to matter
-	})
-	if err != nil {
-		t.Fatal(err)
+	} {
+		fixture.Write(t, rel, string(src))
+		sources[rel] = fixture.Go(t, token.NewFileSet(), rel)
 	}
+	got := duplicateFunctions(sources)
 	want := []string{"a.count  b.tally  d.one  d.two"}
-	if _, err := duplicateFunctions(map[string][]byte{"g/t.go": []byte("package g\nfunc broken( {\n")}); err == nil || !strings.Contains(err.Error(), "g/t.go") {
-		t.Errorf("a file that does not parse was not reported: %v", err)
-	}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("got %q, want %q", got, want)
 	}
@@ -333,7 +302,10 @@ func TestApplicationShapeProblemsRefusesWhatIsNotTheShape(t *testing.T) {
 		at("remote/s/kustomization.yaml"):      "resources: [../base, https://example.invalid/thing]\n",
 		at("unreadable/s/kustomization.yaml"):  "resources: {\n",
 	}
-	read := func(rel string) ([]byte, error) { return []byte(files[rel]), nil }
+	fixture := parsed.Empty(t)
+	for rel, body := range files {
+		fixture.Write(t, rel, body)
+	}
 	want := map[string]string{
 		at("app/p/runs.yaml"):                  "declares Deployment n/d",
 		at("alone/s/kustomization.yaml"):       "does not build on ../base",
@@ -343,7 +315,7 @@ func TestApplicationShapeProblemsRefusesWhatIsNotTheShape(t *testing.T) {
 		at("unreadable/s/kustomization.yaml"):  "unreadable/s/kustomization.yaml",
 	}
 	for rel := range files {
-		got, w := strings.Join(applicationShapeProblems(rel, read), "|"), want[rel]
+		got, w := strings.Join(applicationShapeProblems(t, fixture, rel), "|"), want[rel]
 		if (w == "") != (got == "") || !strings.Contains(got, w) {
 			t.Errorf("%s: got %q, want %q", rel, got, w)
 		}

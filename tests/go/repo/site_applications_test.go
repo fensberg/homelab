@@ -1,17 +1,11 @@
 package repo
 
 import (
-	"errors"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 
 	"homelab/details/applications"
 	"homelab/details/flux"
@@ -44,26 +38,17 @@ import (
 // it is written; an estate where no site runs anything has none, and what
 // this refuses is proved against files written here.
 func TestEverySiteRunsItsApplicationsAsTheyAreDeclared(t *testing.T) {
-	root := repoRoot(t)
-	apps, err := applications.Read(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	tree := repository(t)
+	apps := tree.Applications(t)
 	environments := map[string][]string{}
 	for _, a := range apps {
-		if environments[a.Name], err = a.Environments(root); err != nil {
-			t.Fatal(err)
-		}
+		environments[a.Name] = tree.Environments(t, a)
 	}
 	for _, rel := range tracked(t, func(rel string) bool {
 		parts := strings.Split(rel, "/")
 		return len(parts) == 3 && parts[0] == applications.SitesDir && parts[2] == applications.SiteFile
 	}) {
-		body, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, problem := range siteBlockProblems(rel, string(body), apps, environments) {
+		for _, problem := range siteBlockProblems(rel, tree.YAMLDocuments(t, rel), apps, environments) {
 			t.Error(problem)
 		}
 	}
@@ -95,21 +80,16 @@ type siteDocument struct {
 }
 
 // siteBlockProblems is everything wrong with one site's applications file.
-func siteBlockProblems(rel, body string, apps []applications.Application, environments map[string][]string) []string {
+func siteBlockProblems(rel string, parsedDocs []any, apps []applications.Application, environments map[string][]string) []string {
 	declared := map[string]applications.Application{}
 	for _, a := range apps {
 		declared[a.Name] = a
 	}
 	var docs []siteDocument
-	dec := yaml.NewDecoder(strings.NewReader(body))
-	for {
+	for _, d := range parsedDocs {
 		var doc siteDocument
-		err := dec.Decode(&doc)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return []string{fmt.Sprintf("%s does not parse: %v", rel, err)}
+		if err := as(d, &doc); err != nil {
+			return []string{fmt.Sprintf("%s holds a document of another shape: %v", rel, err)}
 		}
 		if doc.Kind != "" {
 			docs = append(docs, doc)
@@ -217,18 +197,8 @@ func siteBlockProblems(rel, body string, apps []applications.Application, enviro
 	// this test, so that what is compared is the reading and not the
 	// drafter.
 	var documents []applications.Document
-	decoder := yaml.NewDecoder(strings.NewReader(body))
-	for {
-		var doc applications.Document
-		err := decoder.Decode(&doc)
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			say("it is not YAML that can be read: %v", err)
-			return problems
-		}
-		if doc != nil {
+	for _, d := range parsedDocs {
+		if doc, ok := d.(map[string]any); ok {
 			documents = append(documents, doc)
 		}
 	}
@@ -282,7 +252,6 @@ func TestSiteBlockProblemsNamesEachWayABlockDepartsFromItsDeclaration(t *testing
 		"a Kustomization under another name":    {source("thing") + block("workloads-production", "thing", "staging", ""), nil},
 		"nothing in it yet":                     {"# nothing yet\n", nil},
 		"following the repository":              {strings.Replace(block("thing", "thing", "production", ""), "kind: OCIRepository\n    name: thing", "kind: GitRepository\n    name: flux-system", 1), nil},
-		"not YAML":                              {"kind: [\n", []string{"does not parse"}},
 		"a path that is not an application's":   {source("thing") + strings.Replace(block("thing", "thing", "production", ""), "./"+applications.Dir+"/thing/production", "./clusters/core", 1), []string{"reconciles \"./clusters/core\"", "belongs to no application this file runs"}},
 		"a path below an environment":           {source("thing") + strings.Replace(block("thing", "thing", "production", ""), "/thing/production", "/thing/production/extra", 1), []string{"reconciles", "belongs to no application this file runs"}},
 		"an application nothing declares":       {source("ghost") + block("ghost", "ghost", "production", ""), []string{"no application of that name", "belongs to no application this file runs"}},
@@ -305,7 +274,7 @@ func TestSiteBlockProblemsNamesEachWayABlockDepartsFromItsDeclaration(t *testing
 		"a path written in quotes":         {source("thing") + strings.Replace(block("thing", "thing", "production", ""), "  path: ./"+applications.Dir+"/thing/production\n", "  path: \"./"+applications.Dir+"/thing/production\"\n", 1), nil},
 		"a path written on the line below": {source("thing") + strings.Replace(block("thing", "thing", "production", ""), "  path: ./"+applications.Dir+"/thing/production\n", "  path:\n    ./"+applications.Dir+"/thing/production\n", 1), nil},
 	} {
-		got := siteBlockProblems(applications.SiteFilePath("siteN"), c.body, apps, environments)
+		got := siteBlockProblems(applications.SiteFilePath("siteN"), fixtureDocuments(t, c.body), apps, environments)
 		if len(got) != len(c.want) {
 			t.Errorf("%s: want %d problem(s), got %d:\n  %s", name, len(c.want), len(got), strings.Join(got, "\n  "))
 			continue

@@ -1,0 +1,10 @@
+guard: TestAMachinesMemoryIsTheSameWhereItIsMadeAndWhereItIsBudgeted
+file: modules/infrastructure/cluster/compute.tf
+find: "    memory = 14336"
+replace: "    memory = 12288"
+mentions: "a untrusted is made with 12288 MiB and budgeted at 14336 MiB"
+why: >
+  The untrusted worker's size is written in a local that the machine and
+  what rebuilds it both read, not in the machine's own block. Shrunk there,
+  the machine is made smaller than the budget counts it, and a guard that
+  read only the machine's block would find no memory to compare.

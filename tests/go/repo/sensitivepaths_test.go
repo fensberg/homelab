@@ -1,14 +1,12 @@
 package repo
 
 import (
-	"bytes"
+	"homelab/tests/parsed"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 // The sensitive-path list is a rule, so it is checked like one.
@@ -20,74 +18,31 @@ import (
 // in this package: a check on the repository's own files, because nothing else
 // in the pipeline has an opinion about it.
 
-type sensitiveEntry struct {
-	Path string
-	Why  string
-	Line int
-}
+type sensitiveEntry = parsed.SensitiveEntry
 
-// parseSensitivePaths reads the plain-text format: one path per line, the text
-// after "#" is the reason, blank and whole-line comments ignored.
-//
-// Deliberately not a YAML parser. The file is read by a shell script in CI as
-// well as by this test, and a format needing a dependency on both sides is a
-// format that will eventually disagree with itself.
-func parseSensitivePaths(body string) []sensitiveEntry {
-	var out []sensitiveEntry
-	for i, raw := range strings.Split(body, "\n") {
-		line := strings.TrimSpace(raw)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		path, why, _ := strings.Cut(line, "#")
-		out = append(out, sensitiveEntry{
-			Path: strings.TrimSpace(path),
-			Why:  strings.TrimSpace(why),
-			Line: i + 1,
-		})
-	}
-	return out
-}
-
-func loadSensitivePaths(t *testing.T) (string, []sensitiveEntry) {
+func loadSensitivePaths(t *testing.T) (*parsed.Tree, []sensitiveEntry) {
 	t.Helper()
-	root := repoRoot(t)
-	entries := parseSensitivePaths(repoFileText(t, filepath.Join(".github", "sensitive-paths")))
+	tree := repository(t)
+	entries := tree.SensitivePathList(t)
 	if len(entries) < 5 {
 		t.Fatalf("only %d paths declared; this is reading the wrong file or the list was gutted", len(entries))
 	}
-	return root, entries
+	return tree, entries
 }
 
-// The parser is exercised on its own, because CI reimplements it in shell and
-// the two must agree about what a line means.
-func TestParseSensitivePaths(t *testing.T) {
-	got := parseSensitivePaths(`
-# a whole-line comment
-   # an indented comment
-
-path/one/     # first reason
-path/two      #second reason, no space
-path/three
-`)
-	if len(got) != 3 {
-		t.Fatalf("got %d entries, want 3: %+v", len(got), got)
-	}
-	if got[0].Path != "path/one/" || got[0].Why != "first reason" {
-		t.Errorf("entry 0 = %+v", got[0])
-	}
-	if got[1].Why != "second reason, no space" {
-		t.Errorf("a reason with no space after # should still parse: %q", got[1].Why)
-	}
-	if got[2].Path != "path/three" || got[2].Why != "" {
-		t.Errorf("a path with no reason should parse with an empty reason: %+v", got[2])
-	}
+// sensor runs the script CI runs, from the tree being judged, in a
+// directory - a fixture repository the test made, or the tree itself when
+// it is "" - with the changed files on its standard input.
+func sensor(t *testing.T, in string, env []string, changed string) (stdout, stderr string, err error) {
+	t.Helper()
+	out, errs, err := repository(t).Invoke(parsed.Run{In: in, Env: env, Stdin: changed}, "bash", parsed.Here(".github/scripts/sensitive-paths.sh"))
+	return string(out), string(errs), err
 }
 
 func TestEverySensitivePathExists(t *testing.T) {
-	root, entries := loadSensitivePaths(t)
+	tree, entries := loadSensitivePaths(t)
 	for _, e := range entries {
-		if _, err := os.Stat(filepath.Join(root, e.Path)); err != nil {
+		if !tree.Exists(e.Path) {
 			t.Errorf(`line %d: %s is declared sensitive but does not exist.
 
 A tripwire pointed at a missing path does not fail - it stops matching, and
@@ -119,7 +74,7 @@ Name the property that breaks, not the fact that one exists.`, e.Line, e.Path, e
 // The building code must all be covered. Adding a rule to this package without
 // covering it here would leave the newest guard as the least protected one.
 func TestTheCodeLawsAreCoveredBySensitivePaths(t *testing.T) {
-	root, entries := loadSensitivePaths(t)
+	tree, entries := loadSensitivePaths(t)
 
 	covered := func(rel string) bool {
 		for _, e := range entries {
@@ -133,18 +88,13 @@ func TestTheCodeLawsAreCoveredBySensitivePaths(t *testing.T) {
 
 	// Discovered by reading the directory, not from a list, so a new guard
 	// cannot be added without being covered.
-	dir := filepath.Join(root, "tests", "go", "repo")
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("reading %s: %v", dir, err)
-	}
 	found := 0
-	for _, f := range files {
-		if !strings.HasSuffix(f.Name(), "_test.go") {
+	for _, rel := range tree.Files(t) {
+		if filepath.Dir(rel) != guardsDir || !strings.HasSuffix(rel, "_test.go") {
 			continue
 		}
 		found++
-		if rel := filepath.Join("tests", "go", "repo", f.Name()); !covered(rel) {
+		if !covered(rel) {
 			t.Errorf("%s is a building code but no sensitive path covers it", rel)
 		}
 	}
@@ -177,24 +127,13 @@ func TestTheCodeLawsAreCoveredBySensitivePaths(t *testing.T) {
 // bug this package exists for.
 func runSensor(t *testing.T, changed string) (string, error) {
 	t.Helper()
-	root := repoRoot(t)
-	// Given the list as it is going to be, which is what the parser reads, so
-	// the two readers are compared on the same file.
-	list := filepath.Join(t.TempDir(), "sensitive-paths")
-	if err := os.WriteFile(list, []byte(repoFileText(t, filepath.Join(".github", "sensitive-paths"))), 0o644); err != nil {
-		t.Fatalf("preparing the list: %v", err)
-	}
-	cmd := exec.Command("bash", filepath.Join(root, ".github", "scripts", "sensitive-paths.sh"))
-	cmd.Dir = root
-	cmd.Env = append(os.Environ(), "SENSITIVE_PATHS_FILE="+list)
-	cmd.Stdin = strings.NewReader(changed)
-	var out, errb bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &errb
-	err := cmd.Run()
+	// Given the list as it is, which is what the parser reads, so the two
+	// readers are compared on the same file.
+	out, errs, err := sensor(t, "", []string{"SENSITIVE_PATHS_FILE=" + parsed.Here(parsed.SensitivePaths)}, changed)
 	if err != nil {
-		t.Logf("stderr: %s", errb.String())
+		t.Logf("stderr: %s", errs)
 	}
-	return out.String(), err
+	return out, err
 }
 
 func TestSensorTripsOnAGuardedPath(t *testing.T) {
@@ -321,34 +260,28 @@ func TestAProofCannotBeRemovedWithoutSayingSo(t *testing.T) {
 	}
 	write("list", "docs/  # nothing here is touched\n")
 	write(ledgerEntries+"/StillHere.1.yml", "guard: StillHere\n")
-	sensor := func(removals, changed string) (string, error) {
+	run := func(removals, changed string) (string, error) {
 		t.Helper()
 		write(removedProofs, removals)
-		cmd := exec.Command("bash", filepath.Join(repoRoot(t), ".github", "scripts", "sensitive-paths.sh"))
-		cmd.Dir = site
-		cmd.Env = append(os.Environ(), "SENSITIVE_PATHS_FILE="+filepath.Join(site, "list"))
-		cmd.Stdin = strings.NewReader(changed)
-		var out, said bytes.Buffer
-		cmd.Stdout, cmd.Stderr = &out, &said
-		err := cmd.Run()
-		return said.String(), err
+		_, said, err := sensor(t, site, []string{"SENSITIVE_PATHS_FILE=" + filepath.Join(site, "list")}, changed)
+		return said, err
 	}
 	const gone = ledgerEntries + "/WasProved.9.yml"
 
-	if said, err := sensor("removed: []\n", ledgerEntries+"/StillHere.1.yml\nREADME.md\n"); err != nil {
+	if said, err := run("removed: []\n", ledgerEntries+"/StillHere.1.yml\nREADME.md\n"); err != nil {
 		t.Errorf("a change to a proof that is still there was refused: %v\n%s", err, said)
 	}
-	said, err := sensor("removed: []\n", gone+"\n")
+	said, err := run("removed: []\n", gone+"\n")
 	if err == nil || !strings.Contains(said, gone) {
 		t.Errorf("a proof was removed and the change was not refused, or what was removed was not named: %v\n%s", err, said)
 	}
-	if said, err := sensor("removed:\n  - proof: WasProved.9.yml\n    reason: the guard it proved was removed with the thing it guarded\n", gone+"\n"); err != nil {
+	if said, err := run("removed:\n  - proof: WasProved.9.yml\n    reason: the guard it proved was removed with the thing it guarded\n", gone+"\n"); err != nil {
 		t.Errorf("a removal that is named with its reason was refused: %v\n%s", err, said)
 	}
-	if _, err := sensor("removed:\n  - proof: WasProved.9.yml\n    reason:\n", gone+"\n"); err == nil {
+	if _, err := run("removed:\n  - proof: WasProved.9.yml\n    reason:\n", gone+"\n"); err == nil {
 		t.Error("a removal named with no reason was let through, which is a line anybody can add")
 	}
-	if _, err := sensor("removed:\n  - proof: AnotherWasProved.9.yml\n    reason: it names a different proof\n", gone+"\n"); err == nil {
+	if _, err := run("removed:\n  - proof: AnotherWasProved.9.yml\n    reason: it names a different proof\n", gone+"\n"); err == nil {
 		t.Error("a removal was let through on the strength of a line naming some other proof")
 	}
 }
@@ -357,21 +290,19 @@ func TestAProofCannotBeRemovedWithoutSayingSo(t *testing.T) {
 // reason. A line naming a proof that is still there is a removal approved
 // before it has been made.
 func TestARemovalNamesAProofThatIsReallyGone(t *testing.T) {
-	root := repoRoot(t)
+	tree := repository(t)
 	var list struct {
 		Removed []struct {
 			Proof  string `yaml:"proof"`
 			Reason string `yaml:"reason"`
 		} `yaml:"removed"`
 	}
-	if err := yaml.Unmarshal([]byte(repoFileText(t, removedProofs)), &list); err != nil {
-		t.Fatalf("parsing %s: %v", removedProofs, err)
-	}
+	tree.YAMLInto(t, removedProofs, &list)
 	for _, r := range list.Removed {
 		if strings.TrimSpace(r.Reason) == "" {
 			t.Errorf("%s names %q as removed and gives no reason", removedProofs, r.Proof)
 		}
-		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(ledgerEntries), r.Proof)); err == nil {
+		if tree.Exists(ledgerEntries + "/" + r.Proof) {
 			t.Errorf("%s names %q as removed, and it is still there. A removal is said in the change that makes it, not before.", removedProofs, r.Proof)
 		}
 	}
@@ -431,17 +362,13 @@ func TestABranchBehindMainIsJudgedByItsOwnChanges(t *testing.T) {
 	base := git("rev-parse", "HEAD")
 	git("checkout", "-q", "piece")
 
-	cmd := exec.Command("bash", filepath.Join(repoRoot(t), ".github", "scripts", "sensitive-paths.sh"))
-	cmd.Dir = site
-	cmd.Env = append(os.Environ(), "SENSITIVE_PATHS_FILE="+filepath.Join(site, "list"), "BASE="+base, "HEAD="+head)
 	// What the caller hands over: every file that differs between the two.
-	cmd.Stdin = strings.NewReader(git("diff", "--name-only", base, head) + "\n")
-	var out, said bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &said
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("a branch main has moved on from was refused for what main gained: %v\n%s", err, said.String())
+	out, said, err := sensor(t, site, []string{"SENSITIVE_PATHS_FILE=" + filepath.Join(site, "list"), "BASE=" + base, "HEAD=" + head},
+		git("diff", "--name-only", base, head)+"\n")
+	if err != nil {
+		t.Fatalf("a branch main has moved on from was refused for what main gained: %v\n%s", err, said)
 	}
-	if !strings.Contains(out.String(), "tripped=false") {
-		t.Errorf("a branch that touched nothing sensitive tripped the alarm for what main touched:\n%s", out.String())
+	if !strings.Contains(out, "tripped=false") {
+		t.Errorf("a branch that touched nothing sensitive tripped the alarm for what main touched:\n%s", out)
 	}
 }

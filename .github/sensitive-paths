@@ -20,6 +20,7 @@
 # every path must carry a reason, and every building code must be covered.
 
 tests/go/repo/                              # The building code. Deleting one assertion is a smaller file and a green build.
+tests/go/parsed/                            # The one reader the building code reads through, and what keeps it the only way. Loosen it and every guard reads less.
 tests/mutations.yml                         # What the mutation ledger admits it cannot prove. Adding a guard here excuses it from ever being shown to fail.
 tests/mutations/                            # The proof each guard catches anything, one to a file. Deleting one makes a red check vanish and takes the proof with it.
 tests/mutations-removed.yml                 # Where a removed proof is said to have been. A line here is what lets a proof be deleted, so read the reason.
@@ -40,6 +41,7 @@ scripts/contractor/internal/phases/encryption.go# Sets TF_ENCRYPTION. Wrong here
 scripts/contractor/internal/phases/sterilize.go # Wipes every secret on exit. Skipping a file leaves secrets on disk and still reports success.
 scripts/contractor/internal/phases/teardown.go  # Destroys real infrastructure. The ordering stops state being wiped before the VMs it describes.
 scripts/security/                          # Refuses unapproved deliveries and unsigned pushes. Weakening either looks like an ordinary edit.
+scripts/details/deliveries/                # Reads the lock guard-deliveries trusts. A parser that skips a section passes every delivery in it unchecked.
 scripts/deliveries.lock                     # Every tool installed by hash. One changed hash installs a different file on every lane and workstation, and reads as a regenerated lock.
 scripts/take-delivery.sh                    # The only installer the lock reaches. Dropping one hash check installs whatever a supplier serves.
 scripts/procurement/                        # Orders the lock, and holds the expedite duty's standing order. Its verbs decide what the estate installs.

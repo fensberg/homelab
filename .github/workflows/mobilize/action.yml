@@ -155,6 +155,49 @@ runs:
           echo "held=true" >>"$GITHUB_OUTPUT"
         fi
 
+    - name: Whether this runner reaches what it is allowed
+      # The agent allows an address only when it has seen it resolve: the
+      # names it resolves itself when it starts, and every lookup made
+      # through the system's resolver, which it points at itself. On some of
+      # GitHub's runners /etc/resolv.conf is written by GitHub's own egress
+      # proxy (repoint-resolv-conf) and asks that proxy first, so lookups go
+      # around the agent (#791). A connection then works only where the
+      # proxy happens to answer with an address the agent also got - often
+      # for github.com, rarely for a name whose addresses rotate - and the
+      # job fails later, on "exit code 128" or "connection refused", naming
+      # neither. So this asks what the job's programs ask: a runner whose
+      # first nameserver is not the system resolver's stub is refused, and
+      # then github.com is asked for, the way the checkout will. Where either
+      # fails it prints how the runner resolves and stops. Nothing is tried
+      # again: a job cannot move itself to another runner, and the runner's
+      # resolver is not this job's to repair.
+      # Only where the agent runs: on the estate's own runners it holds
+      # nothing (the cluster's network does), and what they resolve through
+      # is the cluster's, which says nothing about the agent.
+      if: inputs.egress-policy == 'block' && runner.environment == 'github-hosted'
+      shell: bash
+      run: |
+        said="$RUNNER_TEMP/reach-github"
+        first="$(awk '$1 == "nameserver" { print $2; exit }' /etc/resolv.conf 2>/dev/null)"
+        if [ "$first" = "127.0.0.53" ] && curl -sS -o /dev/null --max-time 15 https://github.com/ 2>"$said"; then
+          exit 0
+        fi
+        # Readable without sudo, which the agent has removed by now. The
+        # agent's own log is printed by its post step, at the end of the job.
+        echo "::group::What the runner said"
+        echo "the first nameserver programs ask is ${first:-none}"
+        cat "$said" 2>/dev/null || true
+        echo "::endgroup::"
+        echo "::group::How the runner resolves"
+        getent ahosts github.com || true
+        resolvectl status --no-pager || true
+        resolvectl statistics --no-pager || true
+        echo "--- /etc/resolv.conf"
+        cat /etc/resolv.conf || true
+        echo "::endgroup::"
+        echo "::error::This runner's lookups go around the hardening agent: programs ask ${first:-no nameserver} first rather than the system resolver, so the agent refuses whatever it did not see resolve (#791). Nothing in the change being tested caused this."
+        exit 1
+
     - name: Refuse an unrecognised value
       if: >-
         (inputs.checkout != 'true' && inputs.checkout != 'false') ||

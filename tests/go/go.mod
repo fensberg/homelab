@@ -31,12 +31,14 @@ require (
 	github.com/hashicorp/hcl/v2 v2.25.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/stretchr/testify v1.12.1
+	github.com/yuin/goldmark v1.7.8
 	github.com/zclconf/go-cty v1.19.0
 	gopkg.in/yaml.v3 v3.0.1
 	homelab/contractor v0.0.0-00010101000000-000000000000
 	homelab/details v0.0.0
 	k8s.io/api v0.37.1
 	k8s.io/apimachinery v0.37.1
+	mvdan.cc/sh/v3 v3.12.0
 )
 
 require (

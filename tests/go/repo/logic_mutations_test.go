@@ -1,13 +1,10 @@
 package repo
 
 import (
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
-	"gopkg.in/yaml.v3"
+	"homelab/tests/parsed"
 )
 
 // Law 3: the program's decisions are actually asserted on.
@@ -24,41 +21,26 @@ import (
 // logic that was deliberately extracted so it could be tested hermetically -
 // which is to say, this is what confirms the extraction was worth doing.
 
-type logicLedger struct {
-	Floor int `yaml:"floor"`
-	Logic []struct {
-		Decision string `yaml:"decision"`
-		File     string `yaml:"file"`
-		Find     string `yaml:"find"`
-		Replace  string `yaml:"replace"`
-		MustFail string `yaml:"must_fail"`
-		Why      string `yaml:"why"`
-	} `yaml:"logic"`
-}
+// logicLedger is where the decisions' proofs are kept, and contractorDir the
+// program they are decisions of.
+const (
+	logicLedger   = "tests/logic-mutations.yml"
+	contractorDir = "scripts/contractor"
+)
 
-// scratchContractor gives a full copy of the repository with the program in
-// it, and the directory to run its tests from.
-//
-// The whole repository rather than just scripts/contractor, because the
-// program's own contract tests find the repository root by walking up from
-// their source file and read management/cluster and CLAUDE.md from there. A
-// bare copy of the program makes six of them fail for a reason that has
-// nothing to do with the mutation - which the first version of this did, and
-// which would have made every entry below "fail" without proving anything.
-//
-// Copied once and restored between entries rather than re-copied, because the
-// only thing that changes is one file.
-func scratchContractor(t *testing.T) string {
-	t.Helper()
-	return filepath.Join(scratchRepo(t), "scripts", "contractor")
-}
+// Each entry runs on a full copy of the repository rather than just
+// scripts/contractor, because the program's own contract tests find the
+// repository root by walking up from their source file and read
+// management/cluster and CLAUDE.md from there. A bare copy of the program
+// makes six of them fail for a reason that has nothing to do with the
+// mutation - which the first version of this did, and which would have made
+// every entry below "fail" without proving anything.
 
 // runContractorTests reports whether the suite passed, and which tests failed.
-func runContractorTests(t *testing.T, dir string) (passed bool, failed map[string]bool, output string) {
+func runContractorTests(t *testing.T, tree *parsed.Tree) (passed bool, failed map[string]bool, output string) {
 	t.Helper()
-	cmd := exec.Command("go", "test", "./...")
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
+	stdout, stderr, err := tree.Invoke(parsed.Run{Dir: contractorDir}, "go", "test", "./...")
+	out := append(stdout, stderr...)
 
 	failed = map[string]bool{}
 	for _, line := range strings.Split(string(out), "\n") {
@@ -84,71 +66,54 @@ func TestEveryDecisionIsAssertedOn(t *testing.T) {
 	heavy(t, "mutates Go decisions and re-runs their tests, side by side")
 	// Beside the other slow guards and not after them.
 	t.Parallel()
-	root := repoRoot(t)
 
-	body, err := os.ReadFile(filepath.Join(root, "tests", "logic-mutations.yml"))
-	if err != nil {
-		t.Fatalf("reading tests/logic-mutations.yml: %v", err)
-	}
-	var l logicLedger
-	if err := yaml.Unmarshal(body, &l); err != nil {
-		t.Fatalf("parsing tests/logic-mutations.yml: %v", err)
-	}
-
-	if len(l.Logic) < l.Floor {
+	floor, proofs := repository(t).LogicProofs(t, logicLedger, contractorDir)
+	if len(proofs) < floor {
 		t.Fatalf(`the logic ledger holds %d entries and its floor is %d.
 
 An entry was removed. Each is the committed proof that a decision is asserted
 on rather than merely executed; deleting one makes a red check go away and
 takes the proof with it. If a decision genuinely no longer exists, lower the
-floor in the same diff so somebody sees it happen.`, len(l.Logic), l.Floor)
+floor in the same diff so somebody sees it happen.`, len(proofs), floor)
 	}
 
 	// The unmutated program must pass first. Proving that a broken version
 	// fails means nothing if the working one fails too.
-	dir := scratchContractor(t)
-	if ok, _, out := runContractorTests(t, dir); !ok {
+	if ok, _, out := runContractorTests(t, scratchRepo(t)); !ok {
 		t.Fatalf("the contractor tests fail before any mutation, so nothing below "+
 			"can prove anything:\n%s", lastLines(out, 15))
 	}
 
-	for _, m := range l.Logic {
-		t.Run(m.Decision, func(t *testing.T) {
+	for _, m := range proofs {
+		t.Run(m.Guard, func(t *testing.T) {
 			// Side by side, each on a copy of its own. They used to share
 			// one copy, each breaking it and putting it back, which is what
 			// made them wait for one another.
 			t.Parallel()
-			dir := scratchContractor(t)
+			scratch := scratchRepo(t)
 			for _, missing := range []struct{ field, value string }{
-				{"file", m.File}, {"find", m.Find}, {"replace", m.Replace},
-				{"must_fail", m.MustFail}, {"why", m.Why},
+				{"file", strings.TrimPrefix(m.File, contractorDir+"/")}, {"find", m.Find}, {"replace", m.Replace},
+				{"must_fail", m.Test}, {"why", m.Why},
 			} {
 				if strings.TrimSpace(missing.value) == "" {
 					t.Fatalf("this entry has no %s, so it proves nothing", missing.field)
 				}
 			}
 
-			target := filepath.Join(dir, m.File)
-			src, err := os.ReadFile(target)
-			if err != nil {
-				t.Fatalf("the ledger names %s, which cannot be read: %v\n\n"+
-					"The file moved. Point the entry at where it went; do not delete it.",
-					m.File, err)
-			}
-			if n := strings.Count(string(src), m.Find); n != 1 {
+			switch n := scratch.Places(t, m); {
+			case n < 0:
+				t.Fatalf("the ledger names %s, which is not there.\n\n"+
+					"The file moved. Point the entry at where it went; do not delete it.", m.File)
+			case n != 1:
 				t.Fatalf(`find appears %d times in %s, and an entry that is not exactly
 one place is ambiguous.
 
 Widen it until it names one spot. Guessing which of %d it meant is how a ledger
 entry ends up proving something other than what it says.`, n, m.File, n)
 			}
+			scratch.Apply(t, m)
 
-			mutated := strings.Replace(string(src), m.Find, m.Replace, 1)
-			if err := os.WriteFile(target, []byte(mutated), 0o644); err != nil {
-				t.Fatalf("writing the mutated %s: %v", m.File, err)
-			}
-
-			passed, failed, out := runContractorTests(t, dir)
+			passed, failed, out := runContractorTests(t, scratch)
 
 			if passed {
 				t.Errorf(`the whole suite still passes with this decision broken.
@@ -163,11 +128,11 @@ Why that matters:
 Coverage cannot see this: the line still runs, so the number is unchanged and
 coverage-exemptions.yml is satisfied. What is missing is an assertion. Write a
 test that notices - removing this entry only hides that nothing did.`,
-					m.Decision, m.File, strings.TrimSpace(m.Replace), strings.TrimSpace(m.Why))
+					m.Guard, m.File, strings.TrimSpace(m.Replace), strings.TrimSpace(m.Why))
 				return
 			}
 
-			if !failed[m.MustFail] {
+			if !failed[m.Test] {
 				var names []string
 				for n := range failed {
 					if !strings.Contains(n, "/") {
@@ -183,7 +148,7 @@ longer compiles is just as red as one that caught the defect, and only one of
 them is doing its job. Either name the test that actually catches this, or
 write one that does.
 
-%s`, m.MustFail, strings.Join(names, ", "), lastLines(out, 12))
+%s`, m.Test, strings.Join(names, ", "), lastLines(out, 12))
 			}
 		})
 	}

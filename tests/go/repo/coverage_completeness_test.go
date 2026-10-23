@@ -2,10 +2,14 @@ package repo
 
 import (
 	"encoding/json"
+	"go/ast"
+	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -51,33 +55,99 @@ type unit struct {
 func (u unit) String() string { return u.tier + ":" + u.path }
 
 // executesIt reports whether any test in the repository RUNS the given path,
-// rather than reading it. Matching on the command forms the test tiers actually
-// use: exec.Command with the path as an argument, or a shell invocation of it.
-func executesIt(t *testing.T, testSources map[string]string, path string) bool {
+// rather than reading it: whether a string a test starts a program with - in
+// the call that starts it, or in a call to a function of the same package
+// that does - names it. The word boundaries are load-bearing: without one,
+// `sh` matched the tail of "push" and "finish", so a sentence of prose about
+// the pre-push hook counted as running it. And prose is no longer read at
+// all: these are the strings of the calls, from Go's parser.
+func executesIt(run []string, path string) bool {
+	named := regexp.MustCompile(`\b` + regexp.QuoteMeta(filepath.Base(path)) + `\b`)
+	return slices.ContainsFunc(run, named.MatchString)
+}
+
+// programStrings is every string, written out or named by a constant, in a
+// call a Go test starts a program with, or in a call to a function of its
+// package that starts one.
+func programStrings(t *testing.T) []string {
 	t.Helper()
-	base := filepath.Base(path)
-	// An exec of the thing, or an interpreter invoked on it. The word
-	// boundaries are load-bearing: without one on the interpreter, `sh` matched
-	// the tail of "push" and "finish", so a sentence of prose about the
-	// pre-push hook counted as running it. That is the exact false signal this
-	// whole file exists to refuse, produced by the file itself on its first
-	// run - which is why the check is anchored and comments are skipped.
-	run := regexp.MustCompile(`(?:exec\.Command|exec\.CommandContext)\([^)]*\b` + regexp.QuoteMeta(base) + `\b|` +
-		`\b(?:bash|sh|ansible-playbook)\s+[^\n"]*\b` + regexp.QuoteMeta(base) + `\b`)
-	for _, body := range testSources {
-		for _, line := range strings.Split(body, "\n") {
-			trimmed := strings.TrimSpace(line)
-			// Prose describing a script is not running it, and this file's
-			// whole premise is that reading is not testing.
-			if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#") {
-				continue
-			}
-			if strings.Contains(line, base) && run.MatchString(line) {
-				return true
+	tree := repository(t)
+	byPackage := map[string][]*ast.File{}
+	fset := token.NewFileSet()
+	for _, rel := range tracked(t, func(rel string) bool { return strings.HasSuffix(rel, "_test.go") }) {
+		byPackage[filepath.Dir(rel)] = append(byPackage[filepath.Dir(rel)], tree.Go(t, fset, rel))
+	}
+	starts := func(call *ast.CallExpr) bool {
+		switch callName(call) {
+		case "exec.Command", "exec.CommandContext":
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		return ok && (sel.Sel.Name == "Invoke" || sel.Sel.Name == "InvokeBinary")
+	}
+	calledName := func(call *ast.CallExpr) string {
+		switch fun := call.Fun.(type) {
+		case *ast.Ident:
+			return fun.Name
+		case *ast.SelectorExpr:
+			return fun.Sel.Name
+		}
+		return ""
+	}
+	var out []string
+	for _, files := range byPackage {
+		consts := map[string]*ast.File{}
+		for i, f := range files {
+			consts[strconv.Itoa(i)] = f
+		}
+		values := stringConstants(consts)
+		// The functions that start a program, and those that call them.
+		runners := map[string]bool{}
+		for range 2 {
+			for _, f := range files {
+				for _, d := range f.Decls {
+					fn, ok := d.(*ast.FuncDecl)
+					if !ok || fn.Body == nil {
+						continue
+					}
+					ast.Inspect(fn.Body, func(n ast.Node) bool {
+						if call, ok := n.(*ast.CallExpr); ok && (starts(call) || runners[calledName(call)]) {
+							runners[fn.Name.Name] = true
+						}
+						return true
+					})
+				}
 			}
 		}
+		for _, f := range files {
+			ast.Inspect(f, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok || !starts(call) && !runners[calledName(call)] {
+					return true
+				}
+				for _, arg := range call.Args {
+					ast.Inspect(arg, func(n ast.Node) bool {
+						switch n := n.(type) {
+						case *ast.BasicLit:
+							if v, ok := stringLiteral(n); ok {
+								out = append(out, v)
+							}
+						case *ast.Ident:
+							if v, ok := values[n.Name]; ok {
+								out = append(out, v)
+							}
+						}
+						return true
+					})
+				}
+				return true
+			})
+		}
 	}
-	return false
+	if len(out) == 0 {
+		t.Fatal("found no test that starts a program at all, so every unit would look unrun")
+	}
+	return out
 }
 
 // testSources is every file in the repository that is a test.
@@ -86,7 +156,7 @@ func testSources(t *testing.T) map[string]string {
 	root := repoRoot(t)
 	out := map[string]string{}
 	for _, rel := range trackedMatching(t, func(rel string) bool {
-		if !authoredHere(rel) {
+		if !authoredHere(t, rel) {
 			return false
 		}
 		return strings.HasSuffix(rel, "_test.go") || strings.HasSuffix(rel, ".test.ts") ||
@@ -113,7 +183,7 @@ func testSources(t *testing.T) map[string]string {
 func tracked(t *testing.T, keep func(rel string) bool) []string {
 	t.Helper()
 	return trackedMatching(t, func(rel string) bool {
-		return authoredHere(rel) && keep(rel)
+		return authoredHere(t, rel) && keep(rel)
 	})
 }
 
@@ -172,7 +242,7 @@ func discover(t *testing.T) []unit {
 }
 
 // covered decides whether a unit is executed by something in the test suite.
-func covered(t *testing.T, u unit, sources map[string]string, floors map[string]float64) bool {
+func covered(t *testing.T, u unit, sources map[string]string, run []string, floors map[string]float64) bool {
 	t.Helper()
 	switch u.tier {
 	case "go":
@@ -182,7 +252,7 @@ func covered(t *testing.T, u unit, sources map[string]string, floors map[string]
 		return hasFloor
 
 	case "shell", "ansible":
-		return executesIt(t, sources, u.path)
+		return executesIt(run, u.path)
 
 	case "tofu":
 		// Exercised when a .tftest.hcl expects one of its declared identifiers
@@ -349,6 +419,7 @@ raise its own limit.`, len(list.Blocked), list.Ceiling)
 	}
 
 	sources := testSources(t)
+	run := programStrings(t)
 	units := discover(t)
 	if len(units) == 0 {
 		t.Fatal("discovered no units at all, so this asserts nothing")
@@ -356,7 +427,7 @@ raise its own limit.`, len(list.Blocked), list.Ceiling)
 
 	var uncovered, stale []string
 	for _, u := range units {
-		isCovered := covered(t, u, sources, floors.Baselines)
+		isCovered := covered(t, u, sources, run, floors.Baselines)
 		switch {
 		case isCovered && blocked[u.String()]:
 			stale = append(stale, u.String())
@@ -457,4 +528,41 @@ run "c" {
 	if got := expectedFailures(test); strings.Join(got, " ") != strings.Join(wantExpected, " ") {
 		t.Errorf("expected failures are %v, want %v", got, wantExpected)
 	}
+}
+
+// stringConstants is every string constant the package declares, by name, so
+// a program named by a constant is named.
+func stringConstants(files map[string]*ast.File) map[string]string {
+	out := map[string]string{}
+	for _, f := range files {
+		for _, d := range f.Decls {
+			gen, ok := d.(*ast.GenDecl)
+			if !ok || gen.Tok != token.CONST {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for i, name := range vs.Names {
+					if i < len(vs.Values) {
+						if v, ok := stringLiteral(vs.Values[i]); ok {
+							out[name.Name] = v
+						}
+					}
+				}
+			}
+		}
+	}
+	return out
+}
+
+func stringLiteral(e ast.Expr) (string, bool) {
+	lit, ok := ast.Unparen(e).(*ast.BasicLit)
+	if !ok || lit.Kind != token.STRING {
+		return "", false
+	}
+	v, err := strconv.Unquote(lit.Value)
+	return v, err == nil
 }

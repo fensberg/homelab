@@ -154,15 +154,10 @@ func classesThatOutliveAMachine(t *testing.T) map[string]bool {
 			} `yaml:"values"`
 		} `yaml:"spec"`
 	}
-	dec := yaml.NewDecoder(strings.NewReader(body))
 	out := map[string]bool{}
-	for {
-		err := dec.Decode(&release)
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			t.Fatalf("the storage driver's release does not parse: %v", err)
+	for _, decoded := range body {
+		if err := as(decoded, &release); err != nil {
+			t.Fatalf("the storage driver's release does not read as one: %v", err)
 		}
 		for _, c := range release.Spec.Values.StorageClass {
 			out[c.Name] = true
@@ -365,6 +360,8 @@ func TestTheStorageDriversNamesAreTheSameWhereverTheyAreWritten(t *testing.T) {
 // the budget passes a site its host cannot hold, or refuses one it can.
 func TestAMachinesMemoryIsTheSameWhereItIsMadeAndWhereItIsBudgeted(t *testing.T) {
 	given := regexp.MustCompile(`dedicated\s*=\s*(\d+)`)
+	givenByLocal := regexp.MustCompile(`dedicated\s*=\s*local\.(\w+)\.memory\b`)
+	localMemory := regexp.MustCompile(`\n\s*memory\s*=\s*(\d+)`)
 	for resource, role := range map[string]config.MachineRole{
 		"talos_cp": config.ControlPlane, "talos_worker": config.Worker, "dmz": config.Untrusted,
 	} {
@@ -377,6 +374,14 @@ func TestAMachinesMemoryIsTheSameWhereItIsMadeAndWhereItIsBudgeted(t *testing.T)
 			block = block[:next]
 		}
 		m := given.FindStringSubmatch(block)
+		// A machine whose size is also what rebuilds it reads its memory from
+		// a local both share (the zone's machine): the figure is there.
+		if r := givenByLocal.FindStringSubmatch(block); m == nil && r != nil {
+			if _, object, found := strings.Cut(body, "\n  "+r[1]+" = {"); found {
+				object, _, _ = strings.Cut(object, "\n  }")
+				m = localMemory.FindStringSubmatch(object)
+			}
+		}
 		if m == nil {
 			t.Fatalf("the machine %s is given no memory this can read", resource)
 		}

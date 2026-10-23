@@ -1,8 +1,6 @@
 package repo
 
 import (
-	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 )
@@ -32,13 +30,26 @@ import (
 // reported.
 
 // A loop that runs something repeatedly until it works. Deliberately broad -
-// the point is to catch a shape somebody invents, not one they copy.
-var retryShapes = []*regexp.Regexp{
-	regexp.MustCompile(`(?i)for\s+attempt\s+in\b`),
-	regexp.MustCompile(`(?i)for\s+(?:i|n|try|retry|attempts?)\s+in\s+(?:1\s+2|\$\(seq)`),
-	regexp.MustCompile(`(?i)while\s+.*\b(?:retry|retries|attempt)\b.*;\s*do`),
-	regexp.MustCompile(`(?i)\battempt\s*(?:\+\+|\+=\s*1|=\s*attempt\s*\+\s*1)`),
-	regexp.MustCompile(`(?i)for\s+attempt\s*:?=\s*1;`),
+// the point is to catch a shape somebody invents, not one they copy. Each is
+// held to one line: spaces are [ \t], never a newline.
+var retryShapes = []string{
+	`for[ \t]+attempt[ \t]+in\b`,
+	`for[ \t]+(?:i|n|try|retry|attempts?)[ \t]+in[ \t]+(?:1[ \t]+2|\$\(seq)`,
+	`while[ \t]+[^\n]*\b(?:retry|retries|attempt)\b[^\n]*;[ \t]*do`,
+	`\battempt[ \t]*(?:\+\+|\+=[ \t]*1|=[ \t]*attempt[ \t]*\+[ \t]*1)`,
+	`for[ \t]+attempt[ \t]*:?=[ \t]*1;`,
+}
+
+// retryRule is the shapes as one Semgrep rule over lines that are not
+// comments - prose about a retry is not a retry, and this repository explains
+// its mechanisms at length and half those paragraphs say the word - giving
+// back the line it found.
+func retryRule() map[string]any {
+	return map[string]any{
+		"id": "a-retry", "languages": []string{"generic"}, "severity": "INFO",
+		"message": "$LINE", "metadata": map[string]any{"about": "retry"},
+		"pattern-regex": `(?mi)^(?![ \t]*(?:#|//|\*))[ \t]*(?P<LINE>[^\n]*?(?:` + strings.Join(retryShapes, "|") + `)[^\n]*)`,
+	}
 }
 
 // The two places a retry is allowed to be implemented, and the reason each
@@ -51,7 +62,7 @@ var declaredRetries = map[string]string{
 }
 
 func TestThereIsOnlyOneRetryAndANewOneIsRefused(t *testing.T) {
-	workflows := workflowTexts(t)
+	heavy(t, "semgrep reads every script and workflow for a retry, a few seconds")
 
 	// Every file that could hold one: shell, Go, workflows, the taskfile.
 	candidates := tracked(t, func(rel string) bool {
@@ -72,34 +83,14 @@ The walk has stopped matching, so a hand-rolled retry could be added anywhere it
 no longer looks - which is the same green as there being none.`, len(candidates))
 	}
 
-	searched := 0
+	var searched []string
 	for _, rel := range candidates {
-		if _, declared := declaredRetries[rel]; declared {
-			continue
+		if _, declared := declaredRetries[rel]; !declared {
+			searched = append(searched, rel)
 		}
-		// workflowTexts keys by base name.
-		body, patched := "", false
-		if strings.HasPrefix(rel, ".github/workflows/") {
-			body, patched = workflows[filepath.Base(rel)]
-		}
-		if !patched {
-			body = readRepoFile(t, rel)
-		}
-		searched++
-
-		for _, line := range strings.Split(body, "\n") {
-			trimmed := strings.TrimSpace(line)
-			// Prose about a retry is not a retry. This repository explains its
-			// mechanisms at length and half those paragraphs say the word.
-			if strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "//") ||
-				strings.HasPrefix(trimmed, "*") {
-				continue
-			}
-			for _, shape := range retryShapes {
-				if !shape.MatchString(line) {
-					continue
-				}
-				t.Errorf(`%s hand-rolls a retry:
+	}
+	for _, f := range scanText(t, repository(t), []map[string]any{retryRule()}, searched) {
+		t.Errorf(`%s hand-rolls a retry:
 
     %s
 
@@ -111,11 +102,9 @@ bounded attempts, never a verdict, every attempt reported. Use it:
 If what you need is an HTTP retry that can tell a 429 from a 401, that is
 scripts/clerk/llm.go and it is the other declared implementation. If it is
 genuinely neither, add this file to the declared list with one line saying
-what it sees that the other two cannot.`, rel, trimmed)
-			}
-		}
+what it sees that the other two cannot.`, f.Path, strings.TrimSpace(f.Text))
 	}
-	if searched == 0 {
+	if len(searched) == 0 {
 		t.Fatal("every candidate file was declared, so this test examined nothing")
 	}
 }
@@ -131,8 +120,8 @@ func TestEveryDeclaredRetryStillExists(t *testing.T) {
 			t.Errorf("%s is declared with no reason, so nobody can tell whether it "+
 				"should still be there", path)
 		}
-		if readRepoFile(t, path) == "" {
-			t.Errorf("%s is declared as a retry implementation and is empty or gone", path)
+		if !repository(t).Exists(path) {
+			t.Errorf("%s is declared as a retry implementation and is gone", path)
 		}
 	}
 }
