@@ -1,0 +1,11 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_kubeprism
+file: clusters/bootstrap/cilium-values.yaml
+find: "k8sServicePort: 7445\n"
+replace: "k8sServicePort: 7446\n"
+mentions: "the CNI's values point k8sServicePort at 7446"
+why: >
+  The port KubePrism serves on every machine and the port Cilium's agents
+  are told to reach the API through are one fact written twice. Moving the
+  CNI's half alone leaves every agent dialling a port nothing listens on,
+  and the pod network goes with it.

@@ -1,4 +1,5 @@
-guard: TestTheClusterDeclaresNoBuiltInCNIAndNoKubeProxy
+guard: TestTheConfigurationRulesHold
+rule: plan_builtin_cni_off
 file: modules/infrastructure/cluster/talos.tf
 find: '          name = "none"'
 replace: '          name = "flannel"'

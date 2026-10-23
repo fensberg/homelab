@@ -1,4 +1,5 @@
-guard: TestKubePrismIsDeclaredRatherThanAssumed
+guard: TestTheConfigurationRulesHold
+rule: plan_kubeprism
 file: modules/infrastructure/cluster/talos.tf
 find: "              port    = 7445\n"
 replace: "              port    = 7446\n"

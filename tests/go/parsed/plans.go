@@ -1,0 +1,168 @@
+package parsed
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"syscall"
+	"testing"
+
+	"homelab/contractor/config"
+	"homelab/contractor/steps"
+	"homelab/details/applications"
+)
+
+// UnbuiltPlans is every site's roots planned from nothing, as files a policy
+// engine is handed: one plan as `tofu show -json` writes it per site and
+// root, made with the real providers and a stand-in for every value the
+// vault supplies (steps.PlanUnbuilt). The sites are the ones the config
+// template declares. A root that does not plan fails the test: a rule over
+// a plan that was never made would judge nothing and pass.
+//
+// A plan takes seconds, and the mutation ledger judges a copy of the tree
+// for each of its proofs, most of which change nothing a plan is made from.
+// So a plan is kept by what it was made from - every file under the roots,
+// the modules, the applications and the config, and the site's own list of
+// applications - and a tree that holds exactly those files is handed the
+// same plan again.
+func (r *Tree) UnbuiltPlans(t testing.TB) []string {
+	t.Helper()
+	sites, err := config.DeclaredSites(r.path("config/management.tpl.json"))
+	if err != nil {
+		t.Fatalf("reading which sites the config template declares: %v", err)
+	}
+	if len(sites) == 0 {
+		t.Fatal("the config template declares no site, so there is nothing to plan")
+	}
+	out := t.TempDir()
+	var files []string
+	for _, site := range sites {
+		kept, err := r.keptPlans(t, site)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, root := range kept {
+			if root.Err != nil {
+				t.Fatalf("the %s root of %s does not plan from nothing, so no rule over its plan can be judged: %v", root.Root, site, root.Err)
+			}
+			if len(root.Plan) == 0 {
+				t.Fatalf("the %s root of %s planned to nothing, so no rule over its plan can be judged", root.Root, site)
+			}
+			file := filepath.Join(out, site+"-"+root.Root+".plan.json")
+			if err := os.WriteFile(file, root.Plan, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			files = append(files, file)
+		}
+	}
+	return files
+}
+
+// keptPlans is a site's plans: the ones made before from exactly these
+// files, or new ones, kept for the next tree that holds them.
+//
+// ONE PLAN AT A TIME, across every process on the machine. The ledger runs
+// its proofs side by side, and every one that starts with no plan kept would
+// plan at once, each fetching every provider afresh: the registry refuses a
+// crowd, and a proof refused it fails for a reason that is not its own. So a
+// plan is made under a lock, and a tree that waited for one looks again for
+// what the plan before it kept; and the providers one plan fetched are kept
+// for the next, by the lock file that chose them, so a machine reaches the
+// registry once for each set of providers rather than once for each plan.
+func (r *Tree) keptPlans(t testing.TB, site string) ([]steps.Unbuilt, error) {
+	key, err := r.planKey(t, site)
+	if err != nil {
+		return nil, err
+	}
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return nil, err
+	}
+	plans := filepath.Join(cache, "homelab", "unbuilt-plans")
+	dir := filepath.Join(plans, key)
+	if kept, err := readKept(dir); err != nil || kept != nil {
+		return kept, err
+	}
+	if err := os.MkdirAll(plans, 0o700); err != nil {
+		return nil, err
+	}
+	lock, err := os.OpenFile(filepath.Join(plans, "planning.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = lock.Close() }()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		return nil, err
+	}
+	defer func() { _ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) }()
+	if kept, err := readKept(dir); err != nil || kept != nil {
+		return kept, err
+	}
+	made, err := steps.PlanUnbuilt(r.root, site, filepath.Join(plans, "providers"))
+	if err != nil {
+		return nil, err
+	}
+	for _, root := range made {
+		if root.Err != nil {
+			return made, nil
+		}
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	for _, root := range made {
+		if err := os.WriteFile(filepath.Join(dir, root.Root+".json"), root.Plan, 0o600); err != nil {
+			return nil, err
+		}
+	}
+	return made, nil
+}
+
+// readKept is the plans kept in a directory, one per root, or none when any
+// root's is not there: a plan of some of a site's roots is not its plan.
+func readKept(dir string) ([]steps.Unbuilt, error) {
+	var kept []steps.Unbuilt
+	for _, root := range []string{config.ClusterRoot, config.PlatformRoot} {
+		plan, err := os.ReadFile(filepath.Join(dir, root+".json"))
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil // not made from these files before
+		}
+		if err != nil {
+			return nil, err
+		}
+		kept = append(kept, steps.Unbuilt{Root: root, Plan: plan})
+	}
+	return kept, nil
+}
+
+// planKey is what a site's plans are made from, as one digest: every
+// tracked file under the roots, the modules, the applications and the
+// config, and the site's own list of applications, by path and content.
+func (r *Tree) planKey(t testing.TB, site string) (string, error) {
+	var from []string
+	for _, rel := range r.Files(t) {
+		if strings.HasPrefix(rel, "management/") || strings.HasPrefix(rel, "modules/") ||
+			strings.HasPrefix(rel, "config/") || rel == applications.SiteFilePath(site) {
+			from = append(from, rel)
+		}
+	}
+	sort.Strings(from)
+	h := sha256.New()
+	_, _ = io.WriteString(h, site+"\x00")
+	for _, rel := range from {
+		body, err := os.ReadFile(r.path(rel))
+		if err != nil {
+			return "", err
+		}
+		_, _ = io.WriteString(h, rel+"\x00")
+		_, _ = h.Write(body)
+		_, _ = io.WriteString(h, "\x00")
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}

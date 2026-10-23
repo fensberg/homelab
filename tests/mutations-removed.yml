@@ -206,3 +206,17 @@ removed:
     reason: moved with its guard to the code rules (policy/semgrep/repository-root.yml), as TestTheCodeRulesHold.NothingFindsTheRepositoryByCountingDirectories.8c1cef0d.yml, unchanged in what it breaks (2026-10-16)
   - proof: TestEveryPlaceACodeRuleReadsIsProved.a-proof-two-rules-could-own.yml
     reason: proved the place guard's refusal of a phrase two rules' messages share, which went when proofs came to name their rule (rule:, #780); its place is taken by TestEveryPlaceACodeRuleReadsIsProved.a-proof-that-names-another-rule.yml (2026-10-18)
+  - proof: TestEveryMachineClassIsAssignedAPool.326363e3.yml
+    reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/plan_pool_membership.rego), as TestTheConfigurationRulesHold.EveryMachineClassIsAssignedAPool.326363e3.yml, its mutation changed to one the plan still makes (2026-10-23)
+  - proof: TestPoolIdsAreScopedToTheSite.693d4f39.yml
+    reason: moved with its guard to the configuration rules, judged on the plan's configuration (policy/conftest/plan_pool_ids.rego), as TestTheConfigurationRulesHold.PoolIdsAreScopedToTheSite.693d4f39.yml, unchanged in what it breaks (2026-10-23)
+  - proof: TestTheClusterDeclaresNoBuiltInCNIAndNoKubeProxy.b215f223.yml
+    reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/plan_builtin_cni_off.rego), as TestTheConfigurationRulesHold.TheClusterDeclaresNoBuiltInCNIAndNoKubeProxy.b215f223.yml, unchanged in what it breaks (2026-10-23)
+  - proof: TestKubePrismIsDeclaredRatherThanAssumed.812849c4.yml
+    reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/plan_kubeprism.rego), as TestTheConfigurationRulesHold.KubePrismIsDeclaredRatherThanAssumed.812849c4.yml, unchanged in what it breaks (2026-10-23)
+  - proof: TestThePodAndServiceNetworksAreDeclared.114d6d26.yml
+    reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/plan_cluster_network.rego), as TestTheConfigurationRulesHold.ThePodAndServiceNetworksAreDeclared.114d6d26.yml, its mentions moved to the rule's words (2026-10-23)
+  - proof: TestEveryMachineIsToldTheClustersNetwork.e398290e.yml
+    reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/plan_cluster_network.rego), as TestTheConfigurationRulesHold.EveryMachineIsToldTheClustersNetwork.e398290e.yml, its mentions moved to the rule's words (2026-10-23)
+  - proof: TestATalosImagePathCarriesItsSchematic.c052f831.yml
+    reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/plan_image_schematic.rego), as TestTheConfigurationRulesHold.ATalosImagePathCarriesItsSchematic.c052f831.yml, its mentions moved to the rule's words (2026-10-23)

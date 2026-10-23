@@ -9,7 +9,7 @@ import (
 
 // A machine is what the hypervisor's provider is asked to make. That every
 // one is given its address when it is built is a configuration rule
-// (policy/conftest/machine_addresses.rego).
+// (policy/conftest/plan_machine_addresses.rego).
 const machineResource = "proxmox_virtual_environment_vm"
 
 // Every machine a site builds is built by a step of its own, in the phase

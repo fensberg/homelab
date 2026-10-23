@@ -2,9 +2,7 @@ package repo
 
 import (
 	"net"
-	"slices"
 	"sort"
-	"strings"
 	"testing"
 
 	"github.com/hashicorp/hcl/v2"
@@ -28,6 +26,11 @@ import (
 // widening the pod range to 10.0.0.0/8 because a CNI's documentation suggests
 // it would swallow every site subnet the scheme defines, and nothing else in
 // this repository would notice.
+//
+// That every machine is told both ranges is a rule over the plan
+// (policy/conftest/plan_cluster_network.rego). What is left here is whether
+// the ranges the address plan computes can collide, which is a test of that
+// module's arithmetic and goes down to its own tests.
 
 // The site octet is asserted 1-95 by registry.tf, so this is the widest range
 // any site's /16 can occupy. A cluster range overlapping it collides with a
@@ -36,24 +39,6 @@ const (
 	lowestSiteOctet  = 1
 	highestSiteOctet = 95
 )
-
-func TestThePodAndServiceNetworksAreDeclared(t *testing.T) {
-	declared := map[string]bool{}
-	for _, item := range objectItems(tofuFile(t, declaring(t, declMachineConfig).File).Body) {
-		if _, list := item.ValueExpr.(*hclsyntax.TupleConsExpr); list {
-			declared[parsed.KeyName(item)] = true
-		}
-	}
-	for _, decl := range []struct{ name string }{{"podSubnets"}, {"serviceSubnets"}} {
-		if !declared[decl.name] {
-			t.Errorf(`talos.tf declares no %s, so the cluster takes whatever the
-platform defaults to and the estate's largest address commitment is a value
-nobody chose and nobody can review.
-
-It is fixed at cluster creation, so the cost of getting it wrong is a rebuild.`, decl.name)
-		}
-	}
-}
 
 // Asked of the address plan rather than read from a file, because the ranges
 // are computed now: every site gets its own pods and services (epoch 02), and
@@ -149,95 +134,4 @@ func itoaSmall(n int) string {
 		return string(rune('0' + n))
 	}
 	return string(rune('0'+n/10)) + string(rune('0'+n%10))
-}
-
-// A Talos image's datastore path changes when its schematic does.
-//
-// WHAT WAS WRONG. `proxmox_download_file` is identified by its datastore path,
-// and the path was `talos-<version>.iso`. A schematic id says WHICH extensions
-// are baked into the image, so re-minting one - the only way to add, remove or
-// move an extension - produced no plan diff at all: same name, same resource,
-// nothing to do (#97). The new image was never fetched, and the
-// `replace_triggered_by` on the template could not fire, because the thing it
-// triggers on had not changed.
-//
-// Confirmed at the time by a real plan against a live estate that showed only a
-// tailnet key being replaced.
-//
-// WHY A GUARD. The failure is silence. A schematic bump looks applied - the
-// config says the new id, the plan is clean, the apply succeeds - and every
-// node keeps the old extensions. There is nothing red anywhere, which is how it
-// survived long enough to be found by reading a plan for something else.
-//
-// This asserts the identity only. Whether a rebuilt TEMPLATE reaches machines
-// that are already running is node lifecycle, which epoch 05 owns and this does
-// not claim.
-func TestATalosImagePathCarriesItsSchematic(t *testing.T) {
-	tree := repository(t)
-	var names []hclsyntax.Expression
-	_ = hclsyntax.VisitAll(tofuFile(t, declaring(t, declMachines).File).Body, func(n hclsyntax.Node) hcl.Diagnostics {
-		if a, ok := n.(*hclsyntax.Attribute); ok && a.Name == "file_name" {
-			names = append(names, a.Expr)
-		}
-		return nil
-	})
-	const bothImages = 2
-	if len(names) < bothImages {
-		t.Fatalf(`found %d file_name argument(s) in the file that makes the machines, and there are two -
-the estate's image and the untrusted zone's.
-The read has stopped matching, so an image whose path cannot change is no
-longer being checked for.`, len(names))
-	}
-	for _, expr := range names {
-		name := tree.Source(t, expr)
-		carries := func(part string) bool {
-			return slices.ContainsFunc(expr.Variables(), func(ref hcl.Traversal) bool {
-				name := traversalName(ref)
-				return strings.Contains(name[strings.LastIndex(name, ".")+1:], part)
-			})
-		}
-		if !carries("schematic_id") {
-			t.Errorf(`the image path %q does not carry its schematic id.
-
-The resource is identified by that path, so re-minting a schematic is not a
-change: the image is never re-fetched, and the replace_triggered_by on the
-template has nothing to fire on. A schematic bump then looks applied - clean
-plan, successful apply - while every node keeps the old extensions.
-
-That is how a known-vulnerable Tailscale reached every machine in the estate
-and stayed there.`, name)
-		}
-		if !carries("talos_version") {
-			t.Errorf(`the image path %q does not carry the Talos version.
-
-The version resolves every extension's build, so two images from one schematic
-on different Talos releases are different bytes at the same path.`, name)
-		}
-	}
-}
-
-// Every machine is told the cluster's network, not only the control planes.
-//
-// A kubelet tells its pods to ask the tenth address of its own machine's
-// serviceSubnets for DNS. The network patch sat on the control planes' config
-// alone, so the workers took Talos's default range and pointed every pod at
-// 10.96.0.10, while cluster DNS answered in the site's own range: nothing on a
-// worker could resolve a name, and site0's rebuild stopped at Health (#578).
-// It was invisible for as long as the declared ranges equalled the defaults.
-//
-// Asserted of every talos_machine_configuration in talos.tf, discovered rather
-// than listed, so a machine class added later is held to it too.
-func TestEveryMachineIsToldTheClustersNetwork(t *testing.T) {
-	blocks := repository(t).Blocks(t, "data", "talos_machine_configuration")
-	if len(blocks) < 3 {
-		t.Fatalf("found %d machine configurations; there are at least three classes, so the reader has stopped matching", len(blocks))
-	}
-	for _, b := range blocks {
-		if !refersTo(b.Block, "local.cluster_network_patch") {
-			t.Errorf(`the %q machine configuration is not given local.cluster_network_patch.
-
-Its kubelet then takes Talos's default service range, and tells every pod on
-that machine to ask for DNS at an address nothing answers on (#578).`, b.Labels[1])
-		}
-	}
 }
