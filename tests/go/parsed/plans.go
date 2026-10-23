@@ -72,7 +72,9 @@ func (r *Tree) UnbuiltPlans(t testing.TB) []string {
 // plan at once, each fetching every provider afresh: the registry refuses a
 // crowd, and a proof refused it fails for a reason that is not its own. So a
 // plan is made under a lock, and a tree that waited for one looks again for
-// what the plan before it kept.
+// what the plan before it kept; and the providers one plan fetched are kept
+// for the next, by the lock file that chose them, so a machine reaches the
+// registry once for each set of providers rather than once for each plan.
 func (r *Tree) keptPlans(t testing.TB, site string) ([]steps.Unbuilt, error) {
 	key, err := r.planKey(t, site)
 	if err != nil {
@@ -102,7 +104,7 @@ func (r *Tree) keptPlans(t testing.TB, site string) ([]steps.Unbuilt, error) {
 	if kept, err := readKept(dir); err != nil || kept != nil {
 		return kept, err
 	}
-	made, err := steps.PlanUnbuilt(r.root, site)
+	made, err := steps.PlanUnbuilt(r.root, site, filepath.Join(plans, "providers"))
 	if err != nil {
 		return nil, err
 	}

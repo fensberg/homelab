@@ -44,7 +44,7 @@ func TestEveryRootPlansFromNothingAndKeysNoResourceByAVaultValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plans, err := PlanUnbuilt(repo, site)
+	plans, err := PlanUnbuilt(repo, site, "")
 	if err != nil {
 		t.Fatal(err)
 	}

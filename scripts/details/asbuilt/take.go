@@ -76,6 +76,11 @@ type Result struct {
 
 // Publishable is a record that is quiet, in which nothing real survived the
 // replacing, and of an estate that puts no real value in a resource address.
+
+// ProviderLock is the file a root's providers are chosen by: their versions
+// and the hashes they must match.
+const ProviderLock = ".terraform.lock.hcl"
+
 func (r *Result) Publishable() bool {
 	return r.Quiet && len(r.Before) == 0 && len(r.KeyedByAValue) == 0
 }
@@ -394,7 +399,7 @@ func copyRoot(from, to string) error {
 	}
 	for _, e := range entries {
 		name := e.Name()
-		if e.IsDir() || !(strings.HasSuffix(name, ".tf") || name == ".terraform.lock.hcl") || name == "backend_pg.tf" {
+		if e.IsDir() || !(strings.HasSuffix(name, ".tf") || name == ProviderLock) || name == "backend_pg.tf" {
 			continue
 		}
 		b, err := os.ReadFile(filepath.Join(from, name))
