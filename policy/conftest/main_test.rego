@@ -3,8 +3,11 @@ package main_test
 import data.main
 import rego.v1
 
+# The rules are replaced whole: patching in one package beside the real ones
+# made the collector evaluate every rule in the repository too, a second or
+# two that a test on a busy machine runs past its time limit in.
 test_a_rules_refusal_is_collected_and_named if {
-	some msg in main.deny with data.rules.planted.deny as {"it refuses"}
+	some msg in main.deny with data.rules as {"planted": {"deny": {"it refuses"}}}
 	msg == "planted: it refuses"
 }
 
