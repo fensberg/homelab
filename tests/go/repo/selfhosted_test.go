@@ -21,9 +21,10 @@ import (
 // The site is the estate's to say and is read from the repository's
 // variable, so a pool's name ends in that and never in a site written out.
 var pullRequestPools = map[string]bool{
-	pullRequestPool("source"):   true,
-	pullRequestPool("builds"):   true,
-	pullRequestPool("packages"): true,
+	pullRequestPool("source"):         true,
+	pullRequestPool("builds"):         true,
+	pullRequestPool("builds-primary"): true,
+	pullRequestPool("packages"):       true,
 }
 
 // pullRequestPool is the name a job asks for one of the pools by.
