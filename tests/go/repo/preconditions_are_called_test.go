@@ -1,8 +1,8 @@
 package repo
 
 import (
-	"os"
-	"path/filepath"
+	"go/ast"
+	"go/token"
 	"regexp"
 	"strings"
 	"testing"
@@ -22,29 +22,23 @@ import (
 // a precondition runner must be called from somewhere that is not its own file
 // and is not a test.
 func TestEveryPreconditionRunnerIsCalled(t *testing.T) {
-	root := filepath.Join(repoRoot(t), "scripts", "contractor")
+	tree := repository(t)
+	fset := token.NewFileSet()
+	files := map[string]*ast.File{}
+	for _, rel := range tree.Files(t) {
+		if strings.HasPrefix(rel, "scripts/contractor/") && strings.HasSuffix(rel, ".go") && !strings.HasSuffix(rel, "_test.go") {
+			files[rel] = tree.Go(t, fset, rel)
+		}
+	}
 
 	declared := map[string]string{} // name -> file that declares it
 	callers := map[string]bool{}
-
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
+	for rel, f := range files {
+		for _, d := range f.Decls {
+			if fn, ok := d.(*ast.FuncDecl); ok && preconditionRunner.MatchString(fn.Name.Name) {
+				declared[fn.Name.Name] = rel
+			}
 		}
-		if info.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		body, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		for _, m := range preconditionRunner.FindAllStringSubmatch(string(body), -1) {
-			declared[m[1]] = path
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking %s: %v", root, err)
 	}
 
 	if len(declared) == 0 {
@@ -53,42 +47,36 @@ func TestEveryPreconditionRunnerIsCalled(t *testing.T) {
 			"deleted - and passing on an empty set is how a check stops mattering.")
 	}
 
-	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		body, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		for name, declaredIn := range declared {
-			if path == declaredIn {
-				continue
+	for rel, f := range files {
+		ast.Inspect(f, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
 			}
-			if strings.Contains(string(body), name+"(") {
+			var name string
+			switch fun := call.Fun.(type) {
+			case *ast.Ident:
+				name = fun.Name
+			case *ast.SelectorExpr:
+				name = fun.Sel.Name
+			}
+			if declaredIn, ok := declared[name]; ok && declaredIn != rel {
 				callers[name] = true
 			}
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking %s: %v", root, err)
+			return true
+		})
 	}
 
 	for name, declaredIn := range declared {
 		if !callers[name] {
-			rel, _ := filepath.Rel(repoRoot(t), declaredIn)
 			t.Errorf("%s declares %s and nothing outside that file calls it.\n\n"+
 				"Its list is tested and its checks are tested, so deleting the one line "+
 				"that runs it leaves every test green and the guard switched off. That "+
-				"has happened four times this week.", rel, name)
+				"has happened four times this week.", declaredIn, name)
 		}
 	}
 }
 
-// `func CheckSomethingPreconditions(` - the runner, as opposed to the list it
+// CheckSomethingPreconditions - the runner, as opposed to the list it
 // iterates.
-var preconditionRunner = regexp.MustCompile(`func (Check\w*Preconditions)\(`)
+var preconditionRunner = regexp.MustCompile(`^Check\w*Preconditions$`)

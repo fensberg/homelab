@@ -1,9 +1,8 @@
 package repo
 
 import (
-	"os"
 	"path/filepath"
-	"strings"
+	"regexp"
 	"testing"
 )
 
@@ -29,7 +28,7 @@ import (
 // paths applies, and a guard that says "use the other path here" was a note
 // about the duplication rather than a cure for it.
 func TestRecoveryInstructionsNameTheWorkstationBinary(t *testing.T) {
-	root := repoRoot(t)
+	heavy(t, "semgrep reads every script, document and workflow for the path, a few seconds")
 
 	exempt := map[string]bool{
 		// .gitignore keeps the old build path while any branch predating the
@@ -50,75 +49,35 @@ func TestRecoveryInstructionsNameTheWorkstationBinary(t *testing.T) {
 	// What the repository tracks, and nothing else on disk: a build output,
 	// a dependency and a site's pinned copy of the repository are all there
 	// to be walked, and none of them is this repository's to answer for.
-	ours := map[string]bool{}
+	var files []string
 	for _, rel := range tracked(t, func(string) bool { return true }) {
-		ours[rel] = true
-	}
-
-	var checked int
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		here, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			// A directory that holds nothing tracked is not descended: .git,
-			// and whatever a run left.
-			if here != "." && !holdsTracked(ours, here) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !ours[filepath.ToSlash(here)] {
-			return nil
-		}
-		switch filepath.Ext(path) {
+		switch filepath.Ext(rel) {
 		case ".go", ".md", ".sh", ".yml", ".yaml":
 		default:
-			return nil
+			continue
 		}
-
-		rel, relErr := filepath.Rel(root, path)
-		if relErr != nil || exempt[rel] || isLedger(rel) || rel == filepath.Join("tests", "go", "repo", "recovery_paths_test.go") {
-			return nil
+		if !exempt[rel] && !isLedger(rel) {
+			files = append(files, rel)
 		}
-
-		var text string
-		if dir := filepath.Dir(rel); dir == filepath.Join(".github", "workflows") {
-			text = workflowText(t, d.Name())
-		} else {
-			body, readErr := os.ReadFile(path)
-			if readErr != nil {
-				return readErr
-			}
-			text = string(body)
-		}
-		checked++
-		if strings.Contains(text, "./scripts/contractor/"+"contractor") {
+	}
+	checked := len(files)
+	wrong := map[string]any{
+		"id": "the-ci-binary", "languages": []string{"generic"}, "severity": "INFO",
+		"message": "ci", "metadata": map[string]any{"about": "ci"},
+		"pattern-regex": regexp.QuoteMeta("./scripts/contractor/" + "contractor"),
+	}
+	named := map[string]bool{}
+	for _, f := range scanText(t, repository(t), []map[string]any{wrong}, files) {
+		named[f.Path] = true
+	}
+	for _, rel := range files {
+		if named[rel] {
 			t.Errorf("%s tells a reader to run ./scripts/contractor/contractor, which only exists in CI.\n\n"+
 				"`task build` puts the binary in toolshed/, so that is what a workstation has - and every "+
 				"message a human reads is read on a workstation. Use ./toolshed/contractor.", rel)
 		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking the repository: %v", err)
 	}
 	if checked == 0 {
 		t.Fatal("no files checked, so this test proves nothing")
 	}
-}
-
-// holdsTracked reports whether any tracked file is under a directory.
-func holdsTracked(tracked map[string]bool, dir string) bool {
-	prefix := filepath.ToSlash(dir) + "/"
-	for rel := range tracked {
-		if strings.HasPrefix(rel, prefix) {
-			return true
-		}
-	}
-	return false
 }

@@ -1,7 +1,6 @@
 package repo
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -58,9 +57,7 @@ func TestEveryGoModuleHasACoverageFloor(t *testing.T) {
 	var baseline struct {
 		Baselines map[string]float64 `json:"baselines"`
 	}
-	if err := json.Unmarshal([]byte(readRepoFile(t, "tests/coverage-baseline.json")), &baseline); err != nil {
-		t.Fatalf("parsing tests/coverage-baseline.json: %v", err)
-	}
+	repository(t).JSONInto(t, "tests/coverage-baseline.json", &baseline)
 	if len(baseline.Baselines) == 0 {
 		t.Fatal("the baseline file declares no floors at all, so this asserts nothing")
 	}

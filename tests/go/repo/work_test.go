@@ -30,10 +30,7 @@ import (
 // Whether what a job says matches how long it really takes is asked nightly,
 // of GitHub (tests/go/api).
 func TestEveryJobOnTheEstatesRunnersIsOnTheRunnersItsKindAllows(t *testing.T) {
-	declared, err := harness.DeclaredWork(repoRoot(t))
-	if err != nil {
-		t.Fatal(err)
-	}
+	declared := repository(t).Work(t)
 	said := map[string]harness.Work{}
 	for _, w := range declared {
 		if _, twice := said[w.Job]; twice {
@@ -53,6 +50,7 @@ func TestEveryJobOnTheEstatesRunnersIsOnTheRunnersItsKindAllows(t *testing.T) {
 		_, manifest := fluxObject(t, kindHelmRelease, release)
 		prefix, _ := strings.CutSuffix(yamlScalar(t, manifest, "runnerScaleSetName"), "${SITE}")
 		var doc struct {
+			Kind string `yaml:"kind"`
 			Spec struct {
 				Values struct {
 					Template struct {
@@ -63,10 +61,16 @@ func TestEveryJobOnTheEstatesRunnersIsOnTheRunnersItsKindAllows(t *testing.T) {
 				} `yaml:"values"`
 			} `yaml:"spec"`
 		}
-		if err := yaml.Unmarshal([]byte(manifest), &doc); err != nil {
-			t.Fatalf("parsing the runner set %s: %v", release, err)
+		priority := ""
+		for _, d := range manifest {
+			if err := as(d, &doc); err != nil {
+				t.Fatalf("reading the runner set %s: %v", release, err)
+			}
+			if doc.Kind == kindHelmRelease {
+				priority = doc.Spec.Values.Template.Spec.Priority
+			}
 		}
-		sets = append(sets, set{prefix, doc.Spec.Values.Template.Spec.Priority == "batch"})
+		sets = append(sets, set{prefix, priority == "batch"})
 	}
 	sort.Slice(sets, func(i, j int) bool { return len(sets[i].prefix) > len(sets[j].prefix) })
 
@@ -80,9 +84,7 @@ func TestEveryJobOnTheEstatesRunnersIsOnTheRunnersItsKindAllows(t *testing.T) {
 				Timeout int       `yaml:"timeout-minutes"`
 			} `yaml:"jobs"`
 		}
-		if err := yaml.Unmarshal([]byte(readRepoFile(t, wf)), &workflow); err != nil {
-			t.Fatalf("%s does not parse, so the jobs in it were not read: %v", wf, err)
-		}
+		repository(t).YAMLInto(t, wf, &workflow)
 		for name, job := range workflow.Jobs {
 			var on *set
 			for i := range sets {

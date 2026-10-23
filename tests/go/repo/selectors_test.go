@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"homelab/tests/parsed"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -303,27 +304,17 @@ func placesOf(uses []selectorUse, l libRules) map[string]bool {
 // picks is which of the places pick a proof's broken file: the file as the
 // proof leaves it, read by Conftest the way it reads the repository, and the
 // places asked of OPA with lib as their only policy.
-func picks(t *testing.T, libFile string, m mutation, places map[string]bool) map[string]bool {
+func picks(t *testing.T, libRel string, m mutation, places map[string]bool) map[string]bool {
 	t.Helper()
-	body := m.Create
-	if !m.creates() {
-		original, err := os.ReadFile(filepath.Join(repoRoot(t), filepath.FromSlash(m.File)))
-		if err != nil {
-			t.Fatalf("reading %s for %s: %v", m.File, m.Source, err)
-		}
-		body = strings.Replace(string(original), m.Find, m.Replace, 1)
+	tree := repository(t)
+	var scratch *parsed.Tree
+	if m.Creates() {
+		scratch = tree.CopyOf(t)
+	} else {
+		scratch = tree.CopyOf(t, m.File)
 	}
-	dir := t.TempDir()
-	target := filepath.Join(dir, filepath.FromSlash(m.File))
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(target, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	parse := exec.Command(conftestProgram, "parse", "--combine", m.File)
-	parse.Dir = dir
-	input, err := parse.Output()
+	scratch.Apply(t, m)
+	input, _, err := scratch.Invoke(parsed.Run{}, conftestProgram, "parse", "--combine", m.File)
 	if err != nil {
 		t.Fatalf("conftest could not read %s as %s leaves it: %v", m.File, m.Source, err)
 	}
@@ -332,9 +323,7 @@ func picks(t *testing.T, libFile string, m mutation, places map[string]bool) map
 		asked = append(asked, fmt.Sprintf("%q: count(%s) > 0", p, p))
 	}
 	sort.Strings(asked)
-	eval := exec.Command(opaProgram, "eval", "--format", "json", "--stdin-input", "-d", libFile, "{"+strings.Join(asked, ", ")+"}")
-	eval.Stdin = strings.NewReader(string(input))
-	out, err := eval.Output()
+	out, _, err := tree.Invoke(parsed.Run{Stdin: string(input)}, opaProgram, "eval", "--format", "json", "--stdin-input", "-d", parsed.Here(libRel), "{"+strings.Join(asked, ", ")+"}")
 	if err != nil {
 		t.Fatalf("opa could not ask lib's selectors about %s: %v", m.File, err)
 	}
@@ -391,16 +380,15 @@ func TestEverySelectorARuleReadsThroughIsProved(t *testing.T) {
 	}
 	covered := map[string]map[string]bool{}
 	planted := false
-	libFile := filepath.Join(repoRoot(t), filepath.FromSlash(libRel))
 	for _, m := range proofs {
-		planted = planted || m.creates()
+		planted = planted || m.Creates()
 		if strings.HasSuffix(m.File, ".rego") || len(places[m.Rule]) == 0 {
 			continue // it breaks a rule, not a file a rule reads
 		}
 		if covered[m.Rule] == nil {
 			covered[m.Rule] = map[string]bool{}
 		}
-		for p, picked := range picks(t, libFile, m, places[m.Rule]) {
+		for p, picked := range picks(t, libRel, m, places[m.Rule]) {
 			if picked {
 				covered[m.Rule][p] = true
 			}

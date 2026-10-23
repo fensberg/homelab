@@ -1,9 +1,8 @@
 package repo
 
 import (
-	"os"
-	"path/filepath"
-	"strings"
+	"go/ast"
+	"go/token"
 	"testing"
 )
 
@@ -31,15 +30,21 @@ import (
 // removed: renaming the *call* while keeping the files would not be caught by
 // anything else.
 func TestVaultCheckStillExists(t *testing.T) {
-	root := repoRoot(t)
-
-	probe, err := os.ReadFile(filepath.Join(root, "scripts", "contractor", "internal", "phases", "checkvault.go"))
-	if err != nil {
-		t.Fatalf("reading checkvault.go: %v", err)
-	}
+	probe := repository(t).Go(t, token.NewFileSet(), "scripts/contractor/internal/phases/checkvault.go")
 	// The report has to actually be driven by a probe, or the rules in
 	// policy/semgrep/vault-check.yml are guarding a function nobody calls.
-	if !strings.Contains(string(probe), "onepassword.Probe") {
+	calls := false
+	ast.Inspect(probe, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "Probe" {
+			return true
+		}
+		if id, ok := ast.Unparen(sel.X).(*ast.Ident); ok && id.Name == "onepassword" {
+			calls = true
+		}
+		return true
+	})
+	if !calls {
 		t.Fatal(`checkvault.go no longer calls onepassword.Probe.
 
 Either the check now resolves references some other way - in which case the

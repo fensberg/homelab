@@ -1,9 +1,10 @@
 package repo
 
 import (
+	"homelab/tests/parsed"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -59,11 +60,8 @@ func newRetryFixture(t *testing.T, failFirst int) *retryFixture {
 
 func (f *retryFixture) run(t *testing.T, args ...string) (string, error) {
 	t.Helper()
-	root := repoRoot(t)
-	cmd := exec.Command("bash", append([]string{root + "/scripts/retry.sh"}, args...)...)
-	cmd.Env = f.env
-	out, err := cmd.CombinedOutput()
-	return string(out), err
+	stdout, stderr, err := repository(t).Invoke(parsed.Run{Env: f.env, Bare: true}, "bash", append([]string{parsed.Here("scripts/retry.sh")}, args...)...)
+	return string(stdout) + string(stderr), err
 }
 
 func (f *retryFixture) calls(t *testing.T) int {
@@ -231,8 +229,11 @@ A refusal naming no remedy is one somebody works around.`, out)
 func TestAnUndeclaredCommandIsRefusedRatherThanAllowed(t *testing.T) {
 	f := newRetryFixture(t, 0)
 
-	declared := readRepoFile(t, "scripts/retry.sh")
-	if !strings.Contains(declared, "RETRYABLE=(") {
+	declares := slices.ContainsFunc(parsed.Commands(repository(t).Shell(t, "scripts/retry.sh")), func(c parsed.Command) bool {
+		_, ok := c.Assigns["RETRYABLE"]
+		return ok
+	})
+	if !declares {
 		t.Fatal("scripts/retry.sh no longer declares a RETRYABLE list, so this test " +
 			"is checking a mechanism that is gone")
 	}

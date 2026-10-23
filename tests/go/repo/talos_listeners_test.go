@@ -1,8 +1,10 @@
 package repo
 
 import (
-	"path/filepath"
+	"go/ast"
+	"go/token"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -36,8 +38,6 @@ import (
 // is being told to listen somewhere other than loopback, and that is the fact
 // both sides have to agree about.
 func TestEveryDeclaredControlPlaneListenerIsDialled(t *testing.T) {
-	root := repoRoot(t)
-
 	_, talos := tofuDeclaring(t, declMachineConfig)
 	declared := declaredListeners(t, talos)
 	if len(declared) == 0 {
@@ -49,7 +49,7 @@ or it was restructured and this guard is now reading the wrong shape. Both need
 a person; neither is fixed by deleting this test.`)
 	}
 
-	dialled := dialledListeners(t, readFile(t, filepath.Join(root, "tests", "go", "integration", "control_plane_listeners_test.go")))
+	dialled := dialledListeners(t, repository(t).Go(t, token.NewFileSet(), "tests/go/integration/control_plane_listeners_test.go"))
 
 	for _, component := range sortedKeys(declared) {
 		if !dialled[component] {
@@ -110,14 +110,25 @@ func opensAListener(name, value string) bool {
 	return !strings.Contains(value, "127.0.0.1") && !strings.Contains(value, "localhost")
 }
 
-var dialledComponent = regexp.MustCompile(`(?m)^\s*Component:\s*"(\w+)",`)
-
-func dialledListeners(t *testing.T, body string) map[string]bool {
+// dialledListeners is every component the integration tier's table names, by
+// the Component field of its entries.
+func dialledListeners(t *testing.T, file *ast.File) map[string]bool {
 	t.Helper()
 	out := map[string]bool{}
-	for _, m := range dialledComponent.FindAllStringSubmatch(body, -1) {
-		out[m[1]] = true
-	}
+	ast.Inspect(file, func(n ast.Node) bool {
+		kv, ok := n.(*ast.KeyValueExpr)
+		if !ok {
+			return true
+		}
+		key, ok := kv.Key.(*ast.Ident)
+		lit, isLit := kv.Value.(*ast.BasicLit)
+		if ok && key.Name == "Component" && isLit && lit.Kind == token.STRING {
+			if v, err := strconv.Unquote(lit.Value); err == nil {
+				out[v] = true
+			}
+		}
+		return true
+	})
 	if len(out) == 0 {
 		t.Fatal("found no Component entries in control_plane_listeners_test.go, so this guard is reading the wrong shape and would pass whatever talos.tf said")
 	}

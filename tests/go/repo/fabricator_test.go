@@ -2,18 +2,17 @@ package repo
 
 import (
 	"archive/zip"
-	"bufio"
 	"encoding/json"
 	"fmt"
+	"homelab/tests/parsed"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 
 	"homelab/details/applications"
 	"homelab/details/platform"
@@ -45,8 +44,7 @@ func fabricatorStep(t *testing.T, job, step string) string {
 // a workflow, so that it can be run as shipped.
 func workflowStep(t *testing.T, workflow, job, step string) string {
 	t.Helper()
-	body := workflowText(t, workflow)
-	if body == "" {
+	if !repository(t).Exists(workflowPath(workflow)) {
 		t.Fatalf("%s does not exist", workflow)
 	}
 	var wf struct {
@@ -57,9 +55,7 @@ func workflowStep(t *testing.T, workflow, job, step string) string {
 			} `yaml:"steps"`
 		} `yaml:"jobs"`
 	}
-	if err := yaml.Unmarshal([]byte(body), &wf); err != nil {
-		t.Fatalf("parsing %s: %v", workflow, err)
-	}
+	repository(t).YAMLInto(t, workflowPath(workflow), &wf)
 	for _, s := range wf.Jobs[job].Steps {
 		if s.Name == step {
 			return s.Run
@@ -72,28 +68,26 @@ func workflowStep(t *testing.T, workflow, job, step string) string {
 
 // runFabricatorScript runs a step's script in dir with env, and returns its
 // exit status and the GITHUB_OUTPUT it wrote.
-func runFabricatorScript(t *testing.T, script, dir string, env []string) (ok bool, output, logs string) {
+func runFabricatorScript(t *testing.T, script string, dir *parsed.Tree, env []string) (ok bool, output, logs string) {
 	t.Helper()
 	scratch := t.TempDir()
 	out := filepath.Join(scratch, "output")
 	summary := filepath.Join(scratch, "summary")
-	cmd := exec.Command("bash", "-eo", "pipefail", "-c", script)
-	cmd.Dir = dir
-	cmd.Env = append(env,
+	run := parsed.Run{Bare: true, Env: append(env,
 		"PATH="+os.Getenv("PATH"),
 		"GITHUB_OUTPUT="+out,
-		"GITHUB_STEP_SUMMARY="+summary)
-	b, err := cmd.CombinedOutput()
+		"GITHUB_STEP_SUMMARY="+summary)}
+	stdout, stderr, err := dir.Invoke(run, "bash", "-eo", "pipefail", "-c", script)
 	written, _ := os.ReadFile(out)
-	return err == nil, string(written), string(b)
+	return err == nil, string(written), string(stdout) + string(stderr)
 }
 
 // fabricatorFixture is a repository with the estate's own order and three
 // applications: one that is built and released, with settings for two
 // environments; one that is built and not released; and one with no image.
-func fabricatorFixture(t *testing.T) string {
+func fabricatorFixture(t *testing.T) *parsed.Tree {
 	t.Helper()
-	root := t.TempDir()
+	root := parsed.Empty(t)
 	for rel, body := range map[string]string{
 		workorders.Path:        `{"orders":[{"name":"kit","context":"kits/kit"}]}`,
 		"kits/kit/Dockerfile":  "FROM scratch\n",
@@ -116,14 +110,9 @@ func fabricatorFixture(t *testing.T) string {
 		// Not the application's, and so not in a release of it.
 		"elsewhere/secret.yaml": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: elsewhere\n",
 	} {
-		path := filepath.Join(root, filepath.FromSlash(rel))
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		root.Write(t, rel, body)
 	}
+	root.Index(t)
 	return root
 }
 
@@ -134,7 +123,7 @@ const (
 
 // fixtureRelease is the release half of the fixture application's order, as
 // the workflow's matrix hands it to a step.
-func fixtureRelease(t *testing.T, root string) string {
+func fixtureRelease(t *testing.T, root *parsed.Tree) string {
 	t.Helper()
 	for _, o := range ordersOf(t, root) {
 		if o.Name == "thing" {
@@ -154,16 +143,12 @@ func releaseJSON(t *testing.T, o workorders.Order) string {
 	return string(b)
 }
 
-func ordersOf(t *testing.T, root string) []workorders.Order {
+func ordersOf(t *testing.T, root *parsed.Tree) []workorders.Order {
 	t.Helper()
-	orders, err := workorders.Read(root)
-	if err != nil {
-		t.Fatalf("%v, so the fabricator builds nothing", err)
-	}
-	return orders
+	return root.WorkOrders(t)
 }
 
-func workOrders(t *testing.T) []workorders.Order { return ordersOf(t, repoRoot(t)) }
+func workOrders(t *testing.T) []workorders.Order { return ordersOf(t, repository(t)) }
 
 // The fabricator builds what the work orders say and nothing else, so
 // whether the orders are complete is this guard's question, not the
@@ -183,8 +168,8 @@ func TestEveryDockerfileHasAWorkOrderAndEveryOrderADockerfile(t *testing.T) {
 		// An order that publishes a package builds no image, and its
 		// manifest has to be there for the same reason a Dockerfile does.
 		if o.Package != "" {
-			if _, err := os.Stat(filepath.Join(repoRoot(t), filepath.FromSlash(o.Package))); err != nil {
-				t.Errorf("the work order %q publishes the package %s, which is not there: %v", o.Name, o.Package, err)
+			if !repository(t).Exists(o.Package) {
+				t.Errorf("the work order %q publishes the package %s, which is not there", o.Name, o.Package)
 			}
 			continue
 		}
@@ -215,7 +200,7 @@ func TestEveryDockerfileHasAWorkOrderAndEveryOrderADockerfile(t *testing.T) {
 
 // stepOrders runs the workflow's own orders step in a repository and returns
 // the matrix it hands the build.
-func stepOrders(t *testing.T, root string) []workorders.Order {
+func stepOrders(t *testing.T, root *parsed.Tree) []workorders.Order {
 	t.Helper()
 	if _, err := exec.LookPath("jq"); err != nil {
 		t.Fatal("jq is not on PATH; the step uses it and this test cannot run it without it")
@@ -260,7 +245,7 @@ func TestTheFabricatorReadsEveryWorkOrder(t *testing.T) {
 		t.Errorf("the step's orders for the fixture are\n  %s\nwant\n  %s", got, want)
 	}
 
-	for name, root := range map[string]string{"the fixture": fixture, "the repository": repoRoot(t)} {
+	for name, root := range map[string]*parsed.Tree{"the fixture": fixture, "the repository": repository(t)} {
 		step, _ := json.Marshal(stepOrders(t, root))
 		read, _ := json.Marshal(ordersOf(t, root))
 		if string(step) != string(read) {
@@ -271,29 +256,20 @@ func TestTheFabricatorReadsEveryWorkOrder(t *testing.T) {
 
 // pinsFor is every pin an order's build is offered: the estate's, then the
 // order's own.
-func pinsFor(t *testing.T, root string, o workorders.Order) map[string]string {
+func pinsFor(t *testing.T, root *parsed.Tree, o workorders.Order) map[string]string {
 	t.Helper()
 	pins := map[string]string{}
-	files := []string{"scripts/versions.env"}
+	files := []string{versionPins}
 	if o.Pins != "" {
 		files = append(files, o.Pins)
 	}
 	for _, rel := range files {
-		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
-		if err != nil {
-			if os.IsNotExist(err) && rel == o.Pins {
-				continue // an application with nothing of its own to pin
-			}
-			t.Fatal(err)
+		if !root.Exists(rel) && rel == o.Pins {
+			continue // an application with nothing of its own to pin
 		}
-		for _, line := range strings.Split(string(body), "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" || strings.HasPrefix(line, "#") {
-				continue
-			}
-			if k, v, ok := strings.Cut(line, "="); ok {
-				pins[k] = v
-			}
+		declared, _ := root.Conftest(t, rel, "dotenv").(map[string]any)
+		for k, v := range declared {
+			pins[k], _ = v.(string)
 		}
 	}
 	return pins
@@ -301,7 +277,7 @@ func pinsFor(t *testing.T, root string, o workorders.Order) map[string]string {
 
 // estatePinsEnv is the estate's pins as the workflow's versions action
 // exports them: in the environment of every later step.
-func estatePinsEnv(t *testing.T, root string) []string {
+func estatePinsEnv(t *testing.T, root *parsed.Tree) []string {
 	t.Helper()
 	var env []string
 	for k, v := range pinsFor(t, root, workorders.Order{}) {
@@ -321,7 +297,7 @@ func estatePinsEnv(t *testing.T, root string) []string {
 func TestTheFabricatorPassesEveryPinADockerfileAsksFor(t *testing.T) {
 	script := fabricatorStep(t, "build", "Take the pins each Dockerfile asks for")
 	checked := 0
-	for name, root := range map[string]string{"the fixture": fabricatorFixture(t), "the repository": repoRoot(t)} {
+	for name, root := range map[string]*parsed.Tree{"the fixture": fabricatorFixture(t), "the repository": repository(t)} {
 		for _, o := range ordersOf(t, root) {
 			if o.Context == "" {
 				continue // an order that publishes a package builds no image
@@ -333,7 +309,7 @@ func TestTheFabricatorPassesEveryPinADockerfileAsksFor(t *testing.T) {
 				continue
 			}
 			pins := pinsFor(t, root, o)
-			for _, arg := range bareArgs(t, filepath.Join(root, filepath.FromSlash(o.Context), "Dockerfile")) {
+			for _, arg := range bareArgs(t, root, o.Context+"/Dockerfile") {
 				checked++
 				want := "--build-arg " + arg + "=" + pins[arg]
 				if pins[arg] == "" || !strings.Contains(output, want) {
@@ -362,7 +338,7 @@ func TestTheFabricatorReadsAnOrdersPinsAndRunsNothingInThem(t *testing.T) {
 	if !strings.Contains(output, "--build-arg THING_BUILD_VERSION=42") || !strings.Contains(output, "--build-arg ESTATE_TOOL_VERSION=1.2.3") {
 		t.Errorf("the application's own pin and the estate's were not both passed: %q", output)
 	}
-	if _, err := os.Stat(filepath.Join(root, "executed")); err == nil {
+	if root.Exists("executed") {
 		t.Error("a line of the pins file was executed; the file is data")
 	}
 }
@@ -370,14 +346,8 @@ func TestTheFabricatorReadsAnOrdersPinsAndRunsNothingInThem(t *testing.T) {
 // A Dockerfile asking for a version nobody pinned fails the build.
 func TestTheFabricatorRefusesAnUnpinnedArg(t *testing.T) {
 	script := fabricatorStep(t, "build", "Take the pins each Dockerfile asks for")
-	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "img"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	dockerfile := "ARG UNPINNED_VERSION\nARG TARGETARCH\nFROM scratch\n"
-	if err := os.WriteFile(filepath.Join(dir, "img", "Dockerfile"), []byte(dockerfile), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	dir := parsed.Empty(t)
+	dir.Write(t, "img/Dockerfile", "ARG UNPINNED_VERSION\nARG TARGETARCH\nFROM scratch\n")
 	ok, _, logs := runFabricatorScript(t, script, dir, []string{"CONTEXT=img", "ORDER_PINS=img/absent.env"})
 	if ok {
 		t.Error("the pin step passed a Dockerfile asking for UNPINNED_VERSION, which " +
@@ -392,27 +362,17 @@ func TestTheFabricatorRefusesAnUnpinnedArg(t *testing.T) {
 	}
 }
 
-func bareArgs(t *testing.T, dockerfile string) []string {
+func bareArgs(t *testing.T, root *parsed.Tree, rel string) []string {
 	t.Helper()
-	f, err := os.Open(dockerfile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
 	automatic := map[string]bool{
 		"TARGETPLATFORM": true, "TARGETOS": true, "TARGETARCH": true, "TARGETVARIANT": true,
 		"BUILDPLATFORM": true, "BUILDOS": true, "BUILDARCH": true, "BUILDVARIANT": true,
 	}
 	var out []string
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		fields := strings.Fields(sc.Text())
-		if len(fields) == 2 && fields[0] == "ARG" && !strings.Contains(fields[1], "=") && !automatic[fields[1]] {
-			out = append(out, fields[1])
+	for _, i := range dockerfileIn(t, root, rel) {
+		if i.Cmd == "arg" && len(i.Value) == 1 && !strings.Contains(i.Value[0], "=") && !automatic[i.Value[0]] {
+			out = append(out, i.Value[0])
 		}
-	}
-	if err := sc.Err(); err != nil {
-		t.Fatal(err)
 	}
 	return out
 }
@@ -432,16 +392,27 @@ func fakeTools(t *testing.T, tools map[string]string) string {
 	return dir + string(os.PathListSeparator) + os.Getenv("PATH")
 }
 
-func runReleaseStep(t *testing.T, step, dir, path string, env []string) (ok bool, output, logs string) {
+func runReleaseStep(t *testing.T, step string, dir *parsed.Tree, path string, env []string) (ok bool, output, logs string) {
+	t.Helper()
+	return releaseStep(t, step, dir, "", path, env)
+}
+
+// runReleaseStepIn is runReleaseStep in a directory of the test's own, such
+// as a git repository it made to commit into.
+func runReleaseStepIn(t *testing.T, step, dir, path string, env []string) (ok bool, output, logs string) {
+	t.Helper()
+	return releaseStep(t, step, repository(t), dir, path, env)
+}
+
+func releaseStep(t *testing.T, step string, tree *parsed.Tree, in, path string, env []string) (ok bool, output, logs string) {
 	t.Helper()
 	script := fabricatorStep(t, "build", step)
 	scratch := t.TempDir()
 	out := filepath.Join(scratch, "output")
-	cmd := exec.Command("bash", "-eo", "pipefail", "-c", script)
-	cmd.Dir = dir
-	cmd.Env = append(env, "PATH="+path, "GITHUB_OUTPUT="+out,
-		"GITHUB_STEP_SUMMARY="+filepath.Join(scratch, "summary"), "RUNNER_TEMP="+scratch)
-	b, err := cmd.CombinedOutput()
+	run := parsed.Run{Bare: true, In: in, Env: append(env, "PATH="+path, "GITHUB_OUTPUT="+out,
+		"GITHUB_STEP_SUMMARY="+filepath.Join(scratch, "summary"), "RUNNER_TEMP="+scratch)}
+	stdout, stderr, err := tree.Invoke(run, "bash", "-eo", "pipefail", "-c", script)
+	b := append(stdout, stderr...)
 	written, readErr := os.ReadFile(out)
 	if readErr != nil && !os.IsNotExist(readErr) {
 		t.Fatalf("reading the step's output: %v", readErr)
@@ -471,7 +442,7 @@ esac`})
 // proved whichever applications the estate has, and of every order it has.
 func TestTheReleaseIsNamedForTheVersionTheSoftwareReports(t *testing.T) {
 	checked := 0
-	for name, root := range map[string]string{"the fixture": fabricatorFixture(t), "the repository": repoRoot(t)} {
+	for name, root := range map[string]*parsed.Tree{"the fixture": fabricatorFixture(t), "the repository": repository(t)} {
 		for _, o := range ordersOf(t, root) {
 			if o.Release == nil {
 				continue
@@ -479,7 +450,7 @@ func TestTheReleaseIsNamedForTheVersionTheSoftwareReports(t *testing.T) {
 			checked++
 			example := o.Release.Version.Example
 			path := printing(t, "Initialize engine version: 6000.0.75f1", "    Version:  NULL 1.0 [1.0]", example.Line, "ready")
-			ok, output, logs := runReleaseStep(t, "Read the version the build carries", t.TempDir(), path, []string{
+			ok, output, logs := runReleaseStep(t, "Read the version the build carries", parsed.Empty(t), path, []string{
 				"IMAGE=ghcr.io/example/homelab-" + o.Name, "DIGEST=sha256:" + strings.Repeat("a", 64),
 				"RELEASE=" + releaseJSON(t, o), "PROBE_ATTEMPTS=2", "PROBE_INTERVAL=0"})
 			if !ok {
@@ -500,7 +471,7 @@ func TestTheReleaseIsNamedForTheVersionTheSoftwareReports(t *testing.T) {
 // releasing under a guess.
 func TestAReleaseIsRefusedWhenTheVersionCannotBeRead(t *testing.T) {
 	path := printing(t, "Initialize engine version: 6000.0.75f1")
-	ok, output, logs := runReleaseStep(t, "Read the version the build carries", t.TempDir(), path, []string{
+	ok, output, logs := runReleaseStep(t, "Read the version the build carries", parsed.Empty(t), path, []string{
 		"IMAGE=" + fixtureImage, "DIGEST=sha256:" + strings.Repeat("a", 64),
 		"RELEASE=" + fixtureRelease(t, fabricatorFixture(t)), "PROBE_ATTEMPTS=2", "PROBE_INTERVAL=0"})
 	if ok || strings.Contains(output, "version=") {
@@ -526,7 +497,7 @@ case "$2" in
   users/*) echo Organization ;;
   *) ` + tc.versions + ` ;;
 esac`})
-			ok, output, logs := runReleaseStep(t, "Number the release", t.TempDir(), path, []string{
+			ok, output, logs := runReleaseStep(t, "Number the release", parsed.Empty(t), path, []string{
 				"OWNER=example", "PACKAGE=homelab-thing-release", "VERSION=1.0.15", "GH_TOKEN=x"})
 			if !ok {
 				t.Fatalf("the step failed:\n%s", logs)
@@ -543,7 +514,7 @@ esac`})
 func TestTheReleaseCounterRefusesARegistryItCannotRead(t *testing.T) {
 	path := fakeTools(t, map[string]string{"gh": `if [ "$2" = "--paginate" ]; then echo "gh: Server Error (HTTP 500)" >&2; exit 1; fi
 echo Organization`})
-	ok, output, logs := runReleaseStep(t, "Number the release", t.TempDir(), path, []string{
+	ok, output, logs := runReleaseStep(t, "Number the release", parsed.Empty(t), path, []string{
 		"OWNER=example", "PACKAGE=homelab-thing-release", "VERSION=1.0.15", "GH_TOKEN=x"})
 	if ok || output != "" {
 		t.Errorf("the step numbered a release from a registry it could not read: %q\n%s", output, logs)
@@ -636,18 +607,14 @@ echo '{"repository":"` + fixtureImage + `-release","tag":"1.0.15-1","digest":"sh
 // and a second images: key is invalid YAML nobody sees until Flux does; and a
 // pattern that captures the version and nothing else.
 func TestEveryReleaseOrderIsOneTheFabricatorCanFollow(t *testing.T) {
-	root := repoRoot(t)
-	for _, problem := range unfollowableReleases(t, root) {
+	for _, problem := range unfollowableReleases(t, repository(t)) {
 		t.Error(problem)
 	}
 }
 
-func unfollowableReleases(t *testing.T, root string) []string {
+func unfollowableReleases(t *testing.T, root *parsed.Tree) []string {
 	t.Helper()
-	apps, err := applications.Read(root)
-	if err != nil {
-		return []string{err.Error()}
-	}
+	apps := root.Applications(t)
 	byRoot := map[string]applications.Application{}
 	for _, a := range apps {
 		byRoot[a.Root] = a
@@ -662,17 +629,16 @@ func unfollowableReleases(t *testing.T, root string) []string {
 			problems = append(problems, fmt.Sprintf("%s: the release is made of %s, which is not an application's directory", o.Name, o.Release.Module))
 			continue
 		}
-		base, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(a.Root), applications.Base, applications.Kustomization))
-		switch {
-		case err != nil:
+		base := a.Root + "/" + applications.Base + "/" + applications.Kustomization
+		var k map[string]any
+		if !root.Exists(base) {
 			problems = append(problems, fmt.Sprintf("%s: %s has no base/kustomization.yaml, and that is where the fabricator pins the image", o.Name, a.Root))
-		case strings.Contains(string(base), "\nimages:") || strings.HasPrefix(string(base), "images:"):
+		} else if docs, isYAML := root.MaybeYAML(t, base); !isYAML || len(docs) != 1 || as(docs[0], &k) != nil {
+			problems = append(problems, fmt.Sprintf("%s: %s/base/kustomization.yaml is not a kustomization that can be read", o.Name, a.Root))
+		} else if k["images"] != nil {
 			problems = append(problems, fmt.Sprintf("%s: %s/base/kustomization.yaml already has an images: key, and the fabricator appends one", o.Name, a.Root))
 		}
-		envs, err := a.Environments(root)
-		if err != nil {
-			return []string{err.Error()}
-		}
+		envs := root.Environments(t, a)
 		if len(envs) == 0 {
 			problems = append(problems, fmt.Sprintf("%s: %s has settings for no environment, so there is nothing a site could run from a release of it", o.Name, a.Root))
 		}
@@ -702,9 +668,7 @@ func TestUnfollowableReleasesNamesEachWayAnOrderCanBeBroken(t *testing.T) {
 		"a pattern of two captures": {app + "/" + applications.Declaration, strings.Replace(fixtureDeclaration, `v\\(`, `\\(v\\)\\(`, 1), "exactly one group"},
 	} {
 		root := fabricatorFixture(t)
-		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(c.path)), []byte(c.body), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		root.Write(t, c.path, c.body)
 		if problems := unfollowableReleases(t, root); len(problems) != 1 || !strings.Contains(problems[0], c.want) {
 			t.Errorf("%s: want one problem saying %q, got %v", name, c.want, problems)
 		}
@@ -715,9 +679,7 @@ func TestUnfollowableReleasesNamesEachWayAnOrderCanBeBroken(t *testing.T) {
 	} {
 		root := fabricatorFixture(t)
 		for _, dir := range remove {
-			if err := os.RemoveAll(filepath.Join(root, filepath.FromSlash(dir))); err != nil {
-				t.Fatal(err)
-			}
+			root.Remove(t, dir)
 		}
 		if problems := unfollowableReleases(t, root); len(problems) != 1 || !strings.Contains(problems[0], name) {
 			t.Errorf("%s: want one problem naming it, got %v", name, problems)
@@ -765,7 +727,7 @@ func TestAnImageOfTheSameInputsIsReused(t *testing.T) {
 		run("commit", "-qm", "img")
 	}
 	fingerprint := func(pins, listing string) (map[string]string, string) {
-		ok, output, logs := runReleaseStep(t, "Reuse a build of the same inputs", repo, fakeRegistryListing(t, listing),
+		ok, output, logs := runReleaseStepIn(t, "Reuse a build of the same inputs", repo, fakeRegistryListing(t, listing),
 			[]string{"OWNER=example", "PACKAGE=homelab-thing", "CONTEXT=img", "PINS=" + pins, "GH_TOKEN=x"})
 		if !ok {
 			t.Fatalf("the reuse step failed:\n%s", logs)
@@ -804,7 +766,7 @@ func TestAnImageOfTheSameInputsIsReused(t *testing.T) {
 		t.Errorf("a build of these inputs exists and was not reused: %v", reused)
 	}
 
-	ok, _, logs := runReleaseStep(t, "Reuse a build of the same inputs", repo,
+	ok, _, logs := runReleaseStepIn(t, "Reuse a build of the same inputs", repo,
 		fakeRegistryListing(t, `echo "gh: Server Error (HTTP 500)" >&2; exit 1`),
 		[]string{"OWNER=example", "PACKAGE=homelab-thing", "CONTEXT=img", "PINS=x", "GH_TOKEN=x"})
 	if ok {
@@ -856,7 +818,7 @@ func TestAnImageIsMadeAgainWhenAFileItsBuildReadsChanges(t *testing.T) {
 		if reads != "" {
 			env = append(env, "READS="+reads)
 		}
-		ok, output, logs := runReleaseStep(t, "Reuse a build of the same inputs", repo, fakeRegistryListing(t, none), env)
+		ok, output, logs := runReleaseStepIn(t, "Reuse a build of the same inputs", repo, fakeRegistryListing(t, none), env)
 		if !ok {
 			t.Fatalf("the reuse step failed:\n%s", logs)
 		}
@@ -909,7 +871,7 @@ func TestABuildIsHandedTheFilesItsOrderNamesAndNoOthers(t *testing.T) {
 
 	layOut := func(reads string) (dir string, ok bool, logs string) {
 		t.Helper()
-		ok, output, logs := runReleaseStep(t, "Lay out what the build reads", repo, os.Getenv("PATH"), []string{"READS=" + reads})
+		ok, output, logs := runReleaseStepIn(t, "Lay out what the build reads", repo, os.Getenv("PATH"), []string{"READS=" + reads})
 		for _, l := range strings.Split(output, "\n") {
 			if v, found := strings.CutPrefix(l, "dir="); found {
 				dir = v
@@ -969,21 +931,21 @@ func TestABuildIsHandedTheFilesItsOrderNamesAndNoOthers(t *testing.T) {
 		}
 	}
 
-	build, found := dockerBuildCommand(workflowText(t, fabricatorWorkflow))
+	build, found := dockerBuild(t)
 	if !found {
 		t.Fatal("could not find the docker build invocation in the fabricator")
 	}
 	if !strings.Contains(build, `--build-context "`+workorders.ReadsContext+`=${READS_DIR}"`) {
 		t.Errorf("the build is not run with what was laid out, as the context %q:\n%s", workorders.ReadsContext, build)
 	}
-	if !strings.Contains(workflowText(t, fabricatorWorkflow), "READS_DIR: ${{ steps.reads.outputs.dir }}") {
+	if !slices.Contains(scalarsAt(repository(t).YAMLDocuments(t, workflowPath(fabricatorWorkflow)), "READS_DIR"), "${{ steps.reads.outputs.dir }}") {
 		t.Error("the build's READS_DIR is not the directory the laying-out step wrote")
 	}
 }
 
 // releaseFingerprint runs the workflow's own fingerprint step for the
 // fixture application in root.
-func releaseFingerprint(t *testing.T, root, digest, listing string) (ok bool, out map[string]string, logs string) {
+func releaseFingerprint(t *testing.T, root *parsed.Tree, digest, listing string) (ok bool, out map[string]string, logs string) {
 	t.Helper()
 	ok, output, logs := runReleaseStep(t, "Reuse a release of the same manifests", root, fakeRegistryListing(t, listing),
 		[]string{"OWNER=example", "PACKAGE=homelab-thing-release", "IMAGE=" + fixtureImage,
@@ -1016,14 +978,8 @@ func TestAReleaseOfTheSameManifestsIsNotRepeated(t *testing.T) {
 		return out
 	}
 	edit := func(rel string, change func(string) string) {
-		path := filepath.Join(root, filepath.FromSlash(applications.Dir+"/thing/"+rel))
-		body, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(change(string(body))), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		rel = applications.Dir + "/thing/" + rel
+		root.Write(t, rel, change(root.OwnText(t, rel)))
 	}
 
 	first := fingerprint(a, none)
@@ -1058,16 +1014,12 @@ func TestAReleaseThatReachesOutsideItsApplicationIsNotMade(t *testing.T) {
 	a := "sha256:" + strings.Repeat("a", 64)
 
 	root := fabricatorFixture(t)
-	reaching := filepath.Join(root, filepath.FromSlash(applications.Dir+"/thing/production/kustomization.yaml"))
-	if err := os.WriteFile(reaching, []byte("apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n  - ../base\n  - settings.yaml\n  - ../../../../elsewhere\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "elsewhere", applications.Kustomization), []byte("resources: [secret.yaml]\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	production := applications.Dir + "/thing/production"
+	root.Write(t, production+"/"+applications.Kustomization, "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n  - ../base\n  - settings.yaml\n  - ../../../../elsewhere\n")
+	root.Write(t, "elsewhere/"+applications.Kustomization, "resources: [secret.yaml]\n")
 	// It builds where it stands, which is why a review would not catch it.
-	if out, err := exec.Command("kustomize", "build", filepath.Dir(reaching)).CombinedOutput(); err != nil {
-		t.Fatalf("the fixture's reach outside its directory does not build even in place, so this proves nothing: %v\n%s", err, out)
+	if out, errs, err := root.Invoke(parsed.Run{}, "kustomize", "build", production); err != nil {
+		t.Fatalf("the fixture's reach outside its directory does not build even in place, so this proves nothing: %v\n%s%s", err, out, errs)
 	}
 	if ok, out, logs := releaseFingerprint(t, root, a, none); ok || out["fingerprint"] != "" {
 		t.Errorf("a release was fingerprinted for an application whose manifests reach outside its directory: %v\n%s", out, logs)
@@ -1075,9 +1027,7 @@ func TestAReleaseThatReachesOutsideItsApplicationIsNotMade(t *testing.T) {
 
 	root = fabricatorFixture(t)
 	for _, env := range []string{"production", "staging"} {
-		if err := os.RemoveAll(filepath.Join(root, filepath.FromSlash(applications.Dir+"/thing/"+env))); err != nil {
-			t.Fatal(err)
-		}
+		root.Remove(t, applications.Dir+"/thing/"+env)
 	}
 	ok, _, logs := releaseFingerprint(t, root, a, none)
 	if ok || !strings.Contains(logs, "settings for no environment") {
@@ -1149,14 +1099,13 @@ func (f releaseDelivery) read(name string) string {
 func (f releaseDelivery) deliver(t *testing.T) (ok bool, summary, logs string) {
 	t.Helper()
 	scratch := t.TempDir()
-	cmd := exec.Command("bash", "-eo", "pipefail", "-c", fabricatorStep(t, "deliver", "Deliver"))
-	cmd.Dir = repoRoot(t)
-	cmd.Env = append(os.Environ(), "PATH="+f.path,
+	run := parsed.Run{Env: []string{"PATH=" + f.path,
 		"GH_TOKEN=x", "READ_TOKEN=x", "REPO=example/homelab", "OWNER=example", "REPO_NAME=homelab",
 		`ORDERS=[{"name":"kit","context":"kits/kit"},{"name":"thing","context":"x","release":{"module":"x"}}]`,
-		"RUN_URL=https://example.invalid/run", "RUNNER_TEMP="+scratch,
-		"GITHUB_STEP_SUMMARY="+filepath.Join(scratch, "summary"), "GITHUB_OUTPUT="+filepath.Join(scratch, "output"))
-	out, err := cmd.CombinedOutput()
+		"RUN_URL=https://example.invalid/run", "RUNNER_TEMP=" + scratch,
+		"GITHUB_STEP_SUMMARY=" + filepath.Join(scratch, "summary"), "GITHUB_OUTPUT=" + filepath.Join(scratch, "output")}}
+	stdout, stderr, err := repository(t).Invoke(run, "bash", "-eo", "pipefail", "-c", fabricatorStep(t, "deliver", "Deliver"))
+	out := append(stdout, stderr...)
 	written, _ := os.ReadFile(filepath.Join(scratch, "summary"))
 	return err == nil, string(written), string(out)
 }
@@ -1293,9 +1242,7 @@ func runPackageStep(t *testing.T, step, dir, path, scratch string, env []string)
 // build context to the image build, and one with a package to the packaging.
 func TestEachKindOfOrderGoesToItsOwnJob(t *testing.T) {
 	root := fabricatorFixture(t)
-	if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(workorders.Path)), []byte(`{"orders":[{"name":"kit","context":"kits/kit"},{"name":"bundle","package":"pkg/release.json"}]}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	root.Write(t, workorders.Path, `{"orders":[{"name":"kit","context":"kits/kit"},{"name":"bundle","package":"pkg/release.json"}]}`)
 	ok, output, logs := runFabricatorScript(t, fabricatorStep(t, "orders", "Read the work orders"), root, nil)
 	if !ok {
 		t.Fatalf("the step failed:\n%s", logs)

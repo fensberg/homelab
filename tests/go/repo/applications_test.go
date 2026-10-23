@@ -1,10 +1,7 @@
 package repo
 
 import (
-	"bytes"
 	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -42,49 +39,57 @@ import (
 // may only manage its own namespace, and its secrets are made from its own
 // vault item (docs/epochs/02-abstraction.md).
 func TestAnApplicationIsNamedOnlyWhereItLives(t *testing.T) {
-	root := repoRoot(t)
-	apps, err := applications.Read(root)
-	if err != nil {
-		t.Fatal(err)
+	heavy(t, "semgrep reads every file for the applications' names, a few seconds")
+	tree := repository(t)
+	apps := tree.Applications(t)
+	files := tree.Files(t)
+	const atLeastAHundredFiles = 100
+	if len(files) < atLeastAHundredFiles {
+		t.Fatalf("only %d tracked files were listed, so nothing was read for the applications' names", len(files))
 	}
-	files := map[string]string{}
-	for _, rel := range tracked(t, func(string) bool { return true }) {
-		body, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatal(err)
+	// Every line of every file that names an application, found by Semgrep
+	// from a rule this builds out of what the applications declare: the
+	// names are the estate's, so no rule written down could hold them.
+	var rules []map[string]any
+	for _, a := range apps {
+		rules = append(rules, map[string]any{
+			"id": "names-" + a.Name, "languages": []string{"generic"}, "severity": "INFO",
+			"message": a.Name, "metadata": map[string]any{"about": a.Name},
+			"pattern-regex": `(?i)` + regexp.QuoteMeta(a.Name),
+		})
+	}
+	named := map[string]map[string]map[int]bool{}
+	for _, f := range scanText(t, tree, rules, files) {
+		if named[f.About] == nil {
+			named[f.About] = map[string]map[int]bool{}
 		}
-		// Not text: an image, a font. Nothing in one names anything.
-		if bytes.IndexByte(body, 0) >= 0 {
-			continue
+		if named[f.About][f.Path] == nil {
+			named[f.About][f.Path] = map[int]bool{}
 		}
-		files[rel] = string(body)
+		named[f.About][f.Path][f.Line] = true
 	}
 	// No floor on how many applications there are: an estate with none
-	// names none. What this finds is proved against files written here, in
+	// names none. What this finds is proved against names placed here, in
 	// TestNamedOutsideAllowsAnApplicationsNameOnlyWhereItLives.
-	for _, problem := range namedOutside(apps, files) {
+	for _, problem := range namedOutside(apps, files, named) {
 		t.Error(problem)
 	}
 }
 
 // namedOutside is every file that names an application somewhere it does not
-// live, with how many lines of it do - one more if its path does.
-func namedOutside(apps []applications.Application, files map[string]string) []string {
+// live, with how many lines of it do - one more if its path does. named is the
+// lines naming each application, by its name and the file.
+func namedOutside(apps []applications.Application, files []string, named map[string]map[string]map[int]bool) []string {
 	var out []string
 	for _, a := range apps {
 		name := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(a.Name))
-		for rel, body := range files {
+		for _, rel := range files {
 			if livesIn(rel, a, apps) {
 				continue
 			}
-			n := 0
+			n := len(named[a.Name][rel])
 			if name.MatchString(rel) {
 				n++
-			}
-			for _, line := range strings.Split(body, "\n") {
-				if name.MatchString(line) {
-					n++
-				}
 			}
 			if n > 0 {
 				out = append(out, fmt.Sprintf("%s names the application %s on %d line(s), outside where it lives. Read what applications declare (homelab/details/applications) instead of naming one, or put this in %s.", rel, a.Name, n, a.Root))
@@ -121,22 +126,36 @@ func TestNamedOutsideAllowsAnApplicationsNameOnlyWhereItLives(t *testing.T) {
 	}
 	apps := []applications.Application{app("alpha"), app("beta", "alpha"), app("gamma")}
 	dir := applications.Dir
-	files := map[string]string{
-		dir + "/alpha/base/thing.yaml":     "name: alpha\n",
-		applications.SiteFilePath("north"): "runs: alpha\nand: gamma\n",
-		dir + "/beta/base/thing.yaml":      "upstream: alpha.alpha.svc\n",
-		"docs/notes.md":                    "alpha was first\n",
-		"README.md":                        "alpha\n",
-		"shared/quiet.txt":                 "nothing here\n",
-		// Each of these is a mechanism that knows an application by name.
-		"shared/module.tf":                                             "resource \"x\" \"alpha\" {}\nname = \"ALPHA_KEY\"\nunrelated = 1\n",
-		"shared/alpha_test.go":                                         "package x\n",
-		dir + "/gamma/base/thing.yaml":                                 "calls: alpha\n",
-		applications.SitesDir + "/core/shared.yaml":                    "name: beta\n",
-		applications.SitesDir + "/north/elsewhere.yaml":                "name: gamma\n",
-		applications.SitesDir + "/north/deep/" + applications.SiteFile: "name: gamma\n",
+	// Each file, and the lines of it naming each application, as a scan
+	// would find them.
+	lines := func(n int) map[int]bool {
+		out := map[int]bool{}
+		for i := 1; i <= n; i++ {
+			out[i] = true
+		}
+		return out
 	}
-	got := namedOutside(apps, files)
+	named := map[string]map[string]map[int]bool{
+		"alpha": {
+			dir + "/alpha/base/thing.yaml":     lines(1),
+			applications.SiteFilePath("north"): lines(1),
+			dir + "/beta/base/thing.yaml":      lines(1),
+			"docs/notes.md":                    lines(1),
+			"README.md":                        lines(1),
+			// Each of these is a mechanism that knows an application by name.
+			"shared/module.tf":             lines(2),
+			dir + "/gamma/base/thing.yaml": lines(1),
+		},
+		"beta":  {applications.SitesDir + "/core/shared.yaml": lines(1)},
+		"gamma": {applications.SiteFilePath("north"): lines(1), applications.SitesDir + "/north/elsewhere.yaml": lines(1), applications.SitesDir + "/north/deep/" + applications.SiteFile: lines(1)},
+	}
+	files := []string{
+		dir + "/alpha/base/thing.yaml", applications.SiteFilePath("north"), dir + "/beta/base/thing.yaml",
+		"docs/notes.md", "README.md", "shared/quiet.txt", "shared/module.tf", "shared/alpha_test.go",
+		dir + "/gamma/base/thing.yaml", applications.SitesDir + "/core/shared.yaml",
+		applications.SitesDir + "/north/elsewhere.yaml", applications.SitesDir + "/north/deep/" + applications.SiteFile,
+	}
+	got := namedOutside(apps, files, named)
 	want := []string{
 		applications.SitesDir + "/core/shared.yaml names the application beta on 1 line(s)",
 		applications.SitesDir + "/north/deep/" + applications.SiteFile + " names the application gamma on 1 line(s)",
@@ -153,7 +172,7 @@ func TestNamedOutsideAllowsAnApplicationsNameOnlyWhereItLives(t *testing.T) {
 			t.Errorf("problem %d is\n  %s\nwant it to begin\n  %s", i, got[i], want[i])
 		}
 	}
-	if got := namedOutside(nil, files); len(got) != 0 {
+	if got := namedOutside(nil, files, named); len(got) != 0 {
 		t.Errorf("an estate with no application named one: %v", got)
 	}
 }

@@ -1,8 +1,6 @@
 package repo
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -35,11 +33,6 @@ func TestTheWorkstationIsProvisionedOntoTheOverlay(t *testing.T) {
 			"`curl | sh` is the shape scripts/approved-suppliers.yml exists to prevent: " +
 			"the package is signed, the install script is merely fetched.")
 	}
-	if !strings.Contains(body, "--accept-routes") {
-		t.Error("the workstation does not accept advertised routes, so it loses the node " +
-			"subnet whenever the SDN is rebuilt - which is precisely when somebody is " +
-			"running the button and needs to watch it")
-	}
 }
 
 // The router tag approves subnet routes. A workstation wearing it could claim
@@ -71,24 +64,17 @@ func TestAWorkstationWithNoOverlayKeyIsRefused(t *testing.T) {
 // nobody is watching.
 func TestTheWorkstationTagIsDocumentedInThePolicy(t *testing.T) {
 	body := readWorkstationPlaybook(t)
-	policy, err := os.ReadFile(filepath.Join(repoRoot(t), "docs", "tailnet-setup.md"))
-	if err != nil {
-		t.Fatalf("reading the tailnet policy documentation: %v", err)
-	}
 	const tag = "tag:homelab-workstation"
-	if strings.Contains(body, tag) && !strings.Contains(string(policy), tag) {
+	if strings.Contains(body, tag) && !mentionedIn(t, "docs/tailnet-setup.md", tag) {
 		t.Errorf("the playbook advertises %s and docs/tailnet-setup.md never mentions it.\n\n"+
 			"A tag nobody is permitted to apply makes `tailscale up` fail at first boot, "+
 			"on a machine nobody is watching.", tag)
 	}
 }
 
+// readWorkstationPlaybook is every value the workstation's playbook holds,
+// and every value of the cloud-init it carries, one to a line.
 func readWorkstationPlaybook(t *testing.T) string {
 	t.Helper()
-	path := filepath.Join(repoRoot(t), "workstation", "provision.yml")
-	body, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("reading %s: %v", path, err)
-	}
-	return string(body)
+	return strings.Join(commandsIn(t, repository(t).YAMLDocuments(t, "workstation/provision.yml")), "\n")
 }

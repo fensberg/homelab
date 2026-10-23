@@ -1,8 +1,10 @@
 package repo
 
 import (
-	"os"
+	"go/ast"
+	"go/token"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -26,47 +28,45 @@ import (
 // machine that writes it. It only appears on a differently-configured one,
 // which by then is somebody else's afternoon.
 func TestPackagesThatShellToGitNeutraliseUserConfig(t *testing.T) {
-	root := repoRoot(t)
-
-	// Directories holding Go test packages worth checking.
-	roots := []string{
-		filepath.Join(root, "scripts"),
-		filepath.Join(root, "tests", "go"),
-	}
+	tree := repository(t)
+	fset := token.NewFileSet()
 
 	// package directory -> whether it invokes git, and whether it neutralises
 	invokesGit := map[string]bool{}
 	neutralises := map[string]bool{}
 	visited := 0
 
-	for _, r := range roots {
-		err := filepath.Walk(r, func(path string, info os.FileInfo, err error) error {
-			if err != nil || info.IsDir() || !strings.HasSuffix(path, "_test.go") {
-				return err
-			}
-			body, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			text := string(body)
-			dir := filepath.Dir(path)
-			visited++
-
-			// Shelling out to git, by any of the shapes used here.
-			if strings.Contains(text, `exec.Command("git"`) ||
-				strings.Contains(text, `exec.CommandContext(ctx, "git"`) {
-				invokesGit[dir] = true
-			}
-			// gitenv.Isolate is the one place that does it; setting the
-			// variables directly is still accepted.
-			if strings.Contains(text, "GIT_CONFIG_GLOBAL") || strings.Contains(text, "gitenv.Isolate()") {
-				neutralises[dir] = true
-			}
-			return nil
-		})
-		if err != nil && !os.IsNotExist(err) {
-			t.Fatalf("walking %s: %v", r, err)
+	for _, rel := range tree.Files(t) {
+		if !strings.HasSuffix(rel, "_test.go") || !strings.HasPrefix(rel, "scripts/") && !strings.HasPrefix(rel, "tests/go/") {
+			continue
 		}
+		dir := filepath.Dir(rel)
+		visited++
+		ast.Inspect(tree.Go(t, fset, rel), func(n ast.Node) bool {
+			switch n := n.(type) {
+			case *ast.CallExpr:
+				// Shelling out to git, by any of the shapes used here: the
+				// program is the first argument of exec.Command, and the
+				// second of exec.CommandContext and of the tree's Invoke.
+				if program, ok := programOf(n); ok && program == "git" {
+					invokesGit[dir] = true
+				}
+				// gitenv.Isolate is the one place that does it, and
+				// parsed.Main calls it for a package of guards.
+				switch callName(n) {
+				case "gitenv.Isolate", "parsed.Main":
+					neutralises[dir] = true
+				case "Main":
+					neutralises[dir] = neutralises[dir] || dir == readerDir
+				}
+			case *ast.BasicLit:
+				// Setting the variables directly is still accepted.
+				if v, err := strconv.Unquote(n.Value); err == nil && n.Kind == token.STRING && strings.Contains(v, "GIT_CONFIG_GLOBAL") {
+					neutralises[dir] = true
+				}
+			}
+			return true
+		})
 	}
 
 	// Prove the walk worked before drawing any conclusion from what it found.
@@ -93,11 +93,35 @@ func TestPackagesThatShellToGitNeutraliseUserConfig(t *testing.T) {
 		if neutralises[dir] {
 			continue
 		}
-		rel, _ := filepath.Rel(root, dir)
 		t.Errorf("%s runs git in its tests and does not neutralise the developer's "+
 			"git configuration.\n\n"+
 			"Add a TestMain that calls gitenv.Isolate() (homelab/details/gitenv). Without it a fixture inherits whatever the machine has - "+
 			"commit.gpgsign is the one that has already caused this - and the test "+
-			"reports the machine rather than the code.", rel)
+			"reports the machine rather than the code.", dir)
 	}
+}
+
+// programOf is the program a call runs, when it is one of the ways a test
+// here starts one and the program is written as a literal.
+func programOf(call *ast.CallExpr) (string, bool) {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return "", false
+	}
+	at := -1
+	switch sel.Sel.Name {
+	case "Command":
+		at = 0
+	case "CommandContext", "Invoke":
+		at = 1
+	}
+	if at < 0 || len(call.Args) <= at {
+		return "", false
+	}
+	lit, ok := call.Args[at].(*ast.BasicLit)
+	if !ok || lit.Kind != token.STRING {
+		return "", false
+	}
+	v, err := strconv.Unquote(lit.Value)
+	return v, err == nil
 }

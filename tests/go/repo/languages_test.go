@@ -1,13 +1,10 @@
 package repo
 
 import (
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 // A language nobody declared is a language nothing checks.
@@ -74,9 +71,7 @@ func kindOf(rel string) string {
 func loadLanguages(t *testing.T) languageDeclaration {
 	t.Helper()
 	var decl languageDeclaration
-	if err := yaml.Unmarshal([]byte(readRepoFile(t, "tests/languages.yml")), &decl); err != nil {
-		t.Fatalf("parsing tests/languages.yml: %v", err)
-	}
+	repository(t).YAMLInto(t, "tests/languages.yml", &decl)
 	return decl
 }
 
@@ -209,7 +204,8 @@ func keysOf(m map[string]bool) []string {
 // can check. The point is the same as above: not that a new interpreter is
 // forbidden, but that adopting one is a thing somebody does on purpose.
 func TestEveryShebangNamesADeclaredInterpreter(t *testing.T) {
-	root := repoRoot(t)
+	heavy(t, "semgrep reads the first line of every file, a few seconds")
+	tree := repository(t)
 
 	// Declared in tests/languages.yml beside the file kinds, rather than here.
 	// A declaration kept in the guard is one a reader has to go and find, and
@@ -229,18 +225,21 @@ func TestEveryShebangNamesADeclaredInterpreter(t *testing.T) {
 
 	checked := 0
 	var undeclared []string
-	for _, rel := range trackedMatching(t, authoredHere) {
-		body, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatalf("reading %s: %v", rel, err)
-		}
-		interp, ok := parseShebang(string(body))
+	// The first line of every file that opens with one, found by Semgrep.
+	shebang := map[string]any{
+		"id": "a-shebang", "languages": []string{"generic"}, "severity": "INFO",
+		"message": "$LINE", "metadata": map[string]any{"about": "shebang"},
+		"pattern-regex": `\A#!(?P<LINE>[^\n]*)`,
+	}
+	files := trackedMatching(t, func(rel string) bool { return authoredHere(t, rel) })
+	for _, f := range scanText(t, tree, []map[string]any{shebang}, files) {
+		interp, ok := parseShebang("#!" + f.Text)
 		if !ok {
 			continue
 		}
 		checked++
 		if !declared[interp] {
-			undeclared = append(undeclared, rel+" -> "+interp)
+			undeclared = append(undeclared, f.Path+" -> "+interp)
 		}
 	}
 

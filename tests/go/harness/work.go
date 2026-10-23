@@ -49,6 +49,11 @@ func DeclaredWork(repoRoot string) ([]Work, error) {
 	if err != nil {
 		return nil, err
 	}
+	return WorkOf(raw)
+}
+
+// WorkOf is the work a suppliers list declares, read from its bytes.
+func WorkOf(raw []byte) ([]Work, error) {
 	var file struct {
 		Work []Work `yaml:"work"`
 	}

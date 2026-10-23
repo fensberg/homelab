@@ -1,13 +1,9 @@
 package repo
 
 import (
-	"errors"
 	"fmt"
-	"io"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 // The cluster refuses a pod it cannot count, and this is whether that refusal
@@ -24,18 +20,13 @@ func TestNoPodIsLetPastTheRefusalOfUncountedWork(t *testing.T) {
 	path, body := fluxObject(t, "ValidatingAdmissionPolicy", "uncounted-pods")
 
 	specs := map[string]map[string]any{}
-	dec := yaml.NewDecoder(strings.NewReader(body))
-	for {
+	for _, decoded := range body {
 		var doc struct {
 			Kind string         `yaml:"kind"`
 			Spec map[string]any `yaml:"spec"`
 		}
-		err := dec.Decode(&doc)
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			t.Fatalf("%s is not YAML that can be read: %v", path, err)
+		if err := as(decoded, &doc); err != nil {
+			t.Fatalf("%s has a document that does not read as an object: %v", path, err)
 		}
 		if doc.Kind != "" {
 			specs[doc.Kind] = doc.Spec

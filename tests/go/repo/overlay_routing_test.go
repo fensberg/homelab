@@ -1,9 +1,9 @@
 package repo
 
 import (
-	"os"
-	"path/filepath"
+	"homelab/tests/parsed"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -100,14 +100,11 @@ func TestIPv6IsDisabledAtTheStack(t *testing.T) {
 	}
 }
 
+// readHypervisorPlaybook is every value the hypervisor playbook holds, one
+// to a line: what its tasks run and write, and none of what its comments say.
 func readHypervisorPlaybook(t *testing.T) string {
 	t.Helper()
-	path := filepath.Join(repoRoot(t), "management", "hypervisor", "hypervisor-prep.yml")
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("reading the hypervisor playbook: %v", err)
-	}
-	return string(b)
+	return strings.Join(parsed.Values(repository(t).YAMLDocuments(t, hypervisorPlaybook)), "\n")
 }
 
 // Signing has to be set up by the setup script, not by a chat message.
@@ -118,14 +115,23 @@ func readHypervisorPlaybook(t *testing.T) string {
 // computer can do is not a step to ask somebody for, and an instruction that
 // lives only in a reply is lost at the next context refresh.
 func TestSetupConfiguresCommitSigning(t *testing.T) {
-	body := readFile(t, filepath.Join(repoRoot(t), "scripts", "install-dependencies.sh"))
+	setup := parsed.Commands(repository(t).Shell(t, installDependencies))
+	configures := func(setting string) []parsed.Command {
+		var out []parsed.Command
+		for _, c := range setup {
+			if len(c.Words) > 0 && c.Words[0] == "git" && slices.Contains(c.Words, "config") && slices.Contains(c.Words, setting) {
+				out = append(out, c)
+			}
+		}
+		return out
+	}
 
 	for _, want := range []string{
 		"commit.gpgsign",  // the setting the hook depends on
 		"gpg.format",      // ssh signing rather than gpg
 		"user.signingkey", // which key
 	} {
-		if !strings.Contains(body, want) {
+		if len(configures(want)) == 0 {
 			t.Errorf("install-dependencies.sh no longer configures %s.\n\n"+
 				"Without it a fresh checkout produces unsigned commits, the pre-push "+
 				"hook refuses them, and the editor's sync button fails with no visible "+
@@ -135,7 +141,11 @@ func TestSetupConfiguresCommitSigning(t *testing.T) {
 
 	// Repository-scoped. Nothing here should quietly change how somebody's
 	// other checkouts behave.
-	if !strings.Contains(body, `git -C "$repo_root" config commit.gpgsign`) {
+	scoped := false
+	for _, c := range configures("commit.gpgsign") {
+		scoped = scoped || len(c.Words) > 3 && c.Words[1] == "-C" && c.Words[2] == `"$repo_root"` && c.Words[3] == "config"
+	}
+	if !scoped {
 		t.Error("commit signing is not being set for this repository only; setup " +
 			"must not reconfigure git globally on somebody's machine")
 	}

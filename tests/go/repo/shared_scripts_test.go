@@ -1,14 +1,10 @@
 package repo
 
 import (
-	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 // The scripts beside $/.github/workflows/github-script, and who runs them.
@@ -24,20 +20,15 @@ const sharedScriptDir = ".github/workflows/github-script/"
 
 var scriptName = regexp.MustCompile(`^[a-z0-9-]+$`)
 
-// sharedScripts returns every script beside the shared action, by name.
+// sharedScripts returns every script beside the shared action: where it is,
+// by its name.
 func sharedScripts(t *testing.T) map[string]string {
 	t.Helper()
-	root := repoRoot(t)
 	out := map[string]string{}
-	for _, rel := range trackedFilesIn(t, root) {
-		if !strings.HasPrefix(rel, sharedScriptDir) || !strings.HasSuffix(rel, ".js") {
-			continue
+	for _, rel := range repository(t).Files(t) {
+		if strings.HasPrefix(rel, sharedScriptDir) && strings.HasSuffix(rel, ".js") {
+			out[strings.TrimSuffix(strings.TrimPrefix(rel, sharedScriptDir), ".js")] = rel
 		}
-		body, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatalf("reading %s: %v", rel, err)
-		}
-		out[strings.TrimSuffix(strings.TrimPrefix(rel, sharedScriptDir), ".js")] = string(body)
 	}
 	return out
 }
@@ -46,15 +37,11 @@ func sharedScripts(t *testing.T) map[string]string {
 // the shared action, with where it is named.
 func namedScripts(t *testing.T) map[string][]string {
 	t.Helper()
-	root := repoRoot(t)
+	tree := repository(t)
 	named := map[string][]string{}
-	for _, rel := range trackedFilesIn(t, root) {
-		if !authoredHere(rel) || !runnable(rel) {
+	for _, rel := range tree.Files(t) {
+		if !authoredHere(t, rel) || !runnable(rel) {
 			continue
-		}
-		body, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatalf("reading %s: %v", rel, err)
 		}
 		var doc struct {
 			Jobs map[string]struct {
@@ -64,9 +51,7 @@ func namedScripts(t *testing.T) map[string][]string {
 				Steps []map[string]any `yaml:"steps"`
 			} `yaml:"runs"`
 		}
-		if err := yaml.Unmarshal(body, &doc); err != nil {
-			t.Fatalf("parsing %s: %v", rel, err)
-		}
+		tree.YAMLInto(t, rel, &doc)
 		steps := doc.Runs.Steps
 		for _, j := range doc.Jobs {
 			steps = append(steps, j.Steps...)

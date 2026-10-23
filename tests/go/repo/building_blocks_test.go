@@ -2,8 +2,6 @@ package repo
 
 import (
 	"go/ast"
-	"go/parser"
-	"go/scanner"
 	"go/token"
 	"os"
 	"path/filepath"
@@ -11,8 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 // Three shapes a non-reusable block takes, refused where they are found.
@@ -81,10 +77,7 @@ func TestTheConfigDocumentHasOneReader(t *testing.T) {
 // counts as json:"sites".
 func structTags(t *testing.T, rel string) map[string]bool {
 	t.Helper()
-	f, err := parser.ParseFile(token.NewFileSet(), rel, readRepoFile(t, rel), parser.SkipObjectResolution)
-	if err != nil {
-		t.Fatalf("parsing %s: %v", rel, err)
-	}
+	f := repository(t).Go(t, token.NewFileSet(), rel)
 	out := map[string]bool{}
 	ast.Inspect(f, func(n ast.Node) bool {
 		field, ok := n.(*ast.Field)
@@ -131,10 +124,7 @@ func TestAFactCrossingAModuleBoundaryIsDeclared(t *testing.T) {
 	var declared struct {
 		Debt []string `yaml:"debt"`
 	}
-	raw := readRepoFile(t, "tests/building-block-debt.yml")
-	if err := yaml.Unmarshal([]byte(raw), &declared); err != nil {
-		t.Fatalf("tests/building-block-debt.yml does not parse: %v", err)
-	}
+	repository(t).YAMLInto(t, "tests/building-block-debt.yml", &declared)
 	debt := map[string]bool{}
 	for _, d := range declared.Debt {
 		if debt[d] {
@@ -223,46 +213,23 @@ func crossModuleLiterals(t *testing.T) map[string][]string {
 // declarations, unquoted.
 func stringLiterals(t *testing.T, rel string) []string {
 	t.Helper()
-	src := []byte(readRepoFile(t, rel))
-	var s scanner.Scanner
-	fset := token.NewFileSet()
-	s.Init(fset.AddFile(rel, -1, len(src)), src, nil, 0)
-
+	f := repository(t).Go(t, token.NewFileSet(), rel)
 	var out []string
-	inImport, depth := false, 0
-	for {
-		_, tok, lit := s.Scan()
-		switch tok {
-		case token.EOF:
-			return out
-		case token.IMPORT:
-			inImport = true
-			continue
-		case token.LPAREN:
-			if inImport {
-				depth++
+	ast.Inspect(f, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.ImportSpec:
+			return false
+		case *ast.BasicLit:
+			if n.Kind != token.STRING {
+				return true
 			}
-		case token.RPAREN:
-			if inImport {
-				depth--
-				if depth == 0 {
-					inImport = false
-				}
-			}
-		case token.SEMICOLON:
-			// A single-line import ends at its semicolon.
-			if inImport && depth == 0 {
-				inImport = false
-			}
-		case token.STRING:
-			if inImport {
-				continue
-			}
-			if v, err := strconv.Unquote(lit); err == nil {
+			if v, err := strconv.Unquote(n.Value); err == nil {
 				out = append(out, v)
 			}
 		}
-	}
+		return true
+	})
+	return out
 }
 
 // --- shared plumbing for the three -----------------------------------------------

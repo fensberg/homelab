@@ -5,8 +5,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 // How the guards that still read workflows in Go find a uses line and tell
@@ -44,13 +42,18 @@ type jobOf struct {
 	} `yaml:"steps"`
 }
 
+// workflowPath is where a workflow of the given file name is.
+func workflowPath(name string) string {
+	return filepath.ToSlash(filepath.Join(".github", "workflows", name))
+}
+
 func jobsOf(t *testing.T, workflow string) map[string]jobOf {
 	t.Helper()
 	var wf struct {
 		Jobs map[string]jobOf `yaml:"jobs"`
 	}
-	if err := yaml.Unmarshal([]byte(workflowText(t, workflow)), &wf); err != nil {
-		t.Fatalf("parsing %s: %v", workflow, err)
+	if rel := workflowPath(workflow); repository(t).Exists(rel) {
+		repository(t).YAMLInto(t, rel, &wf)
 	}
 	if len(wf.Jobs) == 0 {
 		t.Fatalf("%s has no jobs this can read", workflow)

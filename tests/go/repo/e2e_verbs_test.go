@@ -2,8 +2,8 @@ package repo
 
 import (
 	"go/ast"
-	"go/parser"
 	"go/token"
+	"homelab/tests/parsed"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -23,16 +23,15 @@ import (
 // runContractor call's verb is a string literal, and it is one of the
 // contractor's knownVerbs, read from its own source.
 func TestTheE2ETierNamesVerbsTheContractorHas(t *testing.T) {
-	root := repoRoot(t)
-	verbs := contractorVerbs(t, filepath.Join(root, "scripts", "contractor", "main.go"))
+	tree := repository(t)
+	verbs := contractorVerbs(t, tree, "scripts/contractor/main.go")
 
-	files, err := filepath.Glob(filepath.Join(root, "tests", "go", "e2e", "*.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	calls := 0
-	for _, f := range files {
-		for _, problem := range e2eVerbProblems(t, f, verbs, &calls) {
+	for _, rel := range tree.Files(t) {
+		if filepath.Dir(rel) != "tests/go/e2e" || !strings.HasSuffix(rel, ".go") {
+			continue
+		}
+		for _, problem := range e2eVerbProblems(t, tree, rel, verbs, &calls) {
 			t.Error(problem)
 		}
 	}
@@ -42,12 +41,9 @@ func TestTheE2ETierNamesVerbsTheContractorHas(t *testing.T) {
 }
 
 // contractorVerbs reads the knownVerbs slice out of the contractor's main.go.
-func contractorVerbs(t *testing.T, path string) []string {
+func contractorVerbs(t *testing.T, tree *parsed.Tree, path string) []string {
 	t.Helper()
-	f, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
-	if err != nil {
-		t.Fatal(err)
-	}
+	f := tree.Go(t, token.NewFileSet(), path)
 	var verbs []string
 	ast.Inspect(f, func(n ast.Node) bool {
 		vs, ok := n.(*ast.ValueSpec)
@@ -71,13 +67,10 @@ func contractorVerbs(t *testing.T, path string) []string {
 
 // e2eVerbProblems names every runContractor call in a file whose verb is not
 // a literal the contractor knows.
-func e2eVerbProblems(t *testing.T, path string, verbs []string, calls *int) []string {
+func e2eVerbProblems(t *testing.T, tree *parsed.Tree, path string, verbs []string, calls *int) []string {
 	t.Helper()
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
-	if err != nil {
-		t.Fatal(err)
-	}
+	f := tree.Go(t, fset, path)
 	var problems []string
 	ast.Inspect(f, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)

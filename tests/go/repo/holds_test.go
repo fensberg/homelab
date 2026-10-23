@@ -154,15 +154,10 @@ func classesThatOutliveAMachine(t *testing.T) map[string]bool {
 			} `yaml:"values"`
 		} `yaml:"spec"`
 	}
-	dec := yaml.NewDecoder(strings.NewReader(body))
 	out := map[string]bool{}
-	for {
-		err := dec.Decode(&release)
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			t.Fatalf("the storage driver's release does not parse: %v", err)
+	for _, decoded := range body {
+		if err := as(decoded, &release); err != nil {
+			t.Fatalf("the storage driver's release does not read as one: %v", err)
 		}
 		for _, c := range release.Spec.Values.StorageClass {
 			out[c.Name] = true

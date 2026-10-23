@@ -2,7 +2,6 @@ package repo
 
 import (
 	"go/ast"
-	"go/parser"
 	"go/token"
 	"path/filepath"
 	"sort"
@@ -116,11 +115,9 @@ func readGoSource(t *testing.T) *goSource {
 		fset: token.NewFileSet(), byName: map[string][]*goFunc{}, consts: map[string]map[string]bool{},
 		anyConst: map[string]bool{}, files: map[string]*ast.File{}, checked: map[string]string{}, exploring: map[string]bool{},
 	}
+	tree := repository(t)
 	for _, rel := range goFiles(t) {
-		file, err := parser.ParseFile(s.fset, filepath.Join(repoRoot(t), rel), nil, parser.SkipObjectResolution)
-		if err != nil {
-			t.Fatalf("parsing %s: %v", rel, err)
-		}
+		file := tree.Go(t, s.fset, rel)
 		dir := filepath.ToSlash(filepath.Dir(rel))
 		s.files[rel] = file
 		if s.consts[dir] == nil {

@@ -1,14 +1,10 @@
 package repo
 
 import (
-	"errors"
 	"homelab/details/capacity"
-	"io"
 	"sort"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 
 	"homelab/details/applications"
 	"homelab/details/holds"
@@ -30,15 +26,9 @@ import (
 // A size nobody has accounted for is the one that gets cut on the strength
 // of a quiet week.
 func TestEverythingThatReservesSaysWhereItsSizeCameFrom(t *testing.T) {
-	root := repoRoot(t)
-	apps, err := applications.Read(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	core, err := sizing.ReadCore(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	tree := repository(t)
+	apps := tree.Applications(t)
+	core := tree.CoreSizing(t)
 	declared := map[string]sizing.Declared{holds.Core: core}
 	paths := map[string]string{holds.Core: sizing.CoreFile}
 	for _, app := range apps {
@@ -109,19 +99,7 @@ func whatReserves(t *testing.T) []reserver {
 		if rest, ok := strings.CutPrefix(rel, applications.Dir+"/"); ok {
 			owner, _, _ = strings.Cut(rest, "/")
 		}
-		dec := yaml.NewDecoder(strings.NewReader(readRepoFile(t, rel)))
-		for {
-			var doc yaml.Node
-			err := dec.Decode(&doc)
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			if err != nil {
-				t.Fatalf("%s does not parse as YAML, so what it reserves was not read: %v", rel, err)
-			}
-			if len(doc.Content) == 0 {
-				continue
-			}
+		for _, doc := range repository(t).YAMLNodes(t, rel) {
 			top := doc.Content[0]
 			kind, md := mappingValue(top, "kind"), mappingValue(top, "metadata")
 			if kind == nil || md == nil || mappingValue(md, "name") == nil {

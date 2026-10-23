@@ -1,9 +1,9 @@
 package repo
 
 import (
-	"os"
+	"homelab/tests/parsed"
 	"path/filepath"
-	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -17,32 +17,24 @@ import (
 // So scripts/versions.env is the only place a version is written, and this
 // asserts neither consumer restates one.
 func TestVersionsAreDeclaredOnceAndSharedByBoth(t *testing.T) {
-	root := repoRoot(t)
+	tree := repository(t)
 
-	env := readFile(t, filepath.Join(root, "scripts", "versions.env"))
-	pins := map[string]string{}
-	for _, line := range strings.Split(env, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		k, v, ok := strings.Cut(line, "=")
-		if !ok {
-			t.Fatalf("versions.env line is not KEY=VALUE: %q", line)
-		}
-		pins[k] = v
-	}
+	pins := versionsPinned(t)
 	if len(pins) == 0 {
 		t.Fatal("versions.env declares nothing, so this test proves nothing")
 	}
 
 	// The provisioning script must source the file rather than assign its own.
-	script := readFile(t, filepath.Join(root, "scripts", "install-dependencies.sh"))
-	if !strings.Contains(script, "versions.env") {
+	script := parsed.Commands(tree.Shell(t, installDependencies))
+	sources := slices.ContainsFunc(script, func(c parsed.Command) bool {
+		return len(c.Words) > 1 && (c.Words[0] == "source" || c.Words[0] == ".") &&
+			slices.ContainsFunc(c.Words[1:], func(w string) bool { return strings.Contains(w, "versions.env") })
+	})
+	if !sources {
 		t.Error("install-dependencies.sh does not source scripts/versions.env; the workstation and the runner can now drift")
 	}
 	for k, v := range pins {
-		if regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(k) + `=`).MatchString(script) {
+		if slices.ContainsFunc(script, func(c parsed.Command) bool { _, assigns := c.Assigns[k]; return assigns }) {
 			t.Errorf("install-dependencies.sh assigns %s itself instead of taking it from versions.env (which says %s)", k, v)
 		}
 	}
@@ -75,17 +67,25 @@ func TestVersionsAreDeclaredOnceAndSharedByBoth(t *testing.T) {
 		"KUBECTL_VERSION":    "KUBECTL_VERSION",
 	}
 
-	dockerfile := readFile(t, filepath.Join(root, ".github", "runner-image", "Dockerfile"))
+	args := map[string][]string{}
+	for _, i := range dockerfile(t, runnerImageDockerfile) {
+		if i.Cmd == "arg" {
+			for _, v := range i.Value {
+				name, value, _ := strings.Cut(v, "=")
+				args[name] = append(args[name], value)
+			}
+		}
+	}
 
 	for envKey, arg := range argFor {
 		if _, ok := pins[envKey]; !ok {
 			t.Errorf("versions.env no longer declares %s, but the runner image still expects it", envKey)
 			continue
 		}
-		if !regexp.MustCompile(`(?m)^ARG\s+` + arg + `\s*$`).MatchString(dockerfile) {
+		if !slices.Contains(args[arg], "") {
 			t.Errorf("the Dockerfile does not take %s as a bare build argument, so its value is not coming from versions.env", arg)
 		}
-		if regexp.MustCompile(`(?m)^ARG\s+` + arg + `\s*=`).MatchString(dockerfile) {
+		if slices.ContainsFunc(args[arg], func(v string) bool { return v != "" }) {
 			t.Errorf("the Dockerfile gives %s a default, which is a second place a version is written", arg)
 		}
 		// The workflow half - that versions.env's value actually reaches the
@@ -99,7 +99,7 @@ func TestVersionsAreDeclaredOnceAndSharedByBoth(t *testing.T) {
 // on the runner, minutes into a converge - which is how the image came to
 // exist in the first place.
 func TestRunnerImageCarriesEveryBinaryTheContractorInvokes(t *testing.T) {
-	dockerfile := readFile(t, filepath.Join(repoRoot(t), ".github", "runner-image", "Dockerfile"))
+	installs := runs(dockerfile(t, runnerImageDockerfile))
 
 	// Hand-maintained, and it drifted: the Health phase started shelling out
 	// to talosctl in the same merge that added talosctl to the Dockerfile, and
@@ -111,26 +111,20 @@ func TestRunnerImageCarriesEveryBinaryTheContractorInvokes(t *testing.T) {
 		// gh is deliberately absent: the contractor no longer invokes it, and
 		// policy/semgrep/contractor-tools.yml keeps it that way. Adding it
 		// here would be adding a supplier to fix a dependency that is gone.
-		if !strings.Contains(dockerfile, bin) {
+		if !strings.Contains(installs, bin) {
 			t.Errorf("the runner image does not install %q, which contractor shells out to", bin)
 		}
 	}
 
 	// The image checks itself at build time. Without that, a missing binary is
 	// found by a failing job rather than by a failing build.
-	if !strings.Contains(dockerfile, "command -v") {
+	if !strings.Contains(installs, "command -v") {
 		t.Error("the Dockerfile does not verify its own toolchain before publishing; a missing binary would surface as a failed job instead of a failed build")
 	}
 }
 
-func readFile(t *testing.T, path string) string {
-	t.Helper()
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("reading %s: %v", path, err)
-	}
-	return string(b)
-}
+// runnerImageDockerfile is the estate runner's image.
+var runnerImageDockerfile = filepath.ToSlash(filepath.Join(".github", "runner-image", "Dockerfile"))
 
 // contractorInvokes is what the contractor shells out to: the vault's
 // client, OpenTofu, the backups' key and copier, and the cluster's and the

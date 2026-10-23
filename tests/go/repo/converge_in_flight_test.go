@@ -1,8 +1,6 @@
 package repo
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -25,26 +23,17 @@ import (
 // converge asks for; the budget is whichever one selects them; the classes
 // are every PriorityClass the site declares.
 func TestAConvergeInFlightIsNotEvicted(t *testing.T) {
-	root := repoRoot(t)
+	tree := repository(t)
 	_, manifest := fluxObject(t, kindHelmRelease, runnerScaleSet)
 	set := yamlScalar(t, manifest, "runnerScaleSetName")
 	var namespace, class string
 	budgets := 0
 	classes := map[string]map[string]any{}
-	for _, rel := range trackedFilesIn(t, root) {
-		if !authoredHere(rel) || !strings.HasPrefix(rel, "clusters/") || !strings.HasSuffix(rel, ".yaml") {
+	for _, rel := range tree.Files(t) {
+		if !authoredHere(t, rel) || !strings.HasPrefix(rel, "clusters/") || !strings.HasSuffix(rel, ".yaml") {
 			continue
 		}
-		body, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatal(err)
-		}
-		docs, err := documents(body)
-		if err != nil {
-			t.Errorf("%s does not parse, so what it declares was not read: %v", rel, err)
-			continue
-		}
-		for _, doc := range docs {
+		for _, doc := range mappings(t, tree, rel) {
 			switch doc["kind"] {
 			case kindHelmRelease:
 				if walk(doc, "metadata", "name") == runnerScaleSet {

@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+	"homelab/tests/parsed"
 )
 
 // The code rules: policy/semgrep, run by Semgrep over every file of a kind
@@ -88,34 +89,97 @@ func isCodeRuleFile(rel string) bool { return strings.HasPrefix(rel, semgrepRule
 // reaches it, and it asks the network nothing: no metrics, no version check.
 func runSemgrep(t *testing.T, args ...string) ([]byte, bool) {
 	t.Helper()
+	return runSemgrepIn(t, repository(t), args...)
+}
+
+// runSemgrepIn is runSemgrep in a tree of the caller's.
+func runSemgrepIn(t *testing.T, tree *parsed.Tree, args ...string) ([]byte, bool) {
+	t.Helper()
 	if _, err := exec.LookPath(semgrepProgram); err != nil {
 		t.Fatal("semgrep is not on PATH; take delivery of it: scripts/take-delivery.sh semgrep")
 	}
 	// One job: the ledger runs this once for each proof, side by side, and a
 	// scanner that takes every core per run is that many times every core.
 	args = append([]string{"scan", "--metrics=off", "--disable-version-check", "--quiet", "--json", "--jobs", "1"}, args...)
-	cmd := exec.Command(semgrepProgram, args...)
-	cmd.Dir = repoRoot(t)
-	cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "SEMGREP_ENABLE_VERSION_CHECK=0", "SEMGREP_SEND_METRICS=off", "NO_COLOR=1")
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
+	run := parsed.Run{Env: []string{"HOME=" + t.TempDir(), "SEMGREP_ENABLE_VERSION_CHECK=0", "SEMGREP_SEND_METRICS=off", "NO_COLOR=1"}}
+	out, stderr, err := tree.Invoke(run, semgrepProgram, args...)
 	if err != nil {
 		if _, failed := err.(*exec.ExitError); !failed {
 			t.Fatalf("semgrep could not be run: %v", err)
 		}
 		if len(out) == 0 {
-			t.Fatalf("semgrep failed and said nothing a rule could be read from:\n\n%s", stderr.String())
+			t.Fatalf("semgrep failed and said nothing a rule could be read from:\n\n%s", stderr)
 		}
 		return out, false
 	}
 	return out, true
 }
 
+// textFinding is one place a text scan matched: the file, the line, what the
+// rule that matched says it is about, and the rule's message for it. Semgrep
+// gives the matched text only to a signed-in user, so a rule that needs what
+// it matched names it in a regex group and says it in its message ($NAME).
+type textFinding struct {
+	Path  string
+	Line  int
+	About string
+	Text  string
+}
+
+// scanText runs rules a guard built over files of the tree, with Semgrep, the
+// one reader of text: a guard whose subject is what every file says, comments
+// and all, asks this and never reads a file itself. Each rule says what it is
+// about in its metadata, under "about", and every finding carries it back.
+func scanText(t *testing.T, tree *parsed.Tree, rules []map[string]any, files []string) []textFinding {
+	t.Helper()
+	if len(files) == 0 {
+		return nil
+	}
+	config := filepath.Join(t.TempDir(), "scan.yml")
+	encoded, err := yaml.Marshal(map[string]any{"rules": rules})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(config, encoded, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	args := append([]string{"--config", config, "--disable-nosem", "--max-target-bytes", "0"}, files...)
+	out, _ := runSemgrepIn(t, tree, args...)
+	var report struct {
+		Results []struct { // matched to "results" by name
+			Path  string `json:"path"`
+			Start struct {
+				Line int `json:"line"`
+			} `json:"start"`
+			Extra struct {
+				Message  string `json:"message"`
+				Metadata struct {
+					About string `json:"about"`
+				} `json:"metadata"`
+			} `json:"extra"`
+		}
+		Errors []struct {
+			Message string `json:"message"`
+			Path    string `json:"path"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(out, &report); err != nil {
+		t.Fatalf("semgrep's report of a text scan could not be read: %v", err)
+	}
+	for _, e := range report.Errors {
+		t.Errorf("semgrep could not read %s for a text scan: %s", e.Path, strings.TrimSpace(e.Message))
+	}
+	var found []textFinding
+	for _, r := range report.Results {
+		found = append(found, textFinding{r.Path, r.Start.Line, r.Extra.Metadata.About, r.Extra.Message})
+	}
+	return found
+}
+
 func TestTheCodeRulesHold(t *testing.T) {
 	heavy(t, "semgrep takes about three seconds to start, and push has ten")
-	if _, err := os.Stat(filepath.Join(repoRoot(t), semgrepRules)); err != nil {
-		t.Fatalf("%s is not there, so no code rule runs: %v", semgrepRules, err)
+	if !repository(t).IsDir(semgrepRules) {
+		t.Fatalf("%s is not there, so no code rule runs", semgrepRules)
 	}
 	args := append([]string{"--config", semgrepRules, "--disable-nosem"}, semgrepInputs(t)...)
 	out, _ := runSemgrep(t, args...)
@@ -256,9 +320,7 @@ func codeRules(t *testing.T) []codeRule {
 				} `yaml:"paths"`
 			} `yaml:"rules"`
 		}
-		if err := yaml.Unmarshal([]byte(readRepoFile(t, rel)), &doc); err != nil {
-			t.Fatalf("%s is not a rule file that can be read: %v", rel, err)
-		}
+		repository(t).YAMLInto(t, rel, &doc)
 		for _, r := range doc.Rules {
 			out = append(out, codeRule{rel, r.ID, r.Message, r.Metadata.Presence, r.Paths.Include, r.Paths.Exclude})
 		}
@@ -301,7 +363,7 @@ func TestEveryPlaceACodeRuleReadsIsProved(t *testing.T) {
 			proofs = append(proofs, m)
 		}
 	}
-	if !slices.ContainsFunc(proofs, mutation.creates) {
+	if !slices.ContainsFunc(proofs, mutation.Creates) {
 		t.Errorf("no proof of %s plants a file, so nothing shows a code rule reads a file that is not there today", harness)
 	}
 	rules := codeRules(t)
@@ -414,16 +476,24 @@ func TestSemgrepPathsAreReadAsGitignoreLines(t *testing.T) {
 // examples, at least one line marked `ok:` with its id - the near miss it was
 // written to tell apart.
 func TestEveryCodeRuleShowsWhatItAccepts(t *testing.T) {
-	accepted := map[string]bool{}
+	heavy(t, "semgrep reads the examples for their marks, about three seconds")
+	var examples []string
 	for _, rel := range trackedFiles(t) {
-		if filepath.Dir(rel) != semgrepExamples {
-			continue
+		if filepath.Dir(rel) == semgrepExamples {
+			examples = append(examples, rel)
 		}
-		stem := strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel))
-		for _, line := range strings.Split(readRepoFile(t, rel), "\n") {
-			for _, id := range acceptedIn(line) {
-				accepted[semgrepRules+"/"+stem+".yml "+id] = true
-			}
+	}
+	// The marks are comments, so they are read as text - by Semgrep.
+	marks := map[string]any{
+		"id": "an-ok-mark", "languages": []string{"generic"}, "severity": "INFO",
+		"message": "ok: $IDS", "metadata": map[string]any{"about": "ok"},
+		"pattern-regex": `(?:^|[^a-z])ok:\s*(?P<IDS>[a-z0-9][a-z0-9, -]*)`,
+	}
+	accepted := map[string]bool{}
+	for _, f := range scanText(t, repository(t), []map[string]any{marks}, examples) {
+		stem := strings.TrimSuffix(filepath.Base(f.Path), filepath.Ext(f.Path))
+		for _, id := range acceptedIn(f.Text) {
+			accepted[semgrepRules+"/"+stem+".yml "+id] = true
 		}
 	}
 	for _, r := range codeRules(t) {
@@ -464,5 +534,36 @@ func TestAcceptedInReadsSemgrepsOkMark(t *testing.T) {
 		if got := acceptedIn(c.line); !slices.Equal(got, c.want) {
 			t.Errorf("acceptedIn(%q) = %q, want %q", c.line, got, c.want)
 		}
+	}
+}
+
+// A text scan finds every line a rule matches, in every file it is given,
+// comments and all, and hands back what the rule says of each.
+func TestScanTextFindsEveryLineARuleMatchesInEveryFile(t *testing.T) {
+	heavy(t, "runs semgrep over a fixture")
+	tree := parsed.Empty(t)
+	tree.Write(t, "a/config.yml", "name: Alpha\n# alpha, in a comment\nother: beta\n")
+	tree.Write(t, "b/main.go", "package b\n\n// nothing here\nvar x = \"alpha\"\n")
+	tree.Write(t, "c/notes.md", "No mention.\n")
+	tree.Index(t)
+	rule := map[string]any{
+		"id": "names-alpha", "languages": []string{"generic"}, "severity": "INFO",
+		"message": "$WORD", "metadata": map[string]any{"about": "alpha"},
+		"pattern-regex": `(?i)(?P<WORD>alpha)`,
+	}
+	got := map[string]bool{}
+	for _, f := range scanText(t, tree, []map[string]any{rule}, tree.Files(t)) {
+		if f.About != "alpha" || !strings.EqualFold(f.Text, "alpha") {
+			t.Errorf("a finding said %q about %q", f.Text, f.About)
+		}
+		got[fmt.Sprintf("%s:%d", f.Path, f.Line)] = true
+	}
+	for _, want := range []string{"a/config.yml:1", "a/config.yml:2", "b/main.go:4"} {
+		if !got[want] {
+			t.Errorf("the scan did not find %s; it found %v", want, got)
+		}
+	}
+	if len(got) != 3 {
+		t.Errorf("the scan found %d lines, want 3: %v", len(got), got)
 	}
 }

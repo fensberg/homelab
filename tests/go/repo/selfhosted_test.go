@@ -1,9 +1,6 @@
 package repo
 
 import (
-	"homelab/details/repopath"
-	"os"
-	"path/filepath"
 	"regexp"
 
 	"gopkg.in/yaml.v3"
@@ -68,36 +65,3 @@ func triggerNames(n *yaml.Node) []string {
 }
 
 // --- the rules themselves ---------------------------------------------------
-
-// scaleSetName reads the runner scale set's name out of the manifest that
-// declares it, rather than hard-coding it here.
-//
-// The guard above decides whether a job reaches the estate's own runner, and
-// it used to compare against the literal "self-hosted". Renaming the scale set
-// - which had to happen, because self-hosted is a reserved label that scale
-// sets are never offered jobs for - would have left this matching a string
-// nothing uses, so every job would have looked hermetic and the guard would
-// have protected nothing while still passing.
-func scaleSetName() string {
-	// Found by the release it declares, wherever the manifest is. No name is
-	// an answer the callers refuse: a guard that could not read the name
-	// would otherwise compare every job against nothing and pass.
-	path, err := fluxObjectPath(kindHelmRelease, runnerScaleSet)
-	if err != nil {
-		return ""
-	}
-	root, err := repopath.Root()
-	if err != nil {
-		return ""
-	}
-	body, err := os.ReadFile(filepath.Join(root, path))
-	if err != nil {
-		return ""
-	}
-	if m := scaleSetNamePattern.FindStringSubmatch(string(body)); m != nil {
-		return m[1]
-	}
-	return ""
-}
-
-var scaleSetNamePattern = regexp.MustCompile(`(?m)^\s*runnerScaleSetName:\s*(\S+)\s*$`)

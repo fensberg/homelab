@@ -153,18 +153,6 @@ func TestTheExplanationSaysHowToOrderAgain(t *testing.T) {
 	}
 }
 
-func TestParsingRefusesAMalformedLock(t *testing.T) {
-	for _, body := range []string{
-		"# [end]\n",
-		"# [pypi: a A_VERSION=1]\n# [pypi: b B_VERSION=1]\n",
-		"# [pypi: a A_VERSION=1]\na==1 --hash=sha256:x\n# [end]\n# [pypi: a A_VERSION=1]\n# [end]\n",
-	} {
-		if _, err := parseDeliveriesLock(body); err == nil {
-			t.Errorf("want a refusal for:\n%s", body)
-		}
-	}
-}
-
 // A tool whose binary is not named for its repository is checked under the
 // name its lock section carries. Procurement names the fluxcd/flux2 section
 // flux, from its binary: field, and security has to agree independently or

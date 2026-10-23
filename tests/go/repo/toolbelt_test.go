@@ -2,7 +2,6 @@ package repo
 
 import (
 	"go/ast"
-	"go/parser"
 	"go/token"
 	"path/filepath"
 	"sort"
@@ -49,26 +48,20 @@ func TestTheWaysToStartASubprocessAreDeclared(t *testing.T) {
 		"TofuApplyArgs": true,
 	}
 
-	dir := filepath.Join(repoRoot(t), "scripts", "contractor", "internal", "run")
-	pkgs, err := parser.ParseDir(token.NewFileSet(), dir, nil, 0)
-	if err != nil {
-		t.Fatalf("parsing internal/run: %v", err)
-	}
-
+	tree := repository(t)
+	fset := token.NewFileSet()
 	found := map[string]bool{}
-	for _, pkg := range pkgs {
-		for name, file := range pkg.Files {
-			if strings.HasSuffix(name, "_test.go") {
+	for _, rel := range tree.Files(t) {
+		if filepath.Dir(rel) != "scripts/contractor/internal/run" || !strings.HasSuffix(rel, ".go") || strings.HasSuffix(rel, "_test.go") {
+			continue
+		}
+		for _, d := range tree.Go(t, fset, rel).Decls {
+			fn, ok := d.(*ast.FuncDecl)
+			if !ok || fn.Recv != nil || !fn.Name.IsExported() {
 				continue
 			}
-			for _, d := range file.Decls {
-				fn, ok := d.(*ast.FuncDecl)
-				if !ok || fn.Recv != nil || !fn.Name.IsExported() {
-					continue
-				}
-				if runsASubprocess(fn) {
-					found[fn.Name.Name] = true
-				}
+			if runsASubprocess(fn) {
+				found[fn.Name.Name] = true
 			}
 		}
 	}
