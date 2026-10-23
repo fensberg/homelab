@@ -2,18 +2,13 @@ package phases
 
 import (
 	"errors"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"homelab/contractor/config"
-	"homelab/contractor/internal/run"
 	"homelab/contractor/steps"
 	"homelab/details/asbuilt"
-	"homelab/details/platform"
 	"homelab/details/repopath"
 )
 
@@ -45,75 +40,24 @@ func TestEveryRootPlansFromNothingAndKeysNoResourceByAVaultValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := run.NewContext(repo, "site0")
-	committed, err := os.ReadFile(ctx.ConfigTpl)
+	const site = "site0"
+	_, given, err := config.SiteApplications(repo, site)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The template a run reads: the committed one with the site's
-	// applications added, so that what each of them declares - its
-	// namespace, its secrets, its identity - is planned by the real provider
-	// too, whichever applications the site was given.
-	tpl, err := config.Compose(committed, repo, ctx.Site)
+	plans, err := steps.PlanUnbuilt(repo, site)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, given, err := config.SiteApplications(repo, ctx.Site)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Beside the Record phase's own workspace, never in it: a run on this
-	// machine may be using that.
-	// What a release of the platform would hold from this checkout, and
-	// nothing else of the repository: this is the check that sees a change
-	// to a module before it merges, and it sees it as a site would run it.
-	// A file a module reads that the release does not hold is not there, and
-	// the plan fails on it here.
-	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
-	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
-	tracked, err := exec.Command("git", "-C", repo, "ls-files", "-z").Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	unreleased, err := platform.PlaceUnreleased(repo, strings.Split(strings.TrimRight(string(tracked), "\x00"), "\x00"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(unreleased) })
-	work := filepath.Join(repo, ".as-built-unbuilt")
-	t.Cleanup(func() { _ = os.RemoveAll(work) })
-
-	for _, root := range ctx.Roots() {
-		record := filepath.Join(t.TempDir(), root.Name)
-		if err := asbuilt.WriteUnbuilt(record, ctx.Site); err != nil {
-			t.Fatal(err)
-		}
-		in := asbuilt.PlanInputs{
-			Root: root.Dir, Work: work, Record: record,
-			Template: tpl, Site: ctx.Site,
-			Sequence: steps.Plan(root.Name),
-		}
-		// A machine that has initialised the root plans from what it holds.
-		if cache := filepath.Join(root.Dir, ".terraform", "providers"); isDir(cache) {
-			in.PluginDir = cache
-		}
-		in.Vars = map[string]string{}
-		if root.Name == config.PlatformRoot {
-			in.Vars = asbuilt.UnbuiltAccess(steps.PlatformInputs[0], steps.PlatformInputs[1])
-		}
-		// From the copy of the root the plan is made in, which is two
-		// directories down from the top of the repository as the root is.
-		in.Vars[strings.TrimPrefix(platform.UnreleasedVariable, "TF_VAR_")] = "../../" + platform.Unreleased
-		plan, _, err := asbuilt.PlanAgainst(in, asbuilt.Exec)
-		_ = os.RemoveAll(work)
-
+	for _, root := range plans {
+		plan, err := root.Plan, root.Err
 		var keyed *asbuilt.VaultKeyError
 		if errors.As(err, &keyed) {
-			t.Errorf("the %s root: %v", root.Name, err)
+			t.Errorf("the %s root: %v", root.Root, err)
 			continue
 		}
 		if err != nil {
-			t.Errorf("the %s root does not plan from nothing: %v", root.Name, err)
+			t.Errorf("the %s root does not plan from nothing: %v", root.Root, err)
 			continue
 		}
 		// A plan that plans nothing proves none of the above.
@@ -122,13 +66,13 @@ func TestEveryRootPlansFromNothingAndKeysNoResourceByAVaultValue(t *testing.T) {
 			t.Fatal(err)
 		}
 		if len(pending) < 5 {
-			t.Errorf("the %s root's plan from nothing would create %d thing(s) (%s), so it is not a plan of that root", root.Name, len(pending), strings.Join(pending, ", "))
+			t.Errorf("the %s root's plan from nothing would create %d thing(s) (%s), so it is not a plan of that root", root.Root, len(pending), strings.Join(pending, ", "))
 		}
 		// A site that was given applications has their namespaces, secrets
 		// and identities in the platform's plan, and one given none has
 		// none of them. The plan names kinds and never keys, so this asks
 		// whether they are there, not how many.
-		if root.Name == config.PlatformRoot {
+		if root.Root == config.PlatformRoot {
 			for _, kind := range []string{"kubernetes_namespace.application", "kubernetes_service_account.application_reconciler", "kubernetes_role_binding.application_reconciler"} {
 				if planned := slices.Contains(pending, kind); planned != (len(given) > 0) {
 					t.Errorf("the site was given %d application(s), and %s being in the platform's plan from nothing is %v (%s)", len(given), kind, planned, strings.Join(pending, ", "))
@@ -136,9 +80,4 @@ func TestEveryRootPlansFromNothingAndKeysNoResourceByAVaultValue(t *testing.T) {
 			}
 		}
 	}
-}
-
-func isDir(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
 }

@@ -82,9 +82,12 @@ func TestTheConfigurationRulesHold(t *testing.T) {
 	if !repository(t).IsDir(conftestRules) {
 		t.Fatalf("%s is not there, so no configuration rule runs", conftestRules)
 	}
+	heavy(t, "plans every site's roots from nothing, for the rules over OpenTofu, which takes seconds")
 	// How it is run - every package, every file at once - is conftest.toml's
-	// to say, so this, the lane and a person at a terminal run it alike.
-	args := append([]string{"test"}, conftestInputs(t)...)
+	// to say, so this, the lane and a person at a terminal run it alike. The
+	// plans go with the files: OpenTofu is judged on what it would make, as
+	// it works that out, and not on its source.
+	args := append(append([]string{"test"}, conftestInputs(t)...), repository(t).UnbuiltPlans(t)...)
 	out, ok := runConftest(t, args...)
 	if !ok {
 		var refused []string

@@ -27,6 +27,23 @@ opentofu contains f if {
 	endswith(f.path, ".tf")
 }
 
+# plan is every resource a plan of a site's roots would make, as
+# [path, resource]: the plans the rule harness makes from nothing, with a
+# stand-in for every value the vault supplies, each resource with its
+# address, its type and the values it would be made with, wherever in the
+# plan's modules it is declared. A plan is found by what it is - what
+# `tofu show -json` writes of a saved plan - and not by where it was written.
+plan contains [f.path, r] if {
+	some f in input
+	is_object(f.contents)
+	is_object(f.contents.planned_values)
+	walk(f.contents.planned_values, [_, r])
+	is_object(r)
+	is_string(r.address)
+	is_string(r.type)
+	is_object(r.values)
+}
+
 # dockerfiles is every Dockerfile, as Conftest reads one: its instructions in
 # order, each with the stage it is in.
 dockerfiles contains f if {

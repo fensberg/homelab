@@ -275,6 +275,17 @@ func place(name, arg string) string {
 	return fmt.Sprintf("data.lib.%s(%q)", name, arg)
 }
 
+// madeFrom is the place a proof breaks to reach a place a rule reads. A plan
+// is made from the OpenTofu, by the rule harness, so a rule over the plan is
+// proved by breaking a file lib.opentofu picks, which the harness plans
+// again; every other place is broken where it is.
+func madeFrom(p string) string {
+	if p == place("plan", "") {
+		return place("opentofu", "")
+	}
+	return p
+}
+
 // placesOf is every place a rule reads: each selector it names that picks
 // files, as narrow as the selector it names rather than the one beneath it,
 // so a selector's own exclusions are its places' too. A helper
@@ -388,8 +399,13 @@ func TestEverySelectorARuleReadsThroughIsProved(t *testing.T) {
 		if covered[m.Rule] == nil {
 			covered[m.Rule] = map[string]bool{}
 		}
-		for p, picked := range picks(t, libRel, m, places[m.Rule]) {
-			if picked {
+		ask := map[string]bool{}
+		for p := range places[m.Rule] {
+			ask[madeFrom(p)] = true
+		}
+		picked := picks(t, libRel, m, ask)
+		for p := range places[m.Rule] {
+			if picked[madeFrom(p)] {
 				covered[m.Rule][p] = true
 			}
 		}
