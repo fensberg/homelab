@@ -48,6 +48,10 @@ type setupFixture struct {
 	env  []string
 }
 
+// noAccount is gh on a machine signed in to no GitHub account: every
+// question it is asked fails.
+const noAccount = "#!/usr/bin/env bash\nexit 1\n"
+
 func newSetupFixture(t *testing.T, ghBehaviour string) *setupFixture {
 	t.Helper()
 	dir := t.TempDir()
@@ -113,10 +117,17 @@ func newSetupFixture(t *testing.T, ghBehaviour string) *setupFixture {
 			t.Fatalf("writing the %s stub: %v", tool, wErr)
 		}
 	}
-	if ghBehaviour != "" {
-		if wErr := os.WriteFile(filepath.Join(bin, "gh"), []byte(ghBehaviour), 0o755); wErr != nil {
-			t.Fatalf("writing the gh stub: %v", wErr)
-		}
+	// gh is always stubbed, like every other tool the script looks for. Left
+	// out, the script found whatever gh the machine had: a real one, signed
+	// in to nothing, on GitHub's runners, and none at all in a pull-request
+	// pool's pod, where it went on to install one with sudo and failed. A
+	// test that does not say how gh behaves gets that first machine's: a gh
+	// that is present and signed in to no account.
+	if ghBehaviour == "" {
+		ghBehaviour = noAccount
+	}
+	if wErr := os.WriteFile(filepath.Join(bin, "gh"), []byte(ghBehaviour), 0o755); wErr != nil {
+		t.Fatalf("writing the gh stub: %v", wErr)
 	}
 
 	env := []string{
@@ -221,7 +232,7 @@ readable reason.`, want.key, got, want.value)
 // behalf. A warning there would be noise on every run, and a warning that is
 // always present is one nobody reads.
 func TestSetupSaysNothingToRegisterWhereThereIsNoAccount(t *testing.T) {
-	f := newSetupFixture(t, "#!/usr/bin/env bash\nexit 1\n")
+	f := newSetupFixture(t, noAccount)
 
 	out, err := f.run(t)
 	if err != nil {

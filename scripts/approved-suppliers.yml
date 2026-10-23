@@ -1731,8 +1731,26 @@ work:
 
   - job: pr-validation.yml/meta
     kind: cannot-wait
-    takes: 6m
+    # A quarter of the ledger each, in the builds pool (2026-10-22); read
+    # again from what the parts take there.
+    takes: 10m
 
   - job: pr-validation.yml/test-js
+    kind: cannot-wait
+    takes: 1m
+
+  - job: pr-validation.yml/already-tested
+    kind: cannot-wait
+    takes: 1m
+
+  - job: pr-validation.yml/test
+    kind: cannot-wait
+    takes: 1m
+
+  - job: sensitive-paths.yml/tripwire
+    kind: cannot-wait
+    takes: 1m
+
+  - job: inspector.yml/tally
     kind: cannot-wait
     takes: 1m

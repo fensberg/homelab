@@ -51,7 +51,7 @@ defaults:
 jobs:
   tally:
     name: What this change takes away
-    runs-on: ubuntu-latest
+    runs-on: pr-packages-${{ vars.pull_request_runners_site }}
     timeout-minutes: 5
     steps:
       # Full history: the tally compares two commits, and a shallow clone has
