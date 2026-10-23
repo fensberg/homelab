@@ -1,22 +1,19 @@
 package repo
 
 import (
-	"errors"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
+	"path"
 	"sort"
 	"strings"
 	"testing"
 
-	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
 	"gopkg.in/yaml.v3"
 
 	"homelab/details/applications"
 	"homelab/details/flux"
+	"homelab/tests/parsed"
 )
 
 // Every layer Flux applies is given each variable it names.
@@ -99,14 +96,10 @@ func secretKeysOf(expr hclsyntax.Expression, into *given) {
 
 // secretsWritten is every Kubernetes Secret the OpenTofu here writes under a
 // name written out, with what it carries.
-func secretsWritten(sources map[string]string) (map[string]given, error) {
+func secretsWritten(files []parsed.OpenTofuFile) map[string]given {
 	out := map[string]given{}
-	for path, body := range sources {
-		file, diags := hclsyntax.ParseConfig([]byte(body), path, hcl.InitialPos)
-		if diags.HasErrors() {
-			return nil, fmt.Errorf("%s does not parse: %s", path, diags.Error())
-		}
-		for _, block := range file.Body.(*hclsyntax.Body).Blocks {
+	for _, file := range files {
+		for _, block := range file.Body.Blocks {
 			if block.Type != "resource" || len(block.Labels) != 2 || block.Labels[0] != "kubernetes_secret" {
 				continue
 			}
@@ -130,7 +123,7 @@ func secretsWritten(sources map[string]string) (map[string]given, error) {
 			out[name] = g
 		}
 	}
-	return out, nil
+	return out
 }
 
 // layer is one Flux Kustomization: where it is declared, what it applies,
@@ -141,10 +134,14 @@ type layer struct {
 	inline           map[string]bool
 }
 
-func layersIn(rel, body string) ([]layer, error) {
+func layersIn(t testing.TB, rel string, docs []any) []layer {
+	t.Helper()
 	var out []layer
-	dec := yaml.NewDecoder(strings.NewReader(body))
-	for {
+	for _, d := range docs {
+		// A layer is a Flux Kustomization, and nothing else is read as one.
+		if m, ok := d.(map[string]any); !ok || m["kind"] != flux.Kustomization {
+			continue
+		}
 		var doc struct {
 			APIVersion string `yaml:"apiVersion"`
 			Kind       string `yaml:"kind"`
@@ -162,12 +159,13 @@ func layersIn(rel, body string) ([]layer, error) {
 				} `yaml:"postBuild"`
 			} `yaml:"spec"`
 		}
-		err := dec.Decode(&doc)
-		if errors.Is(err, io.EOF) {
-			return out, nil
+		encoded, err := yaml.Marshal(d)
+		if err == nil {
+			err = yaml.Unmarshal(encoded, &doc)
 		}
 		if err != nil {
-			return nil, fmt.Errorf("%s is not YAML that can be read: %w", rel, err)
+			t.Errorf("%s declares a Kustomization that is not one this reads, so what it is given was not checked: %v", rel, err)
+			continue
 		}
 		if doc.Kind != flux.Kustomization || !strings.HasPrefix(doc.APIVersion, "kustomize.toolkit.fluxcd.io/") {
 			continue
@@ -183,31 +181,27 @@ func layersIn(rel, body string) ([]layer, error) {
 		}
 		out = append(out, l)
 	}
+	return out
 }
 
 // applied is every manifest under a directory that a layer pointed at it
 // applies: what its kustomization lists, followed into every directory it
 // lists, or every manifest beneath it where it has none.
-func applied(root, dir string, seen map[string]bool) ([]string, error) {
+func applied(t testing.TB, tree *parsed.Tree, dir string, seen map[string]bool) ([]string, error) {
+	t.Helper()
 	if seen[dir] {
 		return nil, nil
 	}
 	seen[dir] = true
-	listing, err := os.ReadFile(filepath.Join(root, dir, applications.Kustomization))
-	if errors.Is(err, os.ErrNotExist) {
+	listingPath := dir + "/" + applications.Kustomization
+	if !tree.Exists(listingPath) {
 		var files []string
-		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() || !(strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")) {
-				return err
+		for _, rel := range tree.Files(t) {
+			if strings.HasPrefix(rel, dir+"/") && (strings.HasSuffix(rel, ".yaml") || strings.HasSuffix(rel, ".yml")) {
+				files = append(files, rel)
 			}
-			rel, _ := filepath.Rel(root, path)
-			files = append(files, filepath.ToSlash(rel))
-			return nil
-		})
-		return files, err
-	}
-	if err != nil {
-		return nil, err
+		}
+		return files, nil
 	}
 	var k struct {
 		Resources  []string `yaml:"resources"`
@@ -216,10 +210,8 @@ func applied(root, dir string, seen map[string]bool) ([]string, error) {
 			Path string `yaml:"path"`
 		} `yaml:"patches"`
 	}
-	if err := yaml.Unmarshal(listing, &k); err != nil {
-		return nil, fmt.Errorf("%s/%s: %w", dir, applications.Kustomization, err)
-	}
-	files := []string{filepath.ToSlash(filepath.Join(dir, applications.Kustomization))}
+	tree.YAMLInto(t, listingPath, &k)
+	files := []string{listingPath}
 	listed := append(append([]string{}, k.Resources...), k.Components...)
 	for _, p := range k.Patches {
 		if p.Path != "" {
@@ -227,16 +219,15 @@ func applied(root, dir string, seen map[string]bool) ([]string, error) {
 		}
 	}
 	for _, each := range listed {
-		at := filepath.ToSlash(filepath.Join(dir, each))
-		info, err := os.Stat(filepath.Join(root, at))
-		if err != nil {
-			return nil, fmt.Errorf("%s/%s lists %s, which is not there: %w", dir, applications.Kustomization, each, err)
+		at := path.Join(dir, each)
+		if !tree.Exists(at) {
+			return nil, fmt.Errorf("%s lists %s, which is not there", listingPath, each)
 		}
-		if !info.IsDir() {
+		if !tree.IsDir(at) {
 			files = append(files, at)
 			continue
 		}
-		under, err := applied(root, at, seen)
+		under, err := applied(t, tree, at, seen)
 		if err != nil {
 			return nil, err
 		}
@@ -245,14 +236,12 @@ func applied(root, dir string, seen map[string]bool) ([]string, error) {
 	return files, nil
 }
 
-// named is every variable a manifest names, outside its comments.
-func named(body string) []string {
+// named is every variable a manifest's values name. Flux substitutes into
+// what kustomize built, which keeps no comment, so a comment names nothing.
+func named(docs any) []string {
 	var out []string
-	for _, line := range strings.Split(body, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "#") {
-			continue
-		}
-		for _, m := range fluxVariable.FindAllStringSubmatch(line, -1) {
+	for _, v := range parsed.Values(docs) {
+		for _, m := range fluxVariable.FindAllStringSubmatch(v, -1) {
 			out = append(out, m[1])
 		}
 	}
@@ -293,30 +282,14 @@ func notGiven(l layer, names map[string][]string, secrets map[string]given) []st
 }
 
 func TestEveryLayerIsGivenEachVariableItNames(t *testing.T) {
-	root := repoRoot(t)
-	secrets, err := secretsWritten(tofuSources(t))
-	if err != nil {
-		t.Fatal(err)
-	}
+	tree := repository(t)
+	secrets := secretsWritten(tree.OpenTofu(t))
 
 	var layers []layer
 	for _, rel := range tracked(t, func(rel string) bool {
 		return strings.HasPrefix(rel, fluxTree+"/") && (strings.HasSuffix(rel, ".yaml") || strings.HasSuffix(rel, ".yml"))
 	}) {
-		data, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatal(err)
-		}
-		// Flux's own generated install holds the definition of a
-		// Kustomization and no layer of this estate's.
-		if !strings.Contains(string(data), "kustomize.toolkit.fluxcd.io/") {
-			continue
-		}
-		found, err := layersIn(rel, string(data))
-		if err != nil {
-			t.Fatal(err)
-		}
-		layers = append(layers, found...)
+		layers = append(layers, layersIn(t, rel, tree.YAMLDocuments(t, rel))...)
 	}
 	if len(layers) == 0 {
 		t.Fatal("no layer was found in what Flux applies, so this checked nothing")
@@ -330,31 +303,23 @@ func TestEveryLayerIsGivenEachVariableItNames(t *testing.T) {
 		dirs := []string{l.path}
 		if strings.Contains(l.path, "${") {
 			dirs = nil
-			entries, err := os.ReadDir(filepath.Join(root, fluxTree))
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, e := range entries {
-				if _, err := os.Stat(filepath.Join(root, fluxTree, e.Name(), applications.Kustomization)); e.IsDir() && err == nil {
-					dirs = append(dirs, fluxTree+"/"+e.Name())
+			for _, e := range tree.Entries(t, fluxTree) {
+				if dir := fluxTree + "/" + e; tree.IsDir(dir) && tree.Exists(dir+"/"+applications.Kustomization) {
+					dirs = append(dirs, dir)
 				}
 			}
 		}
 		names := map[string][]string{}
-		for _, v := range named("path: " + l.path) {
+		for _, v := range named(l.path) {
 			names[v] = append(names[v], l.file)
 		}
 		for _, dir := range dirs {
-			files, err := applied(root, dir, map[string]bool{})
+			files, err := applied(t, tree, dir, map[string]bool{})
 			if err != nil {
 				t.Fatalf("%s: following what the layer %s applies: %v", l.file, l.name, err)
 			}
 			for _, rel := range files {
-				body, err := os.ReadFile(filepath.Join(root, rel))
-				if err != nil {
-					t.Fatal(err)
-				}
-				for _, v := range named(string(body)) {
+				for _, v := range named(tree.YAMLDocuments(t, rel)) {
 					names[v] = append(names[v], rel)
 				}
 			}
@@ -374,7 +339,7 @@ func TestEveryLayerIsGivenEachVariableItNames(t *testing.T) {
 // The reading of both ends is held to what it claims, against a secret and
 // a layer written here.
 func TestALayerIsHeldToWhatItsSecretsCarry(t *testing.T) {
-	secrets, err := secretsWritten(map[string]string{"a.tf": `
+	secrets := secretsWritten(tofuOf(t, map[string]string{"a.tf": `
 resource "kubernetes_secret" "written" {
   metadata {
     name      = "written-out"
@@ -408,10 +373,7 @@ resource "kubernetes_config_map" "not_a_secret" {
   }
   data = { COLOUR = "blue" }
 }
-`})
-	if err != nil {
-		t.Fatal(err)
-	}
+`}))
 	if len(secrets) != 2 {
 		t.Fatalf("the secrets written under a name written out are two, and %d were read: %v", len(secrets), secrets)
 	}
@@ -425,7 +387,8 @@ resource "kubernetes_config_map" "not_a_secret" {
 		t.Errorf("a secret whose keys are written or begin with words is read whole, and one whose keys are worked out is said not to be; got %q and %q", written.unread, secrets["worked-out"].unread)
 	}
 
-	found, err := layersIn("f.yaml", `
+	fixture := parsed.Empty(t)
+	fixture.Write(t, "f.yaml", `
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata: {name: first}
@@ -441,8 +404,10 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources: [a.yaml]
 `)
-	if err != nil || len(found) != 1 || found[0].path != "somewhere/first" || fmt.Sprint(found[0].secrets) != "[written-out]" || !found[0].inline["SHAPE"] {
-		t.Fatalf("a Flux layer is read with its path and the secrets it is given, and a kustomize listing is not one; got %+v, %v", found, err)
+	fixture.Index(t)
+	found := layersIn(t, "f.yaml", fixture.YAMLDocuments(t, "f.yaml"))
+	if len(found) != 1 || found[0].path != "somewhere/first" || fmt.Sprint(found[0].secrets) != "[written-out]" || !found[0].inline["SHAPE"] {
+		t.Fatalf("a Flux layer is read with its path and the secrets it is given, and a kustomize listing is not one; got %+v", found)
 	}
 
 	first := found[0]
@@ -468,7 +433,11 @@ resources: [a.yaml]
 			}
 		}
 	}
-	if got := fmt.Sprint(named("a: ${ONE}\n  # b: ${TWO}\nc: ${THREE} and ${one}\n")); got != "[ONE THREE]" {
+	var manifest any
+	if err := yaml.Unmarshal([]byte("a: ${ONE}\n# b: ${TWO}\nc: ${THREE} and ${one}\n"), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if got := fmt.Sprint(named(manifest)); got != "[ONE THREE]" {
 		t.Errorf("the variables a manifest names, outside its comments, were read as %s", got)
 	}
 }

@@ -2,7 +2,6 @@ package repo
 
 import (
 	"fmt"
-	"homelab/tests/parsed"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -12,6 +11,7 @@ import (
 
 	"homelab/contractor/config"
 	"homelab/details/applications"
+	"homelab/tests/parsed"
 )
 
 // The Flux tree is a core every site runs, and a directory for each site
@@ -170,18 +170,6 @@ func resourcesOf(docs []any) []string {
 		}
 	}
 	return out
-}
-
-// stripYAMLComments drops whole-line comments, so prose about a site or a
-// workload is not read as naming one.
-func stripYAMLComments(body string) string {
-	lines := strings.Split(body, "\n")
-	for i, line := range lines {
-		if strings.HasPrefix(strings.TrimSpace(line), "#") {
-			lines[i] = ""
-		}
-	}
-	return strings.Join(lines, "\n")
 }
 
 func TestFluxLayoutRefusesWhatIsNotCoreOrASitesOwn(t *testing.T) {

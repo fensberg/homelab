@@ -2,12 +2,16 @@ package repo
 
 import (
 	"net"
-	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
 
+	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/hclsyntax"
+
 	"homelab/contractor/config"
+	"homelab/tests/parsed"
 )
 
 // The pod and service networks are declared, and cannot collide with a site.
@@ -25,11 +29,6 @@ import (
 // it would swallow every site subnet the scheme defines, and nothing else in
 // this repository would notice.
 
-var (
-	podSubnetsDecl     = regexp.MustCompile(`podSubnets\s*=\s*\[([^\]]*)\]`)
-	serviceSubnetsDecl = regexp.MustCompile(`serviceSubnets\s*=\s*\[([^\]]*)\]`)
-)
-
 // The site octet is asserted 1-95 by registry.tf, so this is the widest range
 // any site's /16 can occupy. A cluster range overlapping it collides with a
 // real network rather than a hypothetical one.
@@ -39,16 +38,14 @@ const (
 )
 
 func TestThePodAndServiceNetworksAreDeclared(t *testing.T) {
-	_, talos := tofuDeclaring(t, declMachineConfig)
-
-	for _, decl := range []struct {
-		name string
-		re   *regexp.Regexp
-	}{
-		{"podSubnets", podSubnetsDecl},
-		{"serviceSubnets", serviceSubnetsDecl},
-	} {
-		if !decl.re.MatchString(talos) {
+	declared := map[string]bool{}
+	for _, item := range objectItems(tofuFile(t, declaring(t, declMachineConfig).File).Body) {
+		if _, list := item.ValueExpr.(*hclsyntax.TupleConsExpr); list {
+			declared[parsed.KeyName(item)] = true
+		}
+	}
+	for _, decl := range []struct{ name string }{{"podSubnets"}, {"serviceSubnets"}} {
+		if !declared[decl.name] {
 			t.Errorf(`talos.tf declares no %s, so the cluster takes whatever the
 platform defaults to and the estate's largest address commitment is a value
 nobody chose and nobody can review.
@@ -65,9 +62,8 @@ It is fixed at cluster creation, so the cost of getting it wrong is a rebuild.`,
 func TestThePodAndServiceNetworksCannotCollideWithASite(t *testing.T) {
 	// The cluster root takes both from the plan, or the plan's answer below
 	// describes nothing the cluster runs.
-	variables := tofuAll(t)
 	for _, name := range []string{"pod_cidr", "service_cidr"} {
-		if !regexp.MustCompile(name + `\s*=\s*local\.net\.` + name + `\b`).MatchString(variables) {
+		if !takenFromThePlan(t, name) {
 			t.Errorf("nothing takes %s from the address plan (local.net.%s), so the range the "+
 				"cluster runs is not the one the plan allocated and checked", name, name)
 		}
@@ -117,6 +113,33 @@ be changed without rebuilding the cluster.`, a.site, a.kind, a.n, b.site, b.kind
 	}
 }
 
+// takenFromThePlan says whether something in the repository's OpenTofu is
+// given this value from the address plan: an argument or a key of that name
+// set to local.net.<name>.
+func takenFromThePlan(t *testing.T, name string) bool {
+	t.Helper()
+	isThePlans := func(e hclsyntax.Expression) bool {
+		ref, ok := e.(*hclsyntax.ScopeTraversalExpr)
+		return ok && traversalName(ref.Traversal) == "local.net."+name
+	}
+	for _, f := range repository(t).OpenTofu(t) {
+		found := false
+		_ = hclsyntax.VisitAll(f.Body, func(n hclsyntax.Node) hcl.Diagnostics {
+			if a, ok := n.(*hclsyntax.Attribute); ok && a.Name == name && isThePlans(a.Expr) {
+				found = true
+			}
+			return nil
+		})
+		for _, item := range objectItems(f.Body) {
+			found = found || parsed.KeyName(item) == name && isThePlans(item.ValueExpr)
+		}
+		if found {
+			return true
+		}
+	}
+	return false
+}
+
 func overlaps(a, b *net.IPNet) bool {
 	return a.Contains(b.IP) || b.Contains(a.IP)
 }
@@ -150,21 +173,30 @@ func itoaSmall(n int) string {
 // that are already running is node lifecycle, which epoch 05 owns and this does
 // not claim.
 func TestATalosImagePathCarriesItsSchematic(t *testing.T) {
-	_, compute := tofuDeclaring(t, declMachines)
-
-	names := regexp.MustCompile(`(?m)^\s*file_name\s*=\s*"([^"]+)"`).FindAllStringSubmatch(compute, -1)
+	tree := repository(t)
+	var names []hclsyntax.Expression
+	_ = hclsyntax.VisitAll(tofuFile(t, declaring(t, declMachines).File).Body, func(n hclsyntax.Node) hcl.Diagnostics {
+		if a, ok := n.(*hclsyntax.Attribute); ok && a.Name == "file_name" {
+			names = append(names, a.Expr)
+		}
+		return nil
+	})
 	const bothImages = 2
 	if len(names) < bothImages {
-		t.Fatalf(`found %d file_name declaration(s) in compute.tf, and there are two -
+		t.Fatalf(`found %d file_name argument(s) in the file that makes the machines, and there are two -
 the estate's image and the untrusted zone's.
-
-The parse has stopped matching, so an image whose path cannot change is no
+The read has stopped matching, so an image whose path cannot change is no
 longer being checked for.`, len(names))
 	}
-
-	for _, m := range names {
-		name := m[1]
-		if !strings.Contains(name, "schematic_id") {
+	for _, expr := range names {
+		name := tree.Source(t, expr)
+		carries := func(part string) bool {
+			return slices.ContainsFunc(expr.Variables(), func(ref hcl.Traversal) bool {
+				name := traversalName(ref)
+				return strings.Contains(name[strings.LastIndex(name, ".")+1:], part)
+			})
+		}
+		if !carries("schematic_id") {
 			t.Errorf(`the image path %q does not carry its schematic id.
 
 The resource is identified by that path, so re-minting a schematic is not a
@@ -175,7 +207,7 @@ plan, successful apply - while every node keeps the old extensions.
 That is how a known-vulnerable Tailscale reached every machine in the estate
 and stayed there.`, name)
 		}
-		if !strings.Contains(name, "talos_version") {
+		if !carries("talos_version") {
 			t.Errorf(`the image path %q does not carry the Talos version.
 
 The version resolves every extension's build, so two images from one schematic
@@ -196,19 +228,16 @@ on different Talos releases are different bytes at the same path.`, name)
 // Asserted of every talos_machine_configuration in talos.tf, discovered rather
 // than listed, so a machine class added later is held to it too.
 func TestEveryMachineIsToldTheClustersNetwork(t *testing.T) {
-	// Every machine configuration, in whichever file: a class declared
-	// somewhere else is a class this must still hold to it.
-	talos := tofuAll(t)
-	blocks := regexp.MustCompile(`(?s)data "talos_machine_configuration" "([^"]+)" \{(.*?)\n\}`).FindAllStringSubmatch(talos, -1)
+	blocks := repository(t).Blocks(t, "data", "talos_machine_configuration")
 	if len(blocks) < 3 {
-		t.Fatalf("found %d machine configurations in talos.tf; there are at least three classes, so the reader has stopped matching", len(blocks))
+		t.Fatalf("found %d machine configurations; there are at least three classes, so the reader has stopped matching", len(blocks))
 	}
 	for _, b := range blocks {
-		if !strings.Contains(b[2], "local.cluster_network_patch") {
+		if !refersTo(b.Block, "local.cluster_network_patch") {
 			t.Errorf(`the %q machine configuration is not given local.cluster_network_patch.
 
 Its kubelet then takes Talos's default service range, and tells every pod on
-that machine to ask for DNS at an address nothing answers on (#578).`, b[1])
+that machine to ask for DNS at an address nothing answers on (#578).`, b.Labels[1])
 		}
 	}
 }

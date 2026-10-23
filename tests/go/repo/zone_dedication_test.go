@@ -24,12 +24,9 @@ import (
 func TestAZonesMachineIsKeptForItsZoneAndCanBeSentTo(t *testing.T) {
 	const declared = "dmz_dedication"
 	found := 0
-	for path, body := range tofuSources(t) {
-		file, diags := hclsyntax.ParseConfig([]byte(body), path, hcl.InitialPos)
-		if diags.HasErrors() {
-			t.Fatalf("%s does not parse: %s", path, diags.Error())
-		}
-		for _, block := range file.Body.(*hclsyntax.Body).Blocks {
+	for _, file := range repository(t).OpenTofu(t) {
+		path := file.Path
+		for _, block := range file.Body.Blocks {
 			attr, has := block.Body.Attributes[declared]
 			if block.Type != "locals" || !has {
 				continue
@@ -135,12 +132,9 @@ func TestADedicationIsWorkedOutAndAHalfOfOneIsSeen(t *testing.T) {
 func TestEveryKindOfMachineIsConfiguredFromTheOneList(t *testing.T) {
 	const generated, theList = "talos_machine_configuration", "machine_patches"
 	kinds := 0
-	for path, body := range tofuSources(t) {
-		file, diags := hclsyntax.ParseConfig([]byte(body), path, hcl.InitialPos)
-		if diags.HasErrors() {
-			t.Fatalf("%s does not parse: %s", path, diags.Error())
-		}
-		for _, block := range file.Body.(*hclsyntax.Body).Blocks {
+	for _, file := range repository(t).OpenTofu(t) {
+		path := file.Path
+		for _, block := range file.Body.Blocks {
 			if block.Type != "data" || len(block.Labels) != 2 || block.Labels[0] != generated {
 				continue
 			}

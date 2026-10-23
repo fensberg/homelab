@@ -2,15 +2,18 @@ package repo
 
 import (
 	"fmt"
-	"path/filepath"
-	"regexp"
+	"path"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
 
+	"github.com/hashicorp/hcl/v2/hclsyntax"
+	"github.com/zclconf/go-cty/cty"
+
 	"homelab/contractor/config"
 	"homelab/details/platform"
-	"homelab/details/tofufiles"
+	"homelab/tests/parsed"
 )
 
 // A site runs the release of the platform it was given, and no other way.
@@ -29,25 +32,24 @@ import (
 // against an estate clears, nothing chooses a release by default, and every
 // site there is has a line.
 func TestEverySiteRootRunsItsModulesAsReleased(t *testing.T) {
-	sources := tofuSources(t)
+	tree := repository(t)
+	tofu := tree.OpenTofu(t)
+	var release platform.Release
+	tree.JSONInto(t, platform.Manifest, &release)
+	if len(release.Holds) == 0 {
+		t.Fatalf("%s holds nothing, so a release of it would be an empty package", platform.Manifest)
+	}
 	for _, name := range config.Roots {
 		root := "management/" + name
-		problems, modules := unreleasedModules(root, tofufiles.In(sources, root))
+		problems, modules := unreleasedModules(t, tree, root, inDir(tofu, root))
 		for _, p := range problems {
 			t.Error(p)
 		}
 		if len(modules) == 0 {
 			t.Errorf("%s calls no module, so either it builds something itself or this has stopped reading it", root)
 		}
-		// What the root calls is there to call in the checkout, and is part
-		// of what a release holds: the checks read it from the one, and the
-		// next release will be the other.
-		release, err := platform.Read(repoRoot(t))
-		if err != nil {
-			t.Fatal(err)
-		}
 		for _, dir := range modules {
-			if len(tofufiles.In(sources, dir)) == 0 {
+			if len(inDir(tofu, dir)) == 0 {
 				t.Errorf("%s calls a module at %s, and no OpenTofu is tracked there", root, dir)
 			}
 			if !platform.Holds(release.Holds, dir+"/main.tf") {
@@ -56,17 +58,39 @@ func TestEverySiteRootRunsItsModulesAsReleased(t *testing.T) {
 		}
 	}
 
-	pins, err := platform.Pins(repoRoot(t))
-	if err != nil {
-		t.Fatal(err)
+	var lines map[string]platform.Line
+	tree.JSONInto(t, platform.VersionsFile, &lines)
+	pins := map[string]platform.Pin{}
+	for site, line := range lines {
+		pin, err := platform.ParsePin(line.Platform)
+		if err != nil {
+			t.Fatalf("%s, %s: %v", platform.VersionsFile, site, err)
+		}
+		pins[site] = pin
 	}
-	sites, err := config.DeclaredSites(filepath.Join(repoRoot(t), "config", "management.tpl.json"))
-	if err != nil {
-		t.Fatal(err)
+	var template config.Config
+	tree.JSONInto(t, "config/management.tpl.json", &template)
+	sites := make([]string, 0, len(template.Sites))
+	for site := range template.Sites {
+		sites = append(sites, site)
+	}
+	if len(sites) == 0 {
+		t.Fatal("the config template declares no site")
 	}
 	for _, p := range unversionedSites(sites, pins) {
 		t.Error(p)
 	}
+}
+
+// inDir is the OpenTofu files in one directory: a root's, or a module's.
+func inDir(files []parsed.OpenTofuFile, dir string) []parsed.OpenTofuFile {
+	var out []parsed.OpenTofuFile
+	for _, f := range files {
+		if path.Dir(f.Path) == dir {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // unversionedSites is each site with no release to run, and each line that is
@@ -88,39 +112,99 @@ func unversionedSites(sites []string, pins map[string]platform.Pin) (problems []
 	return problems
 }
 
-var (
-	moduleSourceLine = regexp.MustCompile(`(?m)^\s*source\s*=\s*(.+?)\s*$`)
-	// The one form a site root's module source takes: the release, fetched
-	// from the registry by its digest; or, where the root was told of one, a
-	// tree holding the same module as it is in a checkout.
-	releasedSource = regexp.MustCompile(`^var\.unreleased != "" \? "\$\{var\.unreleased\}/([^"$?]+)" : "oci://\$\{var\.release\}//([^"$?]+)\?digest=\$\{var\.digest\}"$`)
-	sourceVariable = regexp.MustCompile(`(?s)variable\s+"(release|digest|unreleased)"\s*\{(.*?)\n\}`)
-	defaultLine    = regexp.MustCompile(`(?m)^\s*default\s*=\s*(.+?)\s*$`)
-)
+// releasedModule is the module a call's source fetches, when the source is
+// the one form a site's root may use: the module's path in the release its
+// site was given, or the same path in a checkout when it is checked.
+//
+//	var.unreleased != "" ? "${var.unreleased}/<path>" : "oci://${var.release}//<path>?digest=${var.digest}"
+//
+// The path it fetches when checked and when released, each, and whether the
+// source is that form at all.
+func releasedModule(expr hclsyntax.Expression) (checked, released string, ok bool) {
+	cond, ok := expr.(*hclsyntax.ConditionalExpr)
+	if !ok {
+		return "", "", false
+	}
+	test, ok := cond.Condition.(*hclsyntax.BinaryOpExpr)
+	if !ok || test.Op != hclsyntax.OpNotEqual || !isRef(test.LHS, "var.unreleased") || !isLiteral(test.RHS, "") {
+		return "", "", false
+	}
+	inCheckout, ok := templateParts(cond.TrueResult)
+	if !ok || len(inCheckout) != 2 || inCheckout[0] != "var.unreleased" || !strings.HasPrefix(inCheckout[1], "\x00/") {
+		return "", "", false
+	}
+	inRelease, ok := templateParts(cond.FalseResult)
+	if !ok || len(inRelease) != 4 || inRelease[0] != "\x00oci://" || inRelease[1] != "var.release" || inRelease[3] != "var.digest" {
+		return "", "", false
+	}
+	path, isPath := strings.CutPrefix(inRelease[2], "\x00//")
+	path, digested := strings.CutSuffix(path, "?digest=")
+	if !isPath || !digested || strings.ContainsAny(path, "?$") {
+		return "", "", false
+	}
+	return strings.TrimPrefix(inCheckout[1], "\x00/"), path, true
+}
 
-// unreleasedModules is each way one root reaches its modules around the
-// release, and the repository-relative directory of each module it calls
-// properly.
-func unreleasedModules(root string, files map[string]string) (problems, modules []string) {
-	declared := map[string]bool{}
-	for rel, body := range files {
-		code := tofufiles.Code(body)
-		for _, m := range moduleSourceLine.FindAllStringSubmatch(code, -1) {
-			released := releasedSource.FindStringSubmatch(m[1])
-			if released == nil {
-				problems = append(problems, fmt.Sprintf("%s calls a module from %s. A site's root fetches every module from the release its site was given - oci://${var.release}//<the module's path>?digest=${var.digest} - or, for a check, reads the same path under ${var.unreleased}. Any other source runs something no site's line chose.", rel, m[1]))
-				continue
-			}
-			if released[1] != released[2] {
-				problems = append(problems, fmt.Sprintf("%s calls %s when checked and %s when released, so the check is of a module no site runs.", rel, released[1], released[2]))
-				continue
-			}
-			modules = append(modules, filepath.ToSlash(filepath.Clean(released[1])))
+// templateParts is a string template's parts: each reference by its name,
+// and each piece of text with a NUL in front of it, so the two are never
+// mistaken for each other.
+func templateParts(expr hclsyntax.Expression) ([]string, bool) {
+	tmpl, ok := expr.(*hclsyntax.TemplateExpr)
+	if !ok {
+		return nil, false
+	}
+	var out []string
+	for _, part := range tmpl.Parts {
+		if ref, ok := part.(*hclsyntax.ScopeTraversalExpr); ok {
+			out = append(out, traversalName(ref.Traversal))
+			continue
 		}
-		for _, m := range sourceVariable.FindAllStringSubmatch(code, -1) {
-			declared[m[1]] = true
-			if d := defaultLine.FindStringSubmatch(m[2]); d != nil && d[1] != `""` {
-				problems = append(problems, fmt.Sprintf("%s gives %q a default of %s. A root that was not told which release to run must run none; a default is a version nobody chose.", rel, m[1], d[1]))
+		v, ok := parsed.Literal(part)
+		if !ok || v.IsNull() || v.Type() != cty.String {
+			return nil, false
+		}
+		out = append(out, "\x00"+v.AsString())
+	}
+	return out, true
+}
+
+func isRef(expr hclsyntax.Expression, name string) bool {
+	ref, ok := expr.(*hclsyntax.ScopeTraversalExpr)
+	return ok && traversalName(ref.Traversal) == name
+}
+
+func isLiteral(expr hclsyntax.Expression, want string) bool {
+	v, ok := parsed.Literal(expr)
+	return ok && !v.IsNull() && v.Type() == cty.String && v.AsString() == want
+}
+
+// unreleasedModules is each way a root's module calls fetch something other
+// than the release its site was given, and the modules it does fetch.
+func unreleasedModules(t testing.TB, tree *parsed.Tree, root string, files []parsed.OpenTofuFile) (problems, modules []string) {
+	declared := map[string]bool{}
+	for _, f := range files {
+		for _, b := range f.Body.Blocks {
+			switch {
+			case b.Type == "module":
+				source, ok := b.Body.Attributes["source"]
+				if !ok {
+					continue
+				}
+				checked, released, ok := releasedModule(source.Expr)
+				if !ok {
+					problems = append(problems, fmt.Sprintf("%s calls a module from %s. A site's root fetches every module from the release its site was given - oci://${var.release}//<the module's path>?digest=${var.digest} - or, for a check, reads the same path under ${var.unreleased}. Any other source runs something no site's line chose.", f.Path, tree.Source(t, source.Expr)))
+					continue
+				}
+				if checked != released {
+					problems = append(problems, fmt.Sprintf("%s calls %s when checked and %s when released, so the check is of a module no site runs.", f.Path, checked, released))
+					continue
+				}
+				modules = append(modules, path.Clean(released))
+			case b.Type == "variable" && len(b.Labels) == 1 && slices.Contains([]string{"release", "digest", "unreleased"}, b.Labels[0]):
+				declared[b.Labels[0]] = true
+				if d, ok := b.Body.Attributes["default"]; ok && !isLiteral(d.Expr, "") {
+					problems = append(problems, fmt.Sprintf("%s gives %q a default of %s. A root that was not told which release to run must run none; a default is a version nobody chose.", f.Path, b.Labels[0], tree.Source(t, d.Expr)))
+				}
 			}
 		}
 	}
@@ -141,7 +225,14 @@ func TestUnreleasedModulesRefusesEveryWayAroundTheRelease(t *testing.T) {
 	vars := variable("release", `""`) + variable("digest", `""`) + variable("unreleased", `""`)
 	call := func(source string) string { return "module \"m\" {\n  source = " + source + "\n}\n" }
 	released := call(`var.unreleased != "" ? "${var.unreleased}/parts/thing" : "oci://${var.release}//parts/thing?digest=${var.digest}"`)
-	problems, modules := unreleasedModules("ground/alpha", map[string]string{"ground/alpha/calls.tf": vars + released})
+	read := func(body string) (*parsed.Tree, []parsed.OpenTofuFile) {
+		tree := parsed.Empty(t)
+		tree.Write(t, "ground/alpha/calls.tf", body)
+		tree.Index(t)
+		return tree, tree.OpenTofu(t)
+	}
+	tree, files := read(vars + released)
+	problems, modules := unreleasedModules(t, tree, "ground/alpha", files)
 	if len(problems) != 0 || strings.Join(modules, " ") != "parts/thing" {
 		t.Fatalf("a root fetching its module as released: %v, %v", problems, modules)
 	}
@@ -158,7 +249,8 @@ func TestUnreleasedModulesRefusesEveryWayAroundTheRelease(t *testing.T) {
 		"no digest variable":              {variable("release", `""`) + variable("unreleased", `""`) + released, `declares no "digest" variable`},
 		"a commented-out source":          {vars + released + "#   source = \"../../parts/thing\"\n", ""},
 	} {
-		problems, _ := unreleasedModules("ground/alpha", map[string]string{"ground/alpha/calls.tf": tc.body})
+		tree, files := read(tc.body)
+		problems, _ := unreleasedModules(t, tree, "ground/alpha", files)
 		got := strings.Join(problems, "|")
 		if (tc.want == "") != (got == "") || !strings.Contains(got, tc.want) {
 			t.Errorf("%s: got %q, want %q", name, got, tc.want)

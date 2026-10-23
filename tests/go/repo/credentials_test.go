@@ -1,9 +1,12 @@
 package repo
 
 import (
-	"regexp"
-	"strings"
 	"testing"
+
+	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/hclsyntax"
+
+	"homelab/tests/parsed"
 )
 
 // A rendered credential carries the estate, so the operator does not have to.
@@ -25,27 +28,17 @@ import (
 // opinion on. A test that pinned the expression would be a change detector,
 // passing forever while the behaviour rotted and failing on every rename.
 func TestTheRenderedTalosconfigNamesNodesAndEveryEndpoint(t *testing.T) {
-	body := tofuAll(t)
+	tree := repository(t)
+	block := tree.Declaring(t, "data", "talos_client_configuration", "this")
 
-	block := regexp.MustCompile(`(?s)data\s+"talos_client_configuration"\s+"this"\s*\{(.*?)\n\}`).FindStringSubmatch(body)
-	if block == nil {
-		t.Fatal(`modules/infrastructure/cluster/talos.tf declares no data "talos_client_configuration" "this".
-
-That data source is the whole talosconfig. If it has been renamed, this test is
-asserting nothing and needs to follow it.`)
+	nodes, written := block.Body.Attributes["nodes"]
+	empty := false
+	if written {
+		tuple, isList := nodes.Expr.(*hclsyntax.TupleConsExpr)
+		empty = isList && len(tuple.Exprs) == 0
 	}
-
-	assigned := func(arg string) string {
-		m := regexp.MustCompile(`(?m)^\s*` + arg + `\s*=\s*(.+)$`).FindStringSubmatch(block[1])
-		if m == nil {
-			return ""
-		}
-		return strings.TrimSpace(m[1])
-	}
-
-	nodes := assigned("nodes")
-	switch nodes {
-	case "":
+	switch {
+	case !written:
 		t.Error(`the rendered talosconfig sets no nodes.
 
 The Talos provider leaves the field empty unless it is told otherwise, and an
@@ -54,17 +47,39 @@ node-targeted command refuses on first use and has to be re-run with -n. Node
 addresses are exactly what this repository keeps in the vault so the config
 shows the estate's shape without revealing it, so making the operator supply one
 puts back the piece the design took out (#235).`)
-	case "[]":
+	case empty:
 		t.Error("the rendered talosconfig sets nodes to an empty list, which is the same as not setting it")
 	}
 
 	// An endpoint is what talosctl connects *to*. One means the credential is
 	// useless precisely when the machine it names is the one being diagnosed,
 	// which is the case a diagnostic exists for.
-	if ep := assigned("endpoints"); strings.Contains(ep, "[0]") {
+	if ep, ok := block.Body.Attributes["endpoints"]; ok && indexesOne(ep.Expr) {
 		t.Errorf(`the talosconfig's endpoints are %s - a single machine.
 
 Every control plane proxies the Talos API, so naming one of them buys nothing
-and loses the credential the moment that machine is the problem.`, ep)
+and loses the credential the moment that machine is the problem.`, tree.Source(t, ep.Expr))
 	}
+}
+
+// indexesOne says whether an expression takes one element of a list by its
+// index, written out: local.node_ips[0].
+func indexesOne(expr hclsyntax.Expression) bool {
+	found := false
+	_ = hclsyntax.VisitAll(expr, func(n hclsyntax.Node) hcl.Diagnostics {
+		switch e := n.(type) {
+		case *hclsyntax.ScopeTraversalExpr:
+			for _, step := range e.Traversal {
+				if _, ok := step.(hcl.TraverseIndex); ok {
+					found = true
+				}
+			}
+		case *hclsyntax.IndexExpr:
+			if _, ok := parsed.Literal(e.Key); ok {
+				found = true
+			}
+		}
+		return nil
+	})
+	return found
 }

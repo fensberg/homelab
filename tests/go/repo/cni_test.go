@@ -1,10 +1,17 @@
 package repo
 
 import (
-	"homelab/tests/parsed"
 	"regexp"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
+
+	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/hclsyntax"
+	"github.com/zclconf/go-cty/cty"
+
+	"homelab/tests/parsed"
 )
 
 // The CNI this estate runs is not the one Talos ships, and four things have to
@@ -47,20 +54,24 @@ func cniValuesPath(t *testing.T) string {
 // fighting over pod networking, or kube-proxy and Cilium both programming
 // service routing - and the second is the quieter of the two failures.
 func TestTheClusterDeclaresNoBuiltInCNIAndNoKubeProxy(t *testing.T) {
-	talosFile, body := tofuDeclaring(t, declMachineConfig)
-
-	// yamlencode renders these as nested YAML keys, so assert on the HCL that
-	// produces them rather than on rendered output nobody can see from here.
-	cniOff := regexp.MustCompile(`(?s)cni\s*=\s*\{[^}]*name\s*=\s*"none"`)
-	proxyOff := regexp.MustCompile(`(?s)proxy\s*=\s*\{[^}]*disabled\s*=\s*true`)
-
-	if !cniOff.MatchString(body) {
+	talosFile := declaring(t, declMachineConfig).File
+	items := objectItems(tofuFile(t, talosFile).Body)
+	sets := func(key, inner string, want cty.Value) bool {
+		return slices.ContainsFunc(items, func(item hclsyntax.ObjectConsItem) bool {
+			if parsed.KeyName(item) != key {
+				return false
+			}
+			v, ok := parsed.Literal(parsed.Key(item.ValueExpr, inner))
+			return ok && !v.IsNull() && v.Type() == want.Type() && v.Equals(want).True()
+		})
+	}
+	if !sets("cni", "name", cty.StringVal("none")) {
 		t.Errorf("%s: the cluster does not set cluster.network.cni.name = \"none\".\n\n"+
 			"Talos would then install Flannel, which enforces no NetworkPolicy - the "+
 			"whole reason this estate moved to Cilium. Two CNIs would also both claim "+
 			"pod networking.", talosFile)
 	}
-	if !proxyOff.MatchString(body) {
+	if !sets("proxy", "disabled", cty.True) {
 		t.Errorf("%s: the cluster does not set cluster.proxy.disabled = true.\n\n"+
 			"Cilium is configured with kubeProxyReplacement, so leaving kube-proxy "+
 			"running means two things programming service routing on every node.",
@@ -80,63 +91,65 @@ func TestTheClusterDeclaresNoBuiltInCNIAndNoKubeProxy(t *testing.T) {
 // the pod network fails and nothing in this repository ever said it was
 // required.
 func TestKubePrismIsDeclaredRatherThanAssumed(t *testing.T) {
-	talosFile, body := tofuDeclaring(t, declMachineConfig)
-
-	// Every collection of machine patches that is a machine's whole list, so
-	// a machine class added later cannot quietly skip it. There were two
-	// such lists, a zone's and everybody else's, and this judged each. There
-	// is one now, which every kind of machine is configured from
-	// (TestEveryKindOfMachineIsConfiguredFromTheOneList holds that), and a
-	// second collection is a fragment added to it: what makes a zone's
-	// machine the zone's. A fragment declares nothing of its own and is told
-	// from a list by being one the whole list draws on.
-	all := regexp.MustCompile(`(?m)^  ([a-z_]*patches) = \{`).FindAllStringSubmatch(body, -1)
-	allBlocks := regexp.MustCompile(`(?m)^  [a-z_]*patches = \{`).Split(body, -1)[1:]
-	var sets [][]string
-	var blocks []string
-	for i, name := range all {
-		fragment := false
-		for j, other := range allBlocks {
-			fragment = fragment || (j != i && strings.Contains(other, "local."+name[1]+"["))
+	tree := repository(t)
+	talosFile := declaring(t, declMachineConfig).File
+	// Every collection of machine patches the file's locals declare, less the
+	// fragments another collection is made from.
+	collections := map[string]*hclsyntax.Attribute{}
+	for _, b := range tree.Blocks(t, "locals") {
+		if b.File != talosFile {
+			continue
 		}
-		if !fragment {
-			sets, blocks = append(sets, name), append(blocks, allBlocks[i])
+		for name, a := range b.Body.Attributes {
+			if strings.HasSuffix(name, "patches") {
+				collections[name] = a
+			}
 		}
 	}
+	var sets []string
+	for name := range collections {
+		fragment := false
+		for other, a := range collections {
+			fragment = fragment || (other != name && refersTo(a.Expr, "local."+name))
+		}
+		if !fragment {
+			sets = append(sets, name)
+		}
+	}
+	sort.Strings(sets)
 	if len(sets) == 0 {
 		t.Fatalf("found no machine-patch collection in %s, so this checked nothing", talosFile)
 	}
-
-	// Each is judged on its own contents.
-	for i, name := range sets {
-		block := blocks[i]
-		if !strings.Contains(block, "kubePrism") {
+	for _, name := range sets {
+		expr := collections[name].Expr
+		if !slices.ContainsFunc(objectItems(expr), func(item hclsyntax.ObjectConsItem) bool { return parsed.KeyName(item) == "kubePrism" }) {
 			t.Errorf("%s: %s never declares KubePrism.\n\n"+
 				"With kube-proxy gone there is no ClusterIP for these machines' agents to "+
 				"reach the API through, and the alternative address is one control plane "+
 				"(#316). It is enabled by default, which is exactly why it is written "+
-				"down: a default is not a declaration.", talosFile, name[1])
+				"down: a default is not a declaration.", talosFile, name)
 			continue
 		}
-		if !strings.Contains(block, "7445") {
+		if !writesNumber(expr, 7445) {
 			t.Errorf("%s: %s declares KubePrism without naming port 7445.\n\n"+
 				"The Cilium values in %s point k8sServicePort at 7445. If the port moves, "+
-				"every half has to move with it.", talosFile, name[1], cniValuesPath(t))
+				"every half has to move with it.", talosFile, name, cniValuesPath(t))
 		}
 	}
 }
 
-// The committed manifest must be the one the pinned chart version renders.
-//
-// The manifest is generated by `task render-cni` and committed so its image
-// digests are reviewable and the supplier guard can read them. A generated file
-// that nobody can prove is current is worse than no file: it silently becomes
-// the source of truth while claiming to be a copy.
-//
-// The header alone would be a change detector - a comment anyone can edit. The
-// image tags are the evidence that cannot be faked without changing what
-// actually gets deployed, so both are checked and the tags are what would catch
-// a bumped version and a forgotten re-render.
+// writesNumber says whether a number is written out anywhere in a node.
+func writesNumber(n hclsyntax.Node, want int64) bool {
+	found := false
+	_ = hclsyntax.VisitAll(n, func(n hclsyntax.Node) hcl.Diagnostics {
+		if lit, ok := n.(*hclsyntax.LiteralValueExpr); ok && lit.Val.Type() == cty.Number && lit.Val.Equals(cty.NumberIntVal(want)).True() {
+			found = true
+		}
+		return nil
+	})
+	return found
+}
+
 func TestTheRenderedCNIManifestMatchesThePinnedChartVersion(t *testing.T) {
 	heavy(t, "semgrep reads the rendered file's header, a few seconds")
 	want := pinned(t, cniVersion)

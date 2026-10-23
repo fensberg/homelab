@@ -1,10 +1,12 @@
 package repo
 
 import (
-	"regexp"
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/hclsyntax"
 )
 
 // Every machine this estate builds lands in a pool named for what it is for.
@@ -25,46 +27,44 @@ import (
 // renamed still has to iterate something, and that something still has to be
 // placed in a pool.
 
-// forEachCollections returns the collection each resource of the given type
-// iterates, keyed by resource name.
-//
-// `toset(...)` is unwrapped because it is a type conversion rather than a
-// different collection: `toset(local.all_vm_hypervisors)` and
-// `local.all_vm_hypervisors` name the same machines, and treating them as
-// different would fail on a change that altered nothing.
-func forEachCollections(t *testing.T, body, resourceType string) map[string]string {
+// forEachCollections is each resource of a type that is made once per member
+// of a collection, by its name, and the collection it iterates: the
+// reference its for_each names, with toset looked through. A resource made
+// once is left out; the caller handles it if it matters.
+func forEachCollections(t *testing.T, resourceType string) map[string]string {
 	t.Helper()
-	block := regexp.MustCompile(`(?s)resource\s+"` + regexp.QuoteMeta(resourceType) + `"\s+"([A-Za-z0-9_]+)"\s*\{(.*?)\n\}`)
-	forEach := regexp.MustCompile(`(?m)^\s*for_each\s*=\s*(.+?)\s*$`)
-	unwrap := regexp.MustCompile(`^toset\((.*)\)$`)
-
+	tree := repository(t)
 	out := map[string]string{}
-	for _, m := range block.FindAllStringSubmatch(body, -1) {
-		name, inner := m[1], m[2]
-		fe := forEach.FindStringSubmatch(inner)
-		if fe == nil {
-			continue // A singleton. Handled by the caller if it matters.
+	for _, b := range tree.Blocks(t, "resource", resourceType) {
+		forEach, ok := b.Body.Attributes["for_each"]
+		if !ok {
+			continue
 		}
-		expr := strings.TrimSpace(fe[1])
-		if u := unwrap.FindStringSubmatch(expr); u != nil {
-			expr = strings.TrimSpace(u[1])
+		expr := forEach.Expr
+		for {
+			call, ok := expr.(*hclsyntax.FunctionCallExpr)
+			if !ok || call.Name != "toset" || len(call.Args) != 1 {
+				break
+			}
+			expr = call.Args[0]
 		}
-		out[name] = expr
+		if ref, ok := expr.(*hclsyntax.ScopeTraversalExpr); ok {
+			out[b.Labels[1]] = traversalName(ref.Traversal)
+		} else {
+			out[b.Labels[1]] = tree.Source(t, expr)
+		}
 	}
 	return out
 }
 
 func TestEveryMachineClassIsAssignedAPool(t *testing.T) {
-	_, compute := tofuDeclaring(t, declMachines)
-	_, pools := tofuDeclaring(t, declPools)
-
-	machines := forEachCollections(t, compute, "proxmox_virtual_environment_vm")
+	machines := forEachCollections(t, "proxmox_virtual_environment_vm")
 	if len(machines) == 0 {
-		t.Fatal("found no proxmox_virtual_environment_vm resources with a for_each in modules/infrastructure/cluster/compute.tf, so this test asserts nothing")
+		t.Fatal("found no proxmox_virtual_environment_vm resource with a for_each, so this test asserts nothing")
 	}
 
 	placed := map[string]bool{}
-	for _, collection := range forEachCollections(t, pools, "proxmox_pool_membership") {
+	for _, collection := range forEachCollections(t, "proxmox_pool_membership") {
 		placed[collection] = true
 	}
 	if len(placed) == 0 {
@@ -103,19 +103,26 @@ it just quietly stops being true of everything.`,
 // machines into this estate's pool, silently. The config supports several
 // sites by design, so the collision is expressible rather than theoretical.
 func TestPoolIdsAreScopedToTheSite(t *testing.T) {
-	_, pools := tofuDeclaring(t, declPools)
-
-	ids := regexp.MustCompile(`(?m)^\s*pool_id\s*=\s*"([^"]*)"`).FindAllStringSubmatch(pools, -1)
+	tree := repository(t)
+	var ids []hclsyntax.Expression
+	_ = hclsyntax.VisitAll(tofuFile(t, declaring(t, declPools).File).Body, func(n hclsyntax.Node) hcl.Diagnostics {
+		if a, ok := n.(*hclsyntax.Attribute); ok && a.Name == "pool_id" {
+			if _, written := a.Expr.(*hclsyntax.TemplateExpr); written {
+				ids = append(ids, a.Expr)
+			}
+		}
+		return nil
+	})
 	if len(ids) == 0 {
-		t.Fatal("no literal pool_id assignment found in modules/infrastructure/cluster/pools.tf, so its scoping has not been checked")
+		t.Fatal("no pool_id written as a string was found where the pools are declared, so its scoping has not been checked")
 	}
 	for _, id := range ids {
-		if !strings.Contains(id[1], "local.site_name") {
+		if !refersTo(id, "local.site_name") {
 			t.Errorf(`a pool id is %q, which does not include the site.
 
 Pools are datacenter-scoped, so an unprefixed id collides the moment two sites
 share a Proxmox cluster - and Proxmox answers a collision by adopting the other
-estate's machines into this pool rather than by failing.`, id[1])
+estate's machines into this pool rather than by failing.`, tree.Source(t, id))
 		}
 	}
 }

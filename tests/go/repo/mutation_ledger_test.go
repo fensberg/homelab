@@ -137,7 +137,7 @@ func readLedger(t *testing.T) ledger {
 	return l
 }
 
-// The inner runs set repoRootEnv. Everything in this file shells out to the
+// An inner run is the harness's own (parsed.Inner). Everything in this file shells out to the
 // test binary, so without this the runner would run itself, recursively,
 // once per entry.
 func skipIfInner(t *testing.T) {
