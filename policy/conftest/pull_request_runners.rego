@@ -41,19 +41,10 @@ management_pool := name if {
 
 hosted := `^(ubuntu|windows|macos)-[a-z0-9.-]+$`
 
-# The one expression a job's runner may be written as: a pull-request pool by
-# night and GitHub's runner otherwise (tests/go/harness RunnersOf).
-nightly := `^\$\{\{\s*github\.event_name\s*==\s*'schedule'\s*&&\s*format\('(pr-[a-z]+)-\{0\}',\s*vars\.pull_request_runners_site\)\s*\|\|\s*'([A-Za-z0-9.-]+)'\s*\}\}$`
-
-runners(runs_on) := [sprintf("%s-${{ vars.pull_request_runners_site }}", [m[1]]), m[2]] if {
-	is_string(runs_on)
-	some m in regex.find_all_string_submatch_n(nightly, runs_on, 1)
-}
-
-runners(runs_on) := [runs_on] if {
-	is_string(runs_on)
-	not regex.match(nightly, runs_on)
-}
+# A runner is read as it is written: one name, or each name of a list. An
+# expression names no runner this can vet, and is refused as one
+# (tests/go/harness RunnersOf).
+runners(runs_on) := [runs_on] if is_string(runs_on)
 
 runners(runs_on) := [label | some l in runs_on; label := as_label(l)] if is_array(runs_on)
 

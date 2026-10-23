@@ -1709,9 +1709,9 @@ work:
     kind: cannot-wait
     takes: 1m
 
-  # The heavy lanes, on the pools by night only (the nightly form in
-  # pr-validation.yml). Each takes what it took on GitHub's runners on
-  # 2026-10-15, rounded up; the nights say what they take on the pools.
+  # The heavy lanes, on the pools since #800. Each says what it took on
+  # GitHub's runners on 2026-10-15, rounded up, until tests/go/api reads what
+  # it takes on the pools and says where the two have parted.
 
   - job: pr-validation.yml/validate
     kind: cannot-wait
