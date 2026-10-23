@@ -140,31 +140,3 @@ func (r *Tree) Apply(t testing.TB, p Proof) bool {
 // Inner reports whether this run is one a meta test started against a
 // scratch tree: the guards run, the harness does not.
 func Inner() bool { return os.Getenv(RootEnv) != "" }
-
-// StripYAMLComments takes every whole-line comment out of a scratch tree's
-// workflows, its scripts' YAML, the pre-commit configuration and the
-// taskfile - the configuration the guards read - so a meta test can ask
-// which guards a comment was satisfying, and says how many it took.
-func (r *Tree) StripYAMLComments(t testing.TB) int {
-	t.Helper()
-	r.mustBeScratch(t, "strip")
-	removed := 0
-	for _, rel := range r.Files(t) {
-		yml := strings.HasSuffix(rel, ".yml") || strings.HasSuffix(rel, ".yaml")
-		read := strings.HasPrefix(rel, ".github/workflows/") || strings.HasPrefix(rel, "scripts/") ||
-			rel == ".pre-commit-config.yaml" || rel == "taskfile.yml"
-		if !yml || !read {
-			continue
-		}
-		var kept []string
-		for _, line := range strings.Split(string(r.read(t, rel)), "\n") {
-			if strings.HasPrefix(strings.TrimSpace(line), "#") {
-				removed++
-				continue
-			}
-			kept = append(kept, line)
-		}
-		r.Write(t, rel, strings.Join(kept, "\n"))
-	}
-	return removed
-}

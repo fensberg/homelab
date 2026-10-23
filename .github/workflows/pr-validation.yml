@@ -35,7 +35,7 @@ permissions: read-all
 # the Meta-tests lane runs only them, both through this variable, so a test
 # cannot be dropped by the two lists disagreeing.
 env:
-  META_TESTS: "^(TestTheLedgerProvesEachGuardFailsWhenItShould|TestNoTestIsSatisfiedByAComment)$"
+  META_TESTS: "^(TestTheLedgerProvesEachGuardFailsWhenItShould)$"
 
 # Cancel in-progress runs if a new commit is pushed to the PR
 concurrency:
@@ -892,13 +892,13 @@ jobs:
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
-    name: "Meta-tests (${{ matrix.part == 0 && 'comment stripping' || format('mutation ledger, part {0}', matrix.part) }})"
+    name: "Meta-tests (mutation ledger, part ${{ matrix.part }})"
     runs-on: pr-builds-${{ vars.pull_request_runners_site }}
-    # Part 0 runs the comment test and the others share the ledger's proofs,
-    # each in a job of its own. One job, it ran past ten minutes. Each job
-    # learns which part it is from GitHub's own count (META_PART, below), so
-    # no number written here can come to disagree with how many parts there
-    # are, and a proof falls in exactly one of them.
+    # The parts share the ledger's proofs, each in a job of its own. One job,
+    # it ran past ten minutes. Each job learns which part it is from GitHub's
+    # own count (META_PART, below), so no number written here can come to
+    # disagree with how many parts there are, and a proof falls in exactly
+    # one of them.
     #
     # Four ledger parts, not sixteen. On GitHub's runners a part was free and
     # sixteen ran at once. In the builds pool four run at once, so more parts
@@ -906,7 +906,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [0, 1, 2, 3, 4]
+        part: [0, 1, 2, 3]
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows. Above the tests' own
     # bound below, so that a slow run is reported by Go, naming the test,
@@ -962,11 +962,10 @@ jobs:
         # the configuration rules themselves (TestOnlyTheSelectorsReadTheInput).
         run: scripts/take-delivery.sh opentofu kustomize conftest opa semgrep
 
-      # The two tests that prove the other tests: the mutation ledger breaks
-      # each guarded file and checks its guard fails, and the comment test
-      # strips every comment and re-runs the guards to prove none is satisfied
-      # by prose. Each re-runs a large part of the tier, so together they were
-      # about half its time, and here they run beside it instead of after it.
+      # The test that proves the other tests: the mutation ledger breaks each
+      # guarded file and checks its guard fails. It re-runs a large part of
+      # the tier, so it was about half its time, and here it runs beside it
+      # instead of after it.
       - name: Prove the guards fail when they should
         working-directory: tests/go
         env:

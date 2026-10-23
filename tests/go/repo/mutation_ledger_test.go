@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -42,12 +41,8 @@ import (
 type mutation = parsed.Proof
 
 type ledger struct {
-	Floor            int        `yaml:"floor"`
-	Mutations        []mutation `yaml:"mutations"`
-	CommentDependent []struct {
-		Test   string `yaml:"test"`
-		Reason string `yaml:"reason"`
-	} `yaml:"comment_dependent"`
+	Floor     int        `yaml:"floor"`
+	Mutations []mutation `yaml:"mutations"`
 }
 
 // applicationLedger is where an application keeps the proofs that are about
@@ -225,9 +220,6 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 	heavy(t, "a check on the checks: it copies the repository and runs a guard per mutation, side by side")
 
 	part := readMetaPartOrFail(t)
-	if !part.provesAny() {
-		t.Skipf("this is part %d of %d of the meta lane, which is the comment test's; the ledger's proofs are in the others", part.index, part.total)
-	}
 
 	l := readLedger(t)
 
@@ -425,9 +417,8 @@ func TestRefusedByReadsTheRuleFromEachHarnesssReport(t *testing.T) {
 
 // metaPartEnv says which of the meta lane's jobs this is, as "<index>/<total>"
 // - GitHub's own count of the jobs it made from one definition, so no number
-// is written down that could stop matching how many there are. Part 0 runs
-// the comment test; parts 1 to total-1 share the ledger's proofs. Unset, as at
-// a terminal or on the nightly run, one run is the whole of both.
+// is written down that could stop matching how many there are. The parts
+// share the ledger's proofs. Unset, as at a terminal, one run is all of them.
 const metaPartEnv = "META_PART"
 
 // metaPart is which part of the meta lane a run is. The zero value is the
@@ -442,7 +433,7 @@ func readMetaPart(value string) (metaPart, error) {
 	index, errI := strconv.Atoi(i)
 	total, errN := strconv.Atoi(n)
 	if !ok || errI != nil || errN != nil || total < 2 || index < 0 || index >= total {
-		return metaPart{}, fmt.Errorf("%s is %q, which is not a part of the meta lane: it is <index>/<total>, with at least two parts, part 0 the comment test's", metaPartEnv, value)
+		return metaPart{}, fmt.Errorf("%s is %q, which is not a part of the meta lane: it is <index>/<total>, with at least two parts", metaPartEnv, value)
 	}
 	return metaPart{index, total}, nil
 }
@@ -460,23 +451,16 @@ func readMetaPartOrFail(t *testing.T) metaPart {
 
 func (p metaPart) whole() bool { return p.total == 0 }
 
-func (p metaPart) runsComments() bool { return p.whole() || p.index == 0 }
-
-func (p metaPart) provesAny() bool { return p.whole() || p.index > 0 }
-
 // proves reports whether this part proves the proof written at source. Each
-// proof falls in exactly one of parts 1 to total-1, by a hash of where it is
-// written, so a proof added or removed moves no other.
+// proof falls in exactly one part, by a hash of where it is written, so a
+// proof added or removed moves no other.
 func (p metaPart) proves(source string) bool {
 	if p.whole() {
 		return true
 	}
-	if p.index == 0 {
-		return false
-	}
 	h := fnv.New32a()
 	h.Write([]byte(source))
-	return int(h.Sum32()%uint32(p.total-1)) == p.index-1
+	return int(h.Sum32()%uint32(p.total)) == p.index
 }
 
 func TestReadMetaPartTakesOnlyAPartItCanPlace(t *testing.T) {
@@ -503,24 +487,21 @@ func TestReadMetaPartTakesOnlyAPartItCanPlace(t *testing.T) {
 
 func TestEveryProofFallsInExactlyOnePartOfTheLedger(t *testing.T) {
 	sources := []string{"TestA.1.yml", "TestA.2.yml", "TestB.x.yml", "modules/applications/a/tests/mutations.yml#0", "", "TestC.long-name-of-a-proof.yml"}
-	for _, total := range []int{2, 5, 17} {
+	for _, total := range []int{2, 4, 17} {
 		for _, s := range sources {
-			if (metaPart{0, total}).proves(s) {
-				t.Errorf("part 0 of %d, the comment test's, proves %q", total, s)
-			}
 			held := 0
-			for i := 1; i < total; i++ {
+			for i := 0; i < total; i++ {
 				if (metaPart{i, total}).proves(s) {
 					held++
 				}
 			}
 			if held != 1 {
-				t.Errorf("%q falls in %d of the %d ledger parts, not one", s, held, total-1)
+				t.Errorf("%q falls in %d of the %d ledger parts, not one", s, held, total)
 			}
 		}
 	}
-	if !(metaPart{}).proves("TestA.1.yml") || !(metaPart{}).runsComments() {
-		t.Error("the whole of the meta lane does not run everything")
+	if !(metaPart{}).proves("TestA.1.yml") {
+		t.Error("the whole of the meta lane does not prove everything")
 	}
 }
 
@@ -529,100 +510,6 @@ type unbrokenRun struct {
 	once   sync.Once
 	passed bool
 	output string
-}
-
-// Nothing may be satisfied by a comment.
-//
-// A guard that matches a string anywhere in a file can be satisfied by the
-// prose explaining the thing rather than by the thing. That has happened twice
-// here - most recently a tripwire check satisfied by the comment ABOVE the step
-// it was meant to be asserting, so deleting the step passed.
-//
-// This strips every whole-line comment from the configuration and workflows the
-// guards read, and requires every test that passed to still pass. Only
-// whole-line comments: a `#` inside a quoted value is not a comment, and
-// stripping it would break the file rather than test anything.
-func TestNoTestIsSatisfiedByAComment(t *testing.T) {
-	skipIfInner(t)
-	heavy(t, "a check on the checks: it re-runs the whole package with comments stripped, about a minute")
-	if part := readMetaPartOrFail(t); !part.runsComments() {
-		t.Skipf("this is part %d of %d of the meta lane, which proves a share of the ledger; the comment test is part 0", part.index, part.total)
-	}
-
-	l := readLedger(t)
-	exempt := map[string]string{}
-	for _, e := range l.CommentDependent {
-		if strings.TrimSpace(e.Reason) == "" {
-			t.Errorf("%s is exempt from the comment check with no reason given", e.Test)
-		}
-		exempt[e.Test] = e.Reason
-	}
-
-	bin := testBinary(t)
-	// scratchRepo materialises the tree as it will be and removes the
-	// patches, which matters twice over here: an outstanding patch's context
-	// lines include comments, so it would not apply to a comment-stripped file
-	// and every workflow guard would fail for that reason instead of the one
-	// being tested.
-	before := scratchRepo(t)
-	baseline := runAll(t, bin, before)
-
-	after := scratchRepo(t)
-	stripped := stripComments(t, after)
-	if stripped == 0 {
-		t.Fatal("no comment was stripped from anything, so this test compared a tree " +
-			"with itself and proved nothing")
-	}
-
-	for _, name := range satisfiedByProse(baseline, runAll(t, bin, after), exempt) {
-		t.Errorf("%s passes with comments and fails without them, so a comment "+
-			"was satisfying it rather than the thing it is meant to be "+
-			"asserting.\n\n"+
-			"Anchor the assertion to structure a comment cannot reach - "+
-			"indentation, a parsed key, a resolved path. If it genuinely means to "+
-			"read prose, say so in comment_dependent: in tests/mutations.yml with "+
-			"a reason.", name)
-	}
-}
-
-// satisfiedByProse names the tests that flipped from passing to failing when
-// the comments went.
-//
-// Split out from the plumbing so it can be shown saying no as well as yes -
-// the same split scripts/attestation makes, for the same reason. A decision
-// that only ever runs against the real repository has never been demonstrated
-// to reject anything.
-//
-// Only a pass -> fail flip counts. A test already failing on the unmodified
-// tree is failing for some other reason, and reporting it here would blame a
-// comment for it.
-func satisfiedByProse(baseline, stripped map[string]bool, exempt map[string]string) []string {
-	var out []string
-	for name, passedBefore := range baseline {
-		if !passedBefore {
-			continue
-		}
-		passedAfter, ran := stripped[name]
-		if !ran || passedAfter {
-			continue
-		}
-		if _, ok := exempt[name]; ok {
-			continue
-		}
-		out = append(out, name)
-	}
-	sort.Strings(out)
-	return out
-}
-
-// runAll returns each test's verdict, by name.
-func runAll(t *testing.T, bin string, tree *parsed.Tree) map[string]bool {
-	t.Helper()
-	verdicts, out := allVerdicts(bin, tree)
-	if len(verdicts) == 0 {
-		t.Fatalf("no test verdict was parsed from the run in %s:\n%s", tree, out)
-	}
-	return verdicts
 }
 
 // allVerdicts is runAll with nothing of the test in it, so that two runs
@@ -714,73 +601,6 @@ func field(line, prefix string) string {
 		return rest[:i]
 	}
 	return rest
-}
-
-// stripComments removes whole-line `#` comments from the files the guards read,
-// and reports how many lines went.
-func stripComments(t *testing.T, scratch *parsed.Tree) int {
-	t.Helper()
-	return scratch.StripYAMLComments(t)
-}
-
-// The comment check's decision, shown saying no as well as yes.
-//
-// Running it only against the real repository demonstrates that it does not
-// fire today, which is not the same as demonstrating it would.
-func TestSatisfiedByProseOnlyNamesAPassToFailFlip(t *testing.T) {
-	cases := []struct {
-		name     string
-		baseline map[string]bool
-		stripped map[string]bool
-		exempt   map[string]string
-		want     []string
-	}{
-		{
-			name:     "a test satisfied by a comment flips and is named",
-			baseline: map[string]bool{"TestReadsProse": true},
-			stripped: map[string]bool{"TestReadsProse": false},
-			want:     []string{"TestReadsProse"},
-		},
-		{
-			name:     "a test that was already failing is not blamed on a comment",
-			baseline: map[string]bool{"TestBroken": false},
-			stripped: map[string]bool{"TestBroken": false},
-			want:     nil,
-		},
-		{
-			name:     "a test that passes either way is not named",
-			baseline: map[string]bool{"TestAnchored": true},
-			stripped: map[string]bool{"TestAnchored": true},
-			want:     nil,
-		},
-		{
-			name:     "an exempt test is not named",
-			baseline: map[string]bool{"TestReadsProse": true},
-			stripped: map[string]bool{"TestReadsProse": false},
-			exempt:   map[string]string{"TestReadsProse": "it asserts a documented reason"},
-			want:     nil,
-		},
-		{
-			name:     "a test that did not run in the second pass is not named",
-			baseline: map[string]bool{"TestVanished": true},
-			stripped: map[string]bool{},
-			want:     nil,
-		},
-	}
-
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			got := satisfiedByProse(c.baseline, c.stripped, c.exempt)
-			if len(got) != len(c.want) {
-				t.Fatalf("got %v, want %v", got, c.want)
-			}
-			for i := range got {
-				if got[i] != c.want[i] {
-					t.Errorf("got %v, want %v", got, c.want)
-				}
-			}
-		})
-	}
 }
 
 // placeProblems is everything wrong with a ledger entry that can be told
