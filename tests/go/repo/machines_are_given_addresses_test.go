@@ -5,11 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hashicorp/hcl/v2"
-	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
 
 	"homelab/contractor/steps"
+	"homelab/tests/parsed"
 )
 
 // Every machine a site builds is given its address when it is built.
@@ -29,13 +28,10 @@ const machineResource = "proxmox_virtual_environment_vm"
 
 // withoutAnAddress is every machine in the OpenTofu given that is built
 // with no address of its own, by where it is declared.
-func withoutAnAddress(sources map[string]string) (missing []string, machines int, err error) {
-	for path, body := range sources {
-		file, diags := hclsyntax.ParseConfig([]byte(body), path, hcl.InitialPos)
-		if diags.HasErrors() {
-			return nil, 0, diags
-		}
-		for _, block := range file.Body.(*hclsyntax.Body).Blocks {
+func withoutAnAddress(files []parsed.OpenTofuFile) (missing []string, machines int) {
+	for _, file := range files {
+		path := file.Path
+		for _, block := range file.Body.Blocks {
 			if block.Type != "resource" || len(block.Labels) != 2 || block.Labels[0] != machineResource {
 				continue
 			}
@@ -61,14 +57,11 @@ func withoutAnAddress(sources map[string]string) (missing []string, machines int
 		}
 	}
 	sort.Strings(missing)
-	return missing, machines, nil
+	return missing, machines
 }
 
 func TestEveryMachineIsGivenItsAddressWhenItIsBuilt(t *testing.T) {
-	missing, machines, err := withoutAnAddress(tofuSources(t))
-	if err != nil {
-		t.Fatal(err)
-	}
+	missing, machines := withoutAnAddress(repository(t).OpenTofu(t))
 	if machines == 0 {
 		t.Fatalf("no %s that is a machine was found, so this checked nothing", machineResource)
 	}
@@ -102,15 +95,12 @@ resource "proxmox_virtual_environment_vm" "a_template" {
 }
 resource "something_else" "ignored" {}
 `
-	missing, machines, err := withoutAnAddress(map[string]string{"made-up.tf": made})
-	if err != nil || machines != 3 {
-		t.Fatalf("read %d machine(s), %v", machines, err)
+	missing, machines := withoutAnAddress(tofuOf(t, map[string]string{"made-up.tf": made}))
+	if machines != 3 {
+		t.Fatalf("read %d machine(s)", machines)
 	}
 	if got := strings.Join(missing, " "); got != "made-up.tf: proxmox_virtual_environment_vm.bare made-up.tf: proxmox_virtual_environment_vm.told_only_its_resolvers" {
 		t.Errorf("the machines without an address were read as %q", got)
-	}
-	if _, _, err := withoutAnAddress(map[string]string{"broken.tf": `resource "x" {`}); err == nil {
-		t.Error("OpenTofu that does not parse was read as building no machine")
 	}
 }
 
@@ -135,12 +125,9 @@ func TestEveryMachineIsBuiltByAStepBeforeItIsWaitedFor(t *testing.T) {
 		t.Fatal("the phase that builds machines names no address at all, so this checked nothing")
 	}
 	machines := 0
-	for path, body := range tofuSources(t) {
-		file, diags := hclsyntax.ParseConfig([]byte(body), path, hcl.InitialPos)
-		if diags.HasErrors() {
-			t.Fatalf("%s does not parse: %s", path, diags.Error())
-		}
-		for _, block := range file.Body.(*hclsyntax.Body).Blocks {
+	for _, file := range repository(t).OpenTofu(t) {
+		path := file.Path
+		for _, block := range file.Body.Blocks {
 			if block.Type != "resource" || len(block.Labels) != 2 || block.Labels[0] != machineResource {
 				continue
 			}

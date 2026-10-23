@@ -3,10 +3,15 @@ package repo
 import (
 	"go/ast"
 	"go/token"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/hclsyntax"
+	"github.com/zclconf/go-cty/cty"
+
+	"homelab/tests/parsed"
 )
 
 // Every listener the machine configuration opens is dialled by the integration
@@ -38,8 +43,7 @@ import (
 // is being told to listen somewhere other than loopback, and that is the fact
 // both sides have to agree about.
 func TestEveryDeclaredControlPlaneListenerIsDialled(t *testing.T) {
-	_, talos := tofuDeclaring(t, declMachineConfig)
-	declared := declaredListeners(t, talos)
+	declared := declaredListeners(t, repository(t), declMachineConfig)
 	if len(declared) == 0 {
 		t.Fatal(`talos.tf declares no control-plane listener.
 
@@ -78,30 +82,44 @@ made. Remove the entry, or restore the machine-config patch that opened it.`, co
 //
 // Read out of the yamlencode patch rather than from a list here, so a
 // component added to talos.tf is discovered rather than remembered.
-var (
-	extraArgsBlock = regexp.MustCompile(`(?s)(\w+) = \{\s*\n\s*extraArgs = \{(.*?)\n\s*\}`)
-	extraArg       = regexp.MustCompile(`(?m)^\s*([\w-]+)\s*=\s*"([^"]*)"`)
-)
-
-func declaredListeners(t *testing.T, body string) map[string]string {
+// declaredListeners is every component the machine configuration's file
+// tells to listen off the node, and the argument that says so: each object
+// key that holds an extraArgs object is a component, and each of those
+// arguments written out as a string is one it is given.
+func declaredListeners(t *testing.T, tree *parsed.Tree, declaration []string) map[string]string {
 	t.Helper()
+	file := tree.Declaring(t, declaration[0], declaration[1:]...).File
 	out := map[string]string{}
-	for _, block := range extraArgsBlock.FindAllStringSubmatch(body, -1) {
-		component := block[1]
-		for _, arg := range extraArg.FindAllStringSubmatch(block[2], -1) {
-			name, value := arg[1], arg[2]
-			if !opensAListener(name, value) {
-				continue
-			}
-			out[component] = name + " = " + value
+	for _, f := range tree.OpenTofu(t) {
+		if f.Path != file {
+			continue
 		}
+		_ = hclsyntax.VisitAll(f.Body, func(n hclsyntax.Node) hcl.Diagnostics {
+			obj, ok := n.(*hclsyntax.ObjectConsExpr)
+			if !ok {
+				return nil
+			}
+			for _, item := range obj.Items {
+				args, ok := parsed.Key(item.ValueExpr, "extraArgs").(*hclsyntax.ObjectConsExpr)
+				if !ok {
+					continue
+				}
+				for _, arg := range args.Items {
+					v, ok := parsed.Literal(arg.ValueExpr)
+					if !ok || v.IsNull() || v.Type() != cty.String {
+						continue
+					}
+					if name := parsed.KeyName(arg); opensAListener(name, v.AsString()) {
+						out[parsed.KeyName(item)] = name + " = " + v.AsString()
+					}
+				}
+			}
+			return nil
+		})
 	}
 	return out
 }
 
-// opensAListener reports whether an extraArg puts a service on an address
-// something else could reach. An argument bound to loopback is the Talos
-// default being restated and opens nothing.
 func opensAListener(name, value string) bool {
 	isAddress := name == "bind-address" || strings.Contains(name, "listen")
 	if !isAddress {

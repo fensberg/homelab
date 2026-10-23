@@ -683,10 +683,19 @@ in both places and adding a case to that manifest.
 test that opens `management/<root>/talos.tf` or
 `clusters/<somewhere>/thing.yaml` checks that path, and goes on checking it
 after the thing it guards has moved to another root, a module or a site's own
-directory. So a test asks for "the file that declares this" - `tofuDeclaring`
-and `fluxObject` in `tests/go/repo`, `tofufiles.Declaring` in a program's
-test - or reads every file (`tofuSources`). `TestNoTestNamesTheRootItReads`
-refuses a test that names a root's files or a path into the Flux tree.
+directory. So a test asks for "the block that declares this" - the tree's
+`Declaring` and `fluxObject` in `tests/go/repo`, `tofufiles.Declaring` in a
+program's test - or reads every file (the tree's `OpenTofu`).
+`TestNoTestNamesTheRootItReads` refuses a test that names a root's files or a
+path into the Flux tree.
+
+**A guard reads the repository through `tests/go/parsed`, and nothing else.**
+Each kind of file has its parser there - OpenTofu as HCL blocks and
+attributes, YAML, JSON, Go, shell, Markdown - and a guard asks the parser
+rather than reading text. A guard whose subject is what every file says,
+comments included, asks Semgrep (`scanText`). `TestNoGuardReadsAFileAsText`
+refuses any other way in: a root found or built, a relative path, a program
+started outside the tree's `Invoke`.
 
 **A verb is tested whole.** `scripts/contractor/internal/phases/verbs_test.go`
 runs a build, a converge and a teardown through the real phases with `tofu`,

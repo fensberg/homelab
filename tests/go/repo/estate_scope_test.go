@@ -2,12 +2,13 @@ package repo
 
 import (
 	"path/filepath"
-	"regexp"
-	"sort"
 	"strings"
 	"testing"
 
+	"github.com/hashicorp/hcl/v2/hclsyntax"
+
 	"homelab/details/ghapi"
+	"homelab/tests/parsed"
 )
 
 // The estate's objects are declared in the estate's root and nowhere else.
@@ -78,29 +79,35 @@ var estateTypes = map[string]bool{
 
 const estateRoot = "management/estate"
 
-// A `resource` block owns an object, and an `import` block takes one into
-// state; both put it where a destroy reaches it. A `data` block only reads,
-// which is how a site is meant to see the estate.
-var ownedBlock = regexp.MustCompile(`(?m)^resource\s+"([a-z0-9_]+)"|^\s*to\s*=\s*([a-z0-9_]+)\.`)
+// owned is each type a file's blocks own an object of. A `resource` block
+// owns an object, and an `import` block takes one into state; both put it
+// where a destroy reaches it. A `data` block only reads, which is how a site
+// is meant to see the estate.
+func owned(f parsed.OpenTofuFile) []string {
+	var out []string
+	for _, b := range f.Body.Blocks {
+		switch b.Type {
+		case "resource":
+			out = append(out, b.Labels[0])
+		case "import":
+			if to, ok := b.Body.Attributes["to"]; ok {
+				if ref, ok := to.Expr.(*hclsyntax.ScopeTraversalExpr); ok {
+					out = append(out, ref.Traversal.RootName())
+				}
+			}
+		}
+	}
+	return out
+}
 
 func TestEstateObjectsAreDeclaredOnlyInTheEstateRoot(t *testing.T) {
-	// Every OpenTofu file the repository tracks. This walked the disk, and
-	// read a site's pinned copy of the repository as though it were source.
-	sources := tofuSources(t)
-	files := make([]string, 0, len(sources))
-	for rel := range sources {
-		files = append(files, rel)
-	}
-	sort.Strings(files)
-
 	estateDeclares := 0
-	for _, rel := range files {
+	for _, f := range repository(t).OpenTofu(t) {
+		rel := f.Path
 		// The estate root and the modules beneath it: a site's plot is
 		// declared once in management/estate/site and instantiated per site.
 		inEstate := filepath.Dir(rel) == estateRoot || strings.HasPrefix(filepath.Dir(rel), estateRoot+"/")
-		body := sources[rel]
-		for _, m := range ownedBlock.FindAllStringSubmatch(string(body), -1) {
-			typ := m[1] + m[2]
+		for _, typ := range owned(f) {
 			switch {
 			case inEstate && !estateTypes[typ]:
 				t.Errorf("%s declares a %s, which is not listed as the estate's.\n\n"+
@@ -119,7 +126,6 @@ func TestEstateObjectsAreDeclaredOnlyInTheEstateRoot(t *testing.T) {
 		}
 	}
 	if estateDeclares == 0 {
-		t.Fatalf("found no resource in %s, so this checked nothing - the root has moved "+
-			"or the pattern has stopped matching how resources are written", estateRoot)
+		t.Fatalf("found no resource in %s, so this checked nothing - the root has moved", estateRoot)
 	}
 }
