@@ -1,8 +1,9 @@
-guard: TestTheRenderedTalosconfigNamesNodesAndEveryEndpoint
+guard: TestTheConfigurationRulesHold
+rule: plan_talosconfig
 file: modules/infrastructure/cluster/talos.tf
 find: "  nodes                = local.node_ips"
 replace: "  nodes                = []"
-mentions: "nodes"
+mentions: "renders a talosconfig that sets no nodes"
 why: >
   The Talos provider leaves `nodes` empty unless told otherwise, and an
   empty one is not a broken credential - it is a working one on which every

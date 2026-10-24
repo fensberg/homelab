@@ -226,3 +226,5 @@ removed:
     reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/plan_one_machine_list.rego), as TestTheConfigurationRulesHold.EveryKindOfMachineIsConfiguredFromTheOneList.e3fd7885.yml, unchanged in what it breaks (2026-10-23)
   - proof: TestKubernetesIsOnlyInThePlatformRootAndThatRootComesLast.29f4aae2.yml
     reason: moved with its guard to the configuration rules, judged on what tofu init locks (policy/conftest/kubernetes_only_in_the_platform.rego), as TestTheConfigurationRulesHold.KubernetesIsOnlyInThePlatformRootAndThatRootComesLast.29f4aae2.yml, its mutation now the provider lock that a Kubernetes resource beside the machines needs (2026-10-23)
+  - proof: TestTheRenderedTalosconfigNamesNodesAndEveryEndpoint.23de5290.yml
+    reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/plan_talosconfig.rego), as TestTheConfigurationRulesHold.TheRenderedTalosconfigNamesNodesAndEveryEndpoint.23de5290.yml, its mentions moved to the rule's words (2026-10-23)
