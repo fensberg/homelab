@@ -4,6 +4,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"homelab/contractor/config"
@@ -44,10 +45,7 @@ func TestEveryRootPlansFromNothingAndKeysNoResourceByAVaultValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plans, err := PlanUnbuilt(repo, site, "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	plans := plannedFromNothing(t, repo, site)
 	for _, root := range plans {
 		plan, err := root.Plan, root.Err
 		var keyed *asbuilt.VaultKeyError
@@ -80,3 +78,78 @@ func TestEveryRootPlansFromNothingAndKeysNoResourceByAVaultValue(t *testing.T) {
 		}
 	}
 }
+
+// The plans from nothing, made once for every test that reads them: each is
+// seconds of the real providers.
+var (
+	unbuiltOnce  sync.Once
+	unbuiltPlans []Unbuilt
+	unbuiltErr   error
+)
+
+func plannedFromNothing(t *testing.T, repo, site string) []Unbuilt {
+	t.Helper()
+	unbuiltOnce.Do(func() { unbuiltPlans, unbuiltErr = PlanUnbuilt(repo, site, "") })
+	if unbuiltErr != nil {
+		t.Fatal(unbuiltErr)
+	}
+	return unbuiltPlans
+}
+
+// Every machine a site would build is built by a step of its own, in the
+// phase that ends by waiting for every machine to answer.
+//
+// WHY. A converge applies in named steps, each to the addresses it names,
+// and the phase that builds machines ends by waiting for all of them. A
+// kind of machine no step names is left to the catch-all apply of the next
+// phase - so the phase waits five minutes for a machine nothing has built
+// yet, and stops. The first machine of an untrusted zone did that (#733).
+// Read off the plan, so it holds the next kind of machine nobody has
+// thought of yet, wherever it is declared.
+func TestEveryMachineIsBuiltByAStepBeforeItIsWaitedFor(t *testing.T) {
+	if testing.Short() {
+		t.Skip("plans both roots with the real providers, which the full run does")
+	}
+	repo, err := repopath.Root()
+	if err != nil {
+		t.Fatal(err)
+	}
+	built := map[string]bool{}
+	for _, st := range Of("compute") {
+		for _, target := range st.Targets {
+			built[target] = true
+		}
+	}
+	machines := 0
+	for _, root := range plannedFromNothing(t, repo, "site0") {
+		if root.Root != config.ClusterRoot {
+			continue
+		}
+		if root.Err != nil {
+			t.Fatalf("the cluster root does not plan from nothing, so its machines cannot be read: %v", root.Err)
+		}
+		pending, err := asbuilt.Pending(root.Plan)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, kind := range pending {
+			if !strings.HasPrefix(kind, machineResource+".") {
+				continue
+			}
+			machines++
+			named := false
+			for target := range built {
+				named = named || strings.HasSuffix(target, "."+kind)
+			}
+			if !named {
+				t.Errorf("%s is built by no step of the phase that builds machines. That phase ends by waiting for every machine the site has, so it would wait for this one before anything had made it. Name it in a step.", kind)
+			}
+		}
+	}
+	if machines == 0 {
+		t.Fatalf("the plan would build no %s, so this checked nothing", machineResource)
+	}
+}
+
+// machineResource is what the hypervisor's provider is asked to make.
+const machineResource = "proxmox_virtual_environment_vm"
