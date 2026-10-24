@@ -64,6 +64,20 @@ plan_configuration contains [f.path, address, r] if {
 	address := concat(".", array.concat(calls, [r.address]))
 }
 
+# provider_locks is every provider a lock file locks, as [path, source]:
+# what `tofu init` writes beside a root or a module to say which providers
+# it was initialised with and the hashes they must match. A lock file is
+# found by what it is - providers, each with its hashes - and not by its
+# name.
+provider_locks contains [f.path, source] if {
+	some f in input
+	is_object(f.contents)
+	is_object(f.contents.provider)
+	some source, locked in f.contents.provider
+	some each in locked
+	is_array(each.hashes)
+}
+
 # dockerfiles is every Dockerfile, as Conftest reads one: its instructions in
 # order, each with the stage it is in.
 dockerfiles contains f if {

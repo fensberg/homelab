@@ -13,6 +13,11 @@ import (
 	"homelab/details/platform"
 )
 
+// unbuiltWork begins the name of each plan's own workspace, at the top of
+// the checkout, which git ignores; its copy of the platform is
+// .unreleased with the same ending.
+const unbuiltWork = ".as-built-unbuilt"
+
 // Unbuilt is one root's plan from nothing: the plan as `tofu show -json`
 // writes it, or why the root would not plan.
 type Unbuilt struct {
@@ -20,12 +25,6 @@ type Unbuilt struct {
 	Plan []byte
 	Err  error
 }
-
-// unbuiltWork is where the plans are made: beside the Record phase's own
-// workspace, never in it, because a run on this machine may be using that.
-// One level below the top of the repository, as a root is two, so the copy
-// of a root made inside it reaches the unreleased platform as the root would.
-const unbuiltWork = ".as-built-unbuilt"
 
 // PlanUnbuilt plans each of a site's roots from nothing, as the first build
 // would apply it, step by step as the converge walks them: the real
@@ -60,18 +59,27 @@ func PlanUnbuilt(repo, site, providers string) ([]Unbuilt, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listing the tracked files: %w", err)
 	}
-	unreleased, err := platform.PlaceUnreleased(repo, strings.Split(strings.TrimRight(string(tracked), "\x00"), "\x00"))
+	// Each plan's own copy of the platform and its own workspace, under names
+	// of its own at the top of the checkout: what a plan reads must not be
+	// pulled away by anything else using the checkout's, and a test of
+	// another package does. The copy of a root is made two directories below
+	// the top, as the root is, so its references up the tree still resolve.
+	work, err := os.MkdirTemp(repo, unbuiltWork+"-")
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = os.RemoveAll(unreleased) }()
+	defer func() { _ = os.RemoveAll(work) }()
+	unreleased := platform.Unreleased + "-" + filepath.Base(work)[len(unbuiltWork)+1:]
+	if _, err := platform.PlaceUnreleasedAs(repo, strings.Split(strings.TrimRight(string(tracked), "\x00"), "\x00"), unreleased); err != nil {
+		return nil, err
+	}
+	defer func() { _ = os.RemoveAll(filepath.Join(repo, unreleased)) }()
 	records, err := os.MkdirTemp("", "unbuilt-record-")
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = os.RemoveAll(records) }()
 
-	work := filepath.Join(repo, unbuiltWork)
 	var out []Unbuilt
 	for _, root := range []string{config.ClusterRoot, config.PlatformRoot} {
 		dir := filepath.Join(repo, "management", root)
@@ -105,14 +113,14 @@ func PlanUnbuilt(repo, site, providers string) ([]Unbuilt, error) {
 		}
 		// From the copy of the root the plan is made in, which is two
 		// directories down from the top of the repository as the root is.
-		in.Vars[strings.TrimPrefix(platform.UnreleasedVariable, "TF_VAR_")] = "../../" + platform.Unreleased
+		in.Vars[strings.TrimPrefix(platform.UnreleasedVariable, "TF_VAR_")] = "../../" + unreleased
 		plan, _, err := asbuilt.PlanAgainst(in, asbuilt.Exec)
 		if err == nil && kept != "" && in.PluginDir == "" {
-			if err := os.CopyFS(kept, os.DirFS(filepath.Join(work, "plan", ".terraform", "providers"))); err != nil {
+			if err := os.CopyFS(kept, os.DirFS(filepath.Join(in.Work, "plan", ".terraform", "providers"))); err != nil {
 				return nil, fmt.Errorf("keeping the %s root's providers: %w", root, err)
 			}
 		}
-		_ = os.RemoveAll(work)
+		_ = os.RemoveAll(in.Work)
 		out = append(out, Unbuilt{Root: root, Plan: plan, Err: err})
 	}
 	return out, nil

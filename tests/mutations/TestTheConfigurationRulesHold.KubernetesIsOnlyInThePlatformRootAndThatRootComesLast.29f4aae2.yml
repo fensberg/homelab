@@ -1,0 +1,14 @@
+guard: TestTheConfigurationRulesHold
+rule: kubernetes_only_in_the_platform
+file: management/cluster/.terraform.lock.hcl
+find: "provider \"registry.opentofu.org/bpg/proxmox\" {\n"
+replace: "provider \"registry.opentofu.org/hashicorp/kubernetes\" {\n  version     = \"2.38.0\"\n  constraints = \"~> 2.35\"\n  hashes = [\n    \"h1:3VVgWmwdwXFT54fjrplnq+N4+4LZ3ZeLHAlr/0jhPiA=\",\n  ]\n}\n\nprovider \"registry.opentofu.org/bpg/proxmox\" {\n"
+mentions: "locks both the hypervisor's provider and Kubernetes's"
+why: >
+  A kubernetes resource in the root that builds the machines is planned
+  before the API server is serving, so the apply dies with connection
+  refused and an ignition tears the estate back down; and on a teardown the
+  destroy waits on a dying cluster to delete it, and destroys nothing. Both
+  happened. The split into two roots is what stops them, and only for
+  resources that are in the right one. A root initialised to talk to
+  Kubernetes locks its provider, which is the shape this breaks.

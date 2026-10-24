@@ -130,3 +130,14 @@ logic:
       A prefix match answers yes for talos_cp when asked about talos_cp[0].
       Those are different objects, and the answer decides whether a replacement
       is forced.
+
+  - decision: Converge, the order of a site's two roots
+    file: steps/steps.go
+    find: '{Root: config.ClusterRoot, Phase: "cluster", Label: "cluster", Say: "finishing the cluster: its network, and every node Ready"},'
+    replace: '{Root: config.ClusterRoot, Phase: "cluster", Label: "cluster", Say: "finishing the cluster: its network, and every node Ready", Targets: []string{Bootstrap}},'
+    must_fail: TestThePlatformRootComesAfterTheClusterIsReady
+    why: >
+      Only the cluster root's untargeted apply includes the health read that
+      waits for every node to be Ready. Targeted, the converge goes on to the
+      platform root with nothing having waited, and the platform's resources
+      are planned against an API server still pulling its static pods.

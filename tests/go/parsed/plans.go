@@ -23,7 +23,10 @@ import (
 // root, made with the real providers and a stand-in for every value the
 // vault supplies (steps.PlanUnbuilt). The sites are the ones the config
 // template declares. A root that does not plan fails the test: a rule over
-// a plan that was never made would judge nothing and pass.
+// a plan that was never made would judge nothing and pass. It fails it and
+// goes on, with the plans that were made: a change that stops a root
+// planning is often one a rule over the files refuses by name, and a plan
+// that failed must not be what hides that.
 //
 // A plan takes seconds, and the mutation ledger judges a copy of the tree
 // for each of its proofs, most of which change nothing a plan is made from.
@@ -45,14 +48,17 @@ func (r *Tree) UnbuiltPlans(t testing.TB) []string {
 	for _, site := range sites {
 		kept, err := r.keptPlans(t, site)
 		if err != nil {
-			t.Fatal(err)
+			t.Errorf("planning %s from nothing: %v", site, err)
+			continue
 		}
 		for _, root := range kept {
 			if root.Err != nil {
-				t.Fatalf("the %s root of %s does not plan from nothing, so no rule over its plan can be judged: %v", root.Root, site, root.Err)
+				t.Errorf("the %s root of %s does not plan from nothing, so no rule over its plan can be judged: %v", root.Root, site, root.Err)
+				continue
 			}
 			if len(root.Plan) == 0 {
-				t.Fatalf("the %s root of %s planned to nothing, so no rule over its plan can be judged", root.Root, site)
+				t.Errorf("the %s root of %s planned to nothing, so no rule over its plan can be judged", root.Root, site)
+				continue
 			}
 			file := filepath.Join(out, site+"-"+root.Root+".plan.json")
 			if err := os.WriteFile(file, root.Plan, 0o600); err != nil {

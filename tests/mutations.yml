@@ -266,10 +266,6 @@ unprovable:
     reason: table
   - test: TestSiteRootProblemsHoldsTheRootsToTheContractors
     reason: table
-  - test: TestKubernetesOutsideThePlatformIsRefused
-    reason: table
-  - test: TestStepOrderProblemsRefusesThePlatformBeforeTheClusterIsReady
-    reason: table
   # The reader behind TestEveryConcurrencyGroupNamesWhatSupersedesIt, which
   # its own ledger entry proves. Its table holds each way to share a group.
   - test: TestAPoolsPolicyIsHeldToItsListAndItsRunnersToNothingOfTheClusters

@@ -295,11 +295,18 @@ const Unreleased = ".unreleased"
 // module that reads a file the release does not hold fails in the check and
 // not at the first site to run it. What was there before is replaced whole.
 func PlaceUnreleased(repoRoot string, tracked []string) (string, error) {
+	return PlaceUnreleasedAs(repoRoot, tracked, Unreleased)
+}
+
+// PlaceUnreleasedAs makes the same tree under another name at the top of
+// the checkout: one plan's own, which nothing else using the checkout's can
+// pull away mid-plan.
+func PlaceUnreleasedAs(repoRoot string, tracked []string, name string) (string, error) {
 	files, err := Files(repoRoot, tracked)
 	if err != nil {
 		return "", err
 	}
-	target := filepath.Join(repoRoot, Unreleased)
+	target := filepath.Join(repoRoot, name)
 	if err := os.RemoveAll(target); err != nil {
 		return "", err
 	}

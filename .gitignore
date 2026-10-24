@@ -140,10 +140,12 @@ scripts/survey/survey
 # throwaway CA. Removed by the phase and by Sterilize.
 /.as-built/
 /.as-built-unbuilt/
+/.as-built-unbuilt-*/
 
 # What a release of the platform would hold from this checkout, placed by the
 # check that plans a change to a module before it is released.
 /.unreleased/
+/.unreleased-*/
 modules/**/.terraform.lock.hcl
 
 # Which standing things the estate takes as its own, written by the lawyer
