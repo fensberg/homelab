@@ -276,8 +276,6 @@ unprovable:
     reason: table
   - test: TestTheLocalTableRuleIsJudgedByThePlaceItIsAddedAt
     reason: table
-  - test: TestAConfigurationThatDrawsOnTheListIsToldFromOneThatDoesNot
-    reason: table
   - test: TestADedicationIsWorkedOutAndAHalfOfOneIsSeen
     reason: table
   - test: TestAGroupOfRunnersIsAWallOnlyWhileItNamesWhatItAdmits

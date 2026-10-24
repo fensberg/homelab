@@ -1,4 +1,5 @@
-guard: TestEveryZoneResourceIsKeyedOffItsMachines
+guard: TestTheConfigurationRulesHold
+rule: plan_zone_off_switch
 file: modules/infrastructure/cluster/compute.tf
 find: "resource \"proxmox_download_file\" \"dmz_disk_image\" {\n  for_each = toset(local.dmz_hypervisors)"
 replace: "resource \"proxmox_download_file\" \"dmz_disk_image\" {\n  for_each = toset(local.all_vm_hypervisors)"

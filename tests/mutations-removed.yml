@@ -220,3 +220,7 @@ removed:
     reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/plan_cluster_network.rego), as TestTheConfigurationRulesHold.EveryMachineIsToldTheClustersNetwork.e398290e.yml, its mentions moved to the rule's words (2026-10-23)
   - proof: TestATalosImagePathCarriesItsSchematic.c052f831.yml
     reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/plan_image_schematic.rego), as TestTheConfigurationRulesHold.ATalosImagePathCarriesItsSchematic.c052f831.yml, its mentions moved to the rule's words (2026-10-23)
+  - proof: TestEveryZoneResourceIsKeyedOffItsMachines.860890bf.yml
+    reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/plan_zone_off_switch.rego), as TestTheConfigurationRulesHold.EveryZoneResourceIsKeyedOffItsMachines.860890bf.yml, unchanged in what it breaks (2026-10-23)
+  - proof: TestEveryKindOfMachineIsConfiguredFromTheOneList.e3fd7885.yml
+    reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/plan_one_machine_list.rego), as TestTheConfigurationRulesHold.EveryKindOfMachineIsConfiguredFromTheOneList.e3fd7885.yml, unchanged in what it breaks (2026-10-23)

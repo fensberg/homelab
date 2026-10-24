@@ -1,4 +1,5 @@
-guard: TestEveryKindOfMachineIsConfiguredFromTheOneList
+guard: TestTheConfigurationRulesHold
+rule: plan_one_machine_list
 file: modules/infrastructure/cluster/talos.tf
 find: "  # cluster's network as every machine's kubelet needs it (#578).\n  config_patches = concat([local.cluster_network_patch], local.machine_patches[each.key])"
 replace: "  # cluster's network as every machine's kubelet needs it (#578).\n  config_patches = concat([local.cluster_network_patch], local.dmz_dedication_patches[each.key])"

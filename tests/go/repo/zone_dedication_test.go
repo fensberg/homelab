@@ -1,12 +1,13 @@
 package repo
 
 import (
-	"homelab/details/capacity"
 	"testing"
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
+
+	"homelab/details/capacity"
 )
 
 // A zone's machine carries its zone twice: as a taint, which keeps other
@@ -113,79 +114,5 @@ func TestADedicationIsWorkedOutAndAHalfOfOneIsSeen(t *testing.T) {
 		if (problem != "") != c.problem || got.taint != c.taint || got.labels["kept"] != c.label {
 			t.Errorf("%s: got %+v, %q", name, got, problem)
 		}
-	}
-}
-
-// Every kind of machine is configured from the one list of what a machine
-// is given.
-//
-// WHY. A zone's machine was configured from a list of its own, written
-// beside the one the others use. What a machine needs was then added to
-// that one - a hostname, a place for volumes, the labels that say where it
-// is - and never to the zone's, because nothing said there were two. The
-// first zone's machine built would have joined nameless and with nowhere
-// to keep anything. One list cannot part from itself.
-//
-// EVERY KIND, wherever it is declared: each configuration the operating
-// system's provider is asked to generate, not the kinds there were when
-// this was written.
-func TestEveryKindOfMachineIsConfiguredFromTheOneList(t *testing.T) {
-	const generated, theList = "talos_machine_configuration", "machine_patches"
-	kinds := 0
-	for _, file := range repository(t).OpenTofu(t) {
-		path := file.Path
-		for _, block := range file.Body.Blocks {
-			if block.Type != "data" || len(block.Labels) != 2 || block.Labels[0] != generated {
-				continue
-			}
-			kinds++
-			if !drawsOn(block.Body.Attributes["config_patches"], theList) {
-				t.Errorf("%s: %s.%s is not configured from local.%s. A kind of machine with a list of its own is given whatever that list had the day it was written, and none of what every machine has been given since.", path, generated, block.Labels[1], theList)
-			}
-		}
-	}
-	if kinds == 0 {
-		t.Fatalf("no %s was found, so this checked nothing", generated)
-	}
-}
-
-// drawsOn reports whether an attribute's value is worked out from the local
-// named.
-func drawsOn(attr *hclsyntax.Attribute, local string) bool {
-	if attr == nil {
-		return false
-	}
-	for _, ref := range attr.Expr.Variables() {
-		if ref.RootName() != "local" || len(ref) < 2 {
-			continue
-		}
-		if name, is := ref[1].(hcl.TraverseAttr); is && name.Name == local {
-			return true
-		}
-	}
-	return false
-}
-
-// The reading, on configurations made up here.
-func TestAConfigurationThatDrawsOnTheListIsToldFromOneThatDoesNot(t *testing.T) {
-	for name, c := range map[string]struct {
-		written string
-		want    bool
-	}{
-		"the list":            {`x = concat([local.other], local.the_list[each.key])`, true},
-		"a list of its own":   {`x = concat([local.other], local.its_own[each.key])`, false},
-		"written out":         {`x = ["a", "b"]`, false},
-		"a variable so named": {`x = var.the_list`, false},
-	} {
-		file, diags := hclsyntax.ParseConfig([]byte(c.written), "made-up.tf", hcl.InitialPos)
-		if diags.HasErrors() {
-			t.Fatalf("%s: %s", name, diags.Error())
-		}
-		if got := drawsOn(file.Body.(*hclsyntax.Body).Attributes["x"], "the_list"); got != c.want {
-			t.Errorf("%s: got %v", name, got)
-		}
-	}
-	if drawsOn(nil, "the_list") {
-		t.Error("a configuration with no patches at all was read as drawing on the list")
 	}
 }
