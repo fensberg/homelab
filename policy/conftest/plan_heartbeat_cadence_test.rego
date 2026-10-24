@@ -1,21 +1,23 @@
-package rules.heartbeat_cadence_test
+package rules.plan_heartbeat_cadence_test
 
-import data.rules.heartbeat_cadence
+import data.rules.plan_heartbeat_cadence
 import rego.v1
 
 stack(route) := {"path": "clusters/k.yaml", "contents": {"kind": "HelmRelease", "metadata": {"name": "kube-prometheus-stack"}, "spec": {"values": {"alertmanager": {"config": {"route": {"receiver": "null", "routes": [{"receiver": "other"}, route]}}}}}}}
 
-watchman(n) := {"path": "management/estate/watchman/watchman.tf", "contents": {"locals": [{"looks_every_minutes": n}]}}
+schedule(cron) := {"path": "estate.plan.json", "contents": {"planned_values": {"root_module": {"child_modules": [{"resources": [{"address": "module.watchman.cloudflare_workers_cron_trigger.watchman", "type": "cloudflare_workers_cron_trigger", "values": {"schedules": [{"cron": cron}]}}]}]}}}}
+
+watchman(n) := schedule(sprintf("*/%d * * * *", [n]))
 
 route(group, repeat) := {"receiver": "watchman", "group_interval": group, "repeat_interval": repeat}
 
 denies(i, words) if {
-	some msg in heartbeat_cadence.deny with input as i
+	some msg in plan_heartbeat_cadence.deny with input as i
 	contains(msg, words)
 }
 
 test_a_repeat_just_short_of_two_looks_rings_on_the_second if {
-	count(heartbeat_cadence.deny) == 0 with input as [stack(route("5m", "9m")), watchman(10)]
+	count(plan_heartbeat_cadence.deny) == 0 with input as [stack(route("5m", "9m")), watchman(10)]
 }
 
 test_a_repeat_of_exactly_two_looks_is_refused if {
@@ -35,10 +37,10 @@ test_no_route_to_the_watchman_is_refused if {
 	denies([stack({"receiver": "other"}), watchman(10)], "sends nothing to the watchman")
 }
 
-test_a_cadence_that_is_not_a_number_is_refused if {
-	denies([stack(route("5m", "9m")), watchman("${var.x}")], "not a plain number of minutes")
+test_a_schedule_not_of_every_so_many_minutes_is_refused if {
+	denies([stack(route("5m", "9m")), schedule("0 * * * *")], "which is not looked round every so many minutes")
 }
 
-test_no_cadence_is_refused if {
-	denies([stack(route("5m", "9m"))], "0 places say how often")
+test_no_schedule_is_refused if {
+	denies([stack(route("5m", "9m"))], "is looked round on 0 schedules")
 }

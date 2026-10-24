@@ -13,7 +13,7 @@
 # repeat_interval has passed. So the ring goes out on the first look at or
 # after the repeat - and a repeat that is exactly some number of looks is
 # refused, because a look landing a moment early waits a whole look more.
-package rules.heartbeat_cadence
+package rules.plan_heartbeat_cadence
 
 import data.lib
 import rego.v1
@@ -28,10 +28,19 @@ routes contains [f.path, r] if {
 	r.receiver == receiver
 }
 
-declared contains [f.path, n] if {
-	some f in lib.opentofu
-	some block in object.get(f.contents, "locals", [])
-	n := block.looks_every_minutes
+# schedules is every schedule the watchman is looked round on, as the
+# estate's plan would set it, by its trigger.
+schedules contains [r.address, s.cron] if {
+	some [_, r] in lib.plan
+	r.type == "cloudflare_workers_cron_trigger"
+	some s in object.get(r.values, "schedules", [])
+}
+
+# declared is how often the watchman looks round, in minutes: a schedule
+# of every so many minutes.
+declared contains [address, to_number(n)] if {
+	some [address, cron] in schedules
+	[_, n] := regex.find_all_string_submatch_n(`^\*/(\d+) \* \* \* \*$`, cron, 1)[0]
 }
 
 minutes(written) := to_number(trim_suffix(written, "m")) if regex.match(`^\d+m$`, written)
@@ -57,14 +66,14 @@ deny contains msg if {
 }
 
 deny contains msg if {
-	count(declared) != 1
-	msg := sprintf("%d places say how often the %s looks round as looks_every_minutes, and it is one fact", [count(declared), receiver])
+	count(schedules) != 1
+	msg := sprintf("the %s is looked round on %d schedules in the estate's plan, and how often it looks is one fact", [receiver, count(schedules)])
 }
 
 deny contains msg if {
-	some [_, n] in declared
-	not is_number(n)
-	msg := sprintf("looks_every_minutes is %v, not a plain number of minutes, so how often the %s looks round cannot be read", [n, receiver])
+	some [address, cron] in schedules
+	not address in {a | some [a, _] in declared}
+	msg := sprintf("%s looks the %s round on %q, which is not looked round every so many minutes, so how often it looks cannot be read", [address, receiver, cron])
 }
 
 deny contains msg if {
