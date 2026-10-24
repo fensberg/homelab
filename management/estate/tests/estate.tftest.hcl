@@ -427,7 +427,7 @@ run "the_estate_reads_its_own_organisation_and_repository" {
     error_message = "the organisation and the repository were not read out of the address the sites reconcile from"
   }
   assert {
-    condition     = data.github_collaborators.estate.repository == "homelab" && data.github_organization.estate.name == "example"
+    condition     = data.github_collaborators.estate[0].repository == "homelab" && data.github_organization.estate[0].name == "example"
     error_message = "the estate did not ask about its own repository and its own organisation"
   }
 }
@@ -557,4 +557,24 @@ run "a_source_control_this_does_not_implement_is_refused" {
   }
 
   expect_failures = [output.source_control]
+}
+
+# Planned offline, as the rule harness plans it from nothing with no
+# credential: nothing of either vendor is read, and every read stands in.
+run "an_offline_plan_reads_nothing_of_the_vendors" {
+  command = plan
+
+  variables {
+    offline = true
+  }
+
+  assert {
+    condition = (
+      length(data.cloudflare_zone.estate) + length(data.cloudflare_account_api_token_permission_groups_list.zone_read) +
+      length(data.cloudflare_account_api_token_permission_groups_list.dns_write) + length(data.cloudflare_account_api_token_permission_groups_list.r2_bucket_write) +
+      length(data.cloudflare_account_api_token_permission_groups_list.r2_bucket_read) + length(data.github_organization.estate) +
+      length(data.github_collaborators.estate) + length(data.github_repository.estate)
+    ) == 0
+    error_message = "an offline plan read something of a vendor's, so it needs a credential and the rule harness cannot make it"
+  }
 }

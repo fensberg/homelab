@@ -20,10 +20,15 @@
 provider "github" {
   owner = local.source_control_owner
 
-  app_auth {
-    id              = local.source_control.app_id
-    installation_id = local.source_control.installation_id
-    pem_file        = base64decode(local.source_control.private_key)
+  # Not when planned offline: signing in asks GitHub for a token, and an
+  # offline plan holds no credential and asks nothing.
+  dynamic "app_auth" {
+    for_each = var.offline ? [] : [local.source_control]
+    content {
+      id              = app_auth.value.app_id
+      installation_id = app_auth.value.installation_id
+      pem_file        = base64decode(app_auth.value.private_key)
+    }
   }
 }
 
@@ -37,12 +42,16 @@ locals {
 }
 
 data "github_organization" "estate" {
+  count = var.offline ? 0 : 1
+
   name = local.source_control_owner
 }
 
 # Everybody with a way into the repository that is their own and not a
 # team's or the organisation's.
 data "github_collaborators" "estate" {
+  count = var.offline ? 0 : 1
+
   owner      = local.source_control_owner
   repository = local.source_control_repository
 }
@@ -53,13 +62,15 @@ module "repository" {
   for_each = toset([local.source_control_repository])
 
   name           = each.key
-  default_branch = data.github_repository.estate.default_branch
+  default_branch = local.read.default_branch
 
   pull_request_runners_site = local.source_control.pull_request_runners_site
   delivers_unreviewed       = tonumber(local.source_control.procurement_app_id)
 }
 
 data "github_repository" "estate" {
+  count = var.offline ? 0 : 1
+
   full_name = "${local.source_control_owner}/${local.source_control_repository}"
 }
 
@@ -73,10 +84,10 @@ module "runners" {
   source = "./runners"
 
   name         = "homelab"
-  repositories = [data.github_repository.estate.repo_id]
+  repositories = [local.read.repo_id]
   workflows = [
     for workflow in ["converge-estate.yml", "deploy-infrastructure.yml", "integration-tests.yml"] :
-    "${local.source_control_owner}/${local.source_control_repository}/.github/workflows/${workflow}@refs/heads/${data.github_repository.estate.default_branch}"
+    "${local.source_control_owner}/${local.source_control_repository}/.github/workflows/${workflow}@refs/heads/${local.read.default_branch}"
   ]
 }
 
@@ -85,7 +96,7 @@ module "runners" {
 module "pull_request_runners" {
   source = "./pull-request-runners"
 
-  repositories = [data.github_repository.estate.repo_id]
+  repositories = [local.read.repo_id]
 }
 
 # The organisation's own settings: what a member may do for being one.
@@ -132,9 +143,9 @@ resource "github_organization_settings" "estate" {
 output "source_control" {
   description = "What the estate reads of its own organisation and repository, as counts and switches: nobody's name."
   value = {
-    collaborators                   = length(data.github_collaborators.estate.collaborator)
-    two_factor_is_required          = data.github_organization.estate.two_factor_requirement_enabled
-    members_may_create_repositories = data.github_organization.estate.members_can_create_repositories
+    collaborators                   = local.read.collaborators
+    two_factor_is_required          = local.read.two_factor_is_required
+    members_may_create_repositories = local.read.members_may_create_repositories
   }
 
   precondition {
