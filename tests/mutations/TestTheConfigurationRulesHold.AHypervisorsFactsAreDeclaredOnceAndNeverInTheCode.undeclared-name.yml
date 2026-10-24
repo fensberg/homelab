@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_placements_not_written
+file: modules/infrastructure/cluster/compute.tf
+find: "  datastore_id = local.datastores[each.value].images\n  node_name    = local.hostnames[each.value]\n  url          = \"https://factory.talos.dev/image/${local.schematic_id}"
+replace: "  datastore_id = \"somewhere-undeclared\"\n  node_name    = local.hostnames[each.value]\n  url          = \"https://factory.talos.dev/image/${local.schematic_id}"
+mentions: "writes its datastore_id as a string"
+why: >
+  A storage name written into the OpenTofu is one no hypervisor's entry in
+  the config declares, so the search for the declared names cannot see it,
+  and the next host that names its storage otherwise means editing code.

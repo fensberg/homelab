@@ -33,7 +33,8 @@ import (
 //     from, in code, comments or tests: a copy in a comment is the one the next
 //     person pastes;
 //   - no OpenTofu `datastore_id` or `bridge` is a quoted string, so a name
-//     that was never declared anywhere cannot be written in either.
+//     that was never declared anywhere cannot be written in either: a rule
+//     over the plan's configuration (policy/conftest/plan_placements_not_written.rego).
 //
 // Documentation and the mutation ledger are not read: prose naming a Proxmox
 // default explains it, and the ledger names what it plants to prove this.
@@ -85,11 +86,6 @@ func TestAHypervisorsFactsAreDeclaredOnceAndNeverInTheCode(t *testing.T) {
 	}
 
 	found := hypervisorFactsIn(t, tree, files, names)
-	for _, f := range tree.OpenTofu(t) {
-		if !declarations[f.Path] {
-			found = append(found, placementsWritten(f)...)
-		}
-	}
 	sort.Strings(found)
 	for _, f := range found {
 		t.Error(f)
@@ -177,23 +173,6 @@ func hypervisorFactsIn(t *testing.T, tree *parsed.Tree, files, names []string) [
 	return out
 }
 
-// placementsWritten is each Proxmox storage or network an OpenTofu file
-// writes as a string, where it should read one from a declaration.
-func placementsWritten(f parsed.OpenTofuFile) []string {
-	var out []string
-	_ = hclsyntax.VisitAll(f.Body, func(n hclsyntax.Node) hcl.Diagnostics {
-		a, ok := n.(*hclsyntax.Attribute)
-		if !ok || (a.Name != "datastore_id" && a.Name != "bridge") {
-			return nil
-		}
-		if _, written := a.Expr.(*hclsyntax.TemplateExpr); written {
-			out = append(out, fmt.Sprintf("%s:%d writes a Proxmox storage or network as a quoted string. Read it from the hypervisor node's datastores or the address plan.", f.Path, a.SrcRange.Start.Line))
-		}
-		return nil
-	})
-	return out
-}
-
 func TestHypervisorFactsInCatchesEachWayToWriteOne(t *testing.T) {
 	heavy(t, "semgrep reads the fixture's files")
 	names := []string{"tank-images", "vnetx"}
@@ -204,19 +183,12 @@ func TestHypervisorFactsInCatchesEachWayToWriteOne(t *testing.T) {
 		{"a Go string", "a.go", "package a\n\nconst p = \"tank-images:iso/talos-\"\n", true},
 		{"a comment", "a.tf", "# lives in tank-images\n", true},
 		{"a playbook value", "a.yml", "sdn_vnet: vnetx\n", true},
-		{"a quoted datastore never declared", "a.tf", "resource \"x\" \"y\" {\n  datastore_id = \"other\"\n}\n", true},
-		{"a quoted bridge", "a.tf", "resource \"x\" \"y\" {\n  network_device {\n    bridge = \"vmbr9\"\n  }\n}\n", true},
 		{"a longer name is another name", "a.go", "package a\n\nconst p = \"tank-images-old\"\n", false},
-		{"read from the declaration", "a.tf", "resource \"x\" \"y\" {\n  datastore_id = local.datastores[each.value].images\n}\n", false},
-		{"a quoted datastore outside OpenTofu is the first check's", "a.yml", "datastore_id: other\n", false},
 	} {
 		tree := parsed.Empty(t)
 		tree.Write(t, c.rel, c.body)
 		tree.Index(t)
 		found := hypervisorFactsIn(t, tree, []string{c.rel}, names)
-		for _, f := range tree.OpenTofu(t) {
-			found = append(found, placementsWritten(f)...)
-		}
 		if got := len(found) > 0; got != c.want {
 			t.Errorf("%s: found=%v, want %v: %v", c.name, got, c.want, found)
 		}
