@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: allowed_actions
+rule: plan_allowed_actions
 file: management/estate/repository/workflows.tf
 find: '"pnpm/action-setup@*",'
 replace: '"pnpm/action-set-up@*",'

@@ -1,20 +1,19 @@
 # Every action a workflow uses is one the repository's own settings allow.
 #
-# The repository is told, in OpenTofu, which actions may run at all: a list,
+# The repository is told, in the estate's OpenTofu, which actions may run at
+# all - judged on the estate's plan, as it would be applied: a list,
 # at a commit, from no publisher merely because the platform verified it.
 # Each setting is held to being that wall, and every action a workflow or
 # shared action uses is held to getting through it - so a new action is a
 # change to the settings, reviewed, before a workflow can run it.
-package rules.allowed_actions
+package rules.plan_allowed_actions
 
 import data.lib
 import rego.v1
 
-settings contains [where, s] if {
-	some f in lib.opentofu
-	some name, blocks in object.get(object.get(f.contents, "resource", {}), "github_actions_repository_permissions", {})
-	some s in blocks
-	where := sprintf("%s: github_actions_repository_permissions.%s", [f.path, name])
+settings contains [r.address, r.values] if {
+	some [_, r] in lib.plan
+	r.type == "github_actions_repository_permissions"
 }
 
 config(s) := object.get(s, "allowed_actions_config", [{}])[0]
@@ -46,7 +45,7 @@ deny contains msg if {
 
 deny contains msg if {
 	count(settings) == 0
-	msg := "no github_actions_repository_permissions is declared anywhere, so nothing says what a workflow may run"
+	msg := "no github_actions_repository_permissions is in any plan, so nothing says what a workflow may run"
 }
 
 deny contains msg if {
