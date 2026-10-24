@@ -6,7 +6,9 @@
 # is Ready". Read anywhere but beside the machines, nothing waits for the
 # nodes before the platform is put on them.
 #
-# WHAT IT DEPENDS ON. It is scoped to the nodes the config asks for, which is
+# WHAT IT DEPENDS ON: the machines, and the CNI that makes them Ready.
+#
+# The machines. It is scoped to the nodes the config asks for, which is
 # fully known at plan time. Without a dependency on the VMs, a plan that
 # changes the machine count reads against addresses with no machine behind
 # them, waits, and times out after ten minutes producing nothing; the same
@@ -16,6 +18,13 @@
 # changes, so depending on the VMs is what makes this a gate rather than an
 # obstruction.
 #
+# The CNI. Talos is configured with no built-in CNI, so no node reaches Ready
+# until Cilium is applied. Without that edge the gate starts first and waits
+# its full ten-minute timeout before failing, blaming the cluster rather than
+# the missing dependency: an ignition that appears to hang, ten minutes from
+# the phase that was at fault. It is one line, and deleting it is the kind of
+# tidy-up that looks harmless in a diff.
+#
 # ON THE PLAN'S CONFIGURATION: a plan made from nothing is made offline and
 # reads no health, so the gate is judged as it is declared.
 package rules.plan_health_gate
@@ -24,6 +33,8 @@ import data.lib
 import rego.v1
 
 machines := "proxmox_virtual_environment_vm.talos_cp"
+
+cni := "terraform_data.cilium"
 
 gates contains [path, address, r] if {
 	some [path, address, r] in lib.plan_configuration
@@ -51,4 +62,10 @@ deny contains msg if {
 	some [_, address, r] in gates
 	not machines in object.get(r, "depends_on", [])
 	msg := sprintf("%s does not depend on %s. Without it the read happens at plan time against nodes the config asks for but that do not exist, so a plan that changes the machine count times out after ten minutes and a destroy does the same. See #117.", [address, machines])
+}
+
+deny contains msg if {
+	some [_, address, r] in gates
+	not cni in object.get(r, "depends_on", [])
+	msg := sprintf("%s does not depend on %s. Talos is configured with no built-in CNI, so no node reaches Ready until Cilium is applied: without this edge the gate starts first and waits its full ten-minute timeout before failing, blaming the cluster rather than the missing dependency.", [address, cni])
 }

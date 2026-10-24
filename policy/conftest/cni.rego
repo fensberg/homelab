@@ -1,34 +1,10 @@
-# The CNI: what the cluster's pod network is made of, and the edges that
-# hold its install in order.
-#
-# Nothing may ask whether the cluster is healthy before the CNI is installed.
-#
-# A node with no CNI never reaches Ready. `data.talos_cluster_health` waits for
-# every node to be Ready and is given a ten-minute timeout, so removing this
-# dependency does not produce an error - it produces an ignition that appears
-# to hang, ten minutes from the phase that was actually at fault.
-#
-# This is the single edge holding the sequence together: bootstrap, apply the
-# CNI, nodes go Ready, gate passes. It is one line, and deleting it is the kind
-# of tidy-up that looks harmless in a diff.
+# The CNI: what the cluster's pod network is made of. That the cluster's
+# health is not asked before the CNI is applied is the health gate's
+# (policy/conftest/plan_health_gate.rego).
 package rules.cni
 
 import data.lib
 import rego.v1
-
-apply := "terraform_data.cilium"
-
-gates contains [f.path, name, block] if {
-	some f in lib.opentofu
-	some name, blocks in object.get(object.get(f.contents, "data", {}), "talos_cluster_health", {})
-	some block in blocks
-}
-
-deny contains msg if {
-	some [path, name, block] in gates
-	not sprintf("${%s}", [apply]) in object.get(block, "depends_on", [])
-	msg := sprintf("%s: the health gate does not depend on %s. Talos is configured with no built-in CNI, so no node reaches Ready until Cilium is applied. Without this edge the gate starts first and waits its full ten-minute timeout before failing, blaming the cluster rather than the missing dependency. Add %s to its depends_on.", [path, apply, apply])
-}
 
 # Every node gets an agent, including one that is tainted.
 #

@@ -15,7 +15,7 @@ denies(i, words) if {
 }
 
 test_a_gate_on_the_machines_beside_them_passes if {
-	count(plan_health_gate.deny) == 0 with input as [configured("c.plan.json", [vm, gate(["talos_cluster_kubeconfig.this", "proxmox_virtual_environment_vm.talos_cp"])])]
+	count(plan_health_gate.deny) == 0 with input as [configured("c.plan.json", [vm, gate(["talos_cluster_kubeconfig.this", "proxmox_virtual_environment_vm.talos_cp", "terraform_data.cilium"])])]
 }
 
 test_a_gate_not_on_the_machines_is_refused if {
@@ -23,9 +23,13 @@ test_a_gate_not_on_the_machines_is_refused if {
 }
 
 test_a_gate_in_a_root_without_machines_is_refused if {
-	denies([configured("c.plan.json", [vm]), configured("p.plan.json", [gate(["proxmox_virtual_environment_vm.talos_cp"])])], "is read by a root that builds no machines")
+	denies([configured("c.plan.json", [vm]), configured("p.plan.json", [gate(["proxmox_virtual_environment_vm.talos_cp", "terraform_data.cilium"])])], "is read by a root that builds no machines")
 }
 
 test_no_gate_is_refused if {
 	denies([configured("c.plan.json", [vm])], "no gate to depend on the machines")
+}
+
+test_a_gate_not_on_the_cni_is_refused if {
+	denies([configured("c.plan.json", [vm, gate(["proxmox_virtual_environment_vm.talos_cp"])])], "does not depend on terraform_data.cilium")
 }
