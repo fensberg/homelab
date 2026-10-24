@@ -139,7 +139,7 @@ resource "proxmox_virtual_environment_pool" "templates" {
 # how machines end up orphaned.
 #
 # It failed exactly that way twice in one session before the edges were added.
-# policy/conftest/pools.rego refuses the shorter spelling now.
+# policy/conftest/plan_pool_destroy_order.rego refuses the shorter spelling now.
 
 resource "proxmox_pool_membership" "control_plane" {
   for_each = local.control_plane
