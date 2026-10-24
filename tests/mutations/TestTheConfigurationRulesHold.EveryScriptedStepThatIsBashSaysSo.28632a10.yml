@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: scripted_steps
+rule: plan_scripted_steps
 file: modules/infrastructure/cluster/cilium.tf
 find: 'interpreter = ["/bin/bash", "-c"]'
 replace: 'interpreter = ["/bin/sh", "-c"]'

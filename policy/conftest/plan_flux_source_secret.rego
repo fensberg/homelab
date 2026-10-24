@@ -22,7 +22,9 @@
 # Flux is installed here by OpenTofu applying the manifests directly, which
 # creates no such secret. An assumption about another tool's side effects,
 # written as a reference.
-package rules.flux_source_secret
+# SECRETS ARE READ OFF THE PLAN: each a plan of a site's roots would make,
+# by the name OpenTofu works out for it.
+package rules.plan_flux_source_secret
 
 import data.lib
 import rego.v1
@@ -42,11 +44,13 @@ named contains [f.path, ref.name] if {
 	is_string(ref.name)
 }
 
+# created is the name of every secret a plan of a site's roots would make,
+# each instance of each, as OpenTofu works it out: a secret named in a loop
+# is read by its name too.
 created contains name if {
-	some f in lib.opentofu
-	some _, blocks in object.get(object.get(f.contents, "resource", {}), "kubernetes_secret", {})
-	some block in blocks
-	some m in block.metadata
+	some [_, r] in lib.plan
+	r.type == "kubernetes_secret"
+	some m in object.get(r.values, "metadata", [])
 	is_string(m.name)
 	name := m.name
 }
@@ -59,7 +63,7 @@ deny contains msg if {
 
 deny contains msg if {
 	count(created) == 0
-	msg := "no kubernetes_secret was found in any OpenTofu file, so every secret a Flux source names would look uncreated - or, with none named, this would pass having checked nothing"
+	msg := "no kubernetes_secret was found in any plan, so every secret a Flux source names would look uncreated - or, with none named, this would pass having checked nothing"
 }
 
 deny contains msg if {
