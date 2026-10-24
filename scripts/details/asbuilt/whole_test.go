@@ -21,7 +21,7 @@ func (f *wholeTofu) run(dir string, env []string, args ...string) ([]byte, []byt
 	f.env = env
 	switch args[0] {
 	case "init":
-		if err := os.MkdirAll(filepath.Join(dir, ".terraform", "providers", "registry.opentofu.org"), 0o700); err != nil {
+		if err := os.MkdirAll(filepath.Join(dir, ".terraform", "providers", "registry.example"), 0o700); err != nil {
 			return nil, nil, err
 		}
 	case "show":
