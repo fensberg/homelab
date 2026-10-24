@@ -65,6 +65,8 @@ func wholeRoot(t *testing.T) (in WholeInputs) {
 // among them, a local backend over its own, and a config with a stand-in
 // for every vault value and the template's literals kept.
 func TestARootIsPlannedWholeWithAStandInForEveryVaultValue(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "a-token-of-the-machines")
+	t.Setenv("GH_CONFIG_DIR", "/where/the/machine/is/signed/in")
 	in := wholeRoot(t)
 	f := &wholeTofu{}
 	if _, err := PlanWhole(in, f.run); err != nil {
@@ -91,6 +93,12 @@ func TestARootIsPlannedWholeWithAStandInForEveryVaultValue(t *testing.T) {
 	}
 	if !slices.Contains(f.env, "TF_VAR_offline=true") || !slices.Contains(f.env, "TF_VAR_config_path="+filepath.Join(in.Work, wholeConfig)) {
 		t.Errorf("the plan is not made offline from the stand-in config: %v", f.env)
+	}
+	if slices.ContainsFunc(f.env, func(kv string) bool {
+		return strings.HasPrefix(kv, "GITHUB_TOKEN=") || strings.HasPrefix(kv, "GH_TOKEN=")
+	}) ||
+		!slices.Contains(f.env, "GH_CONFIG_DIR="+filepath.Join(in.Work, ".no-sign-in")) {
+		t.Errorf("the plan can sign in to source control: %v", f.env)
 	}
 	var verbs []string
 	for _, a := range f.asked {

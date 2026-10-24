@@ -6,28 +6,24 @@
 # not here, holds every pull request for ever. Nobody may pass the checks
 # by, so the way out of that is converging the estate by hand.
 #
-# FOUND BY WHAT IT IS. The list is whatever is declared as the checks
-# required, wherever it is, and the names are every job of every workflow.
-package rules.required_checks
+# FOUND BY WHAT IT IS. The checks are every one a ruleset in the estate's
+# plan requires, as it would be applied, and the names are every job of
+# every workflow.
+package rules.plan_required_checks
 
 import data.lib
 import rego.v1
 
-declared := "required_checks"
-
-# lists is every list declared under that name in a locals block; one worked
-# out from something else is not a list here, and is not read.
-lists contains [f.path, list] if {
-	some f in lib.opentofu
-	some block in object.get(f.contents, "locals", [])
-	list := block[declared]
-	is_array(list)
-}
-
-checks contains c if {
-	some [_, list] in lists
-	some c in list
-	is_string(c)
+# checks is every check a ruleset holds a merge to, as the estate's plan
+# would apply it: each required check's name, in every ruleset of every
+# repository.
+checks contains c.context if {
+	some [_, r] in lib.plan
+	r.type == "github_repository_ruleset"
+	some rule in object.get(r.values, "rules", [])
+	some required in object.get(rule, "required_status_checks", [])
+	some c in object.get(required, "required_check", [])
+	is_string(c.context)
 }
 
 reported contains object.get(job, "name", name) if {
@@ -36,7 +32,7 @@ reported contains object.get(job, "name", name) if {
 
 deny contains msg if {
 	count(checks) == 0
-	msg := sprintf("nothing declares %s, so nothing here says which checks a merge is held to", [declared])
+	msg := "no ruleset in any plan holds a merge to a check, so nothing here says which checks a merge is held to"
 }
 
 deny contains msg if {

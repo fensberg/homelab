@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // WholeInputs is a root planned whole and from nothing: every file under it,
@@ -81,7 +82,7 @@ func PlanWhole(in WholeInputs, tofu Tofu) ([]byte, error) {
 			kept = ""
 		}
 	}
-	env := OfflineEnv(os.Environ(), "", configPath)
+	env := withoutSignIns(OfflineEnv(os.Environ(), "", configPath), in.Work)
 	if _, stderr, err := tofu(in.Work, env, init...); err != nil {
 		return nil, fmt.Errorf("initialising the plan (%v):\n%s", err, ErrorSummary(stderr))
 	}
@@ -105,4 +106,22 @@ func PlanWhole(in WholeInputs, tofu Tofu) ([]byte, error) {
 		return nil, &VaultKeyError{Keyed: keyed}
 	}
 	return plan, nil
+}
+
+// withoutSignIns is an environment with no way to sign in to source
+// control: no token in a variable, and the GitHub CLI's configuration an
+// empty directory. The GitHub provider falls back to whatever the CLI is
+// signed in as, so a plan from nothing on a machine signed in would ask
+// GitHub about a stand-in organisation with that machine's token, and fail
+// or pass by whose machine it is.
+func withoutSignIns(env []string, work string) []string {
+	out := make([]string, 0, len(env)+1)
+	for _, kv := range env {
+		name, _, _ := strings.Cut(kv, "=")
+		if name == "GITHUB_TOKEN" || name == "GH_TOKEN" || name == "GH_CONFIG_DIR" {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return append(out, "GH_CONFIG_DIR="+filepath.Join(work, ".no-sign-in"))
 }
