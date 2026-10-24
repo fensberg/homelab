@@ -26,7 +26,7 @@ hooks(repos) := {"path": ".pre-commit-config.yaml", "contents": {"repos": repos}
 
 hook := {"repo": "https://github.com/pre-commit/pre-commit-hooks", "rev": "v6.0.0"}
 
-tf(source) := {"path": "management/p/versions.tf", "contents": {"terraform": [{"required_providers": [{"kubernetes": {"source": source}}]}], "module": {"m": [{"source": "./parts"}]}}}
+tf(source) := {"path": "management/p/.terraform.lock.hcl", "contents": {"provider": {sprintf("registry.opentofu.org/%s", [source]): [{"version": "2.38.0", "hashes": ["h1:x"]}]}}}
 
 good := [list({}), own, deployment(pinned), source("https://charts.example.org"), workflow("github.com:443\n"), hooks([hook, {"repo": "local"}]), tf("hashicorp/kubernetes")]
 
@@ -102,7 +102,7 @@ test_a_moving_rev_is_refused if {
 }
 
 test_an_undeclared_provider_is_refused if {
-	denies(array.concat(good, [tf("evilcorp/kubernetes")]), `requires the provider "evilcorp/kubernetes"`)
+	denies(array.concat(good, [tf("evilcorp/kubernetes")]), `locks the provider "evilcorp/kubernetes"`)
 }
 
 test_an_approved_provider_nobody_requires_is_refused if {

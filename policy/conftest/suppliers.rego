@@ -293,16 +293,15 @@ deny contains msg if {
 # the other stops the list keeping an entry for a provider nobody uses, which
 # is how an approval outlives the thing it approved.
 
-# A provider is found by the source it is required from, wherever it is
-# required; a local module's "./x" and a registry module's three parts are
-# not one.
-required contains [f.path, source] if {
-	some f in lib.opentofu
-	walk(f.contents, [path, source])
-	count(path) > 0
-	path[count(path) - 1] == "source"
-	is_string(source)
-	regex.match(`^[a-zA-Z0-9_-][a-zA-Z0-9._-]*/[a-zA-Z0-9._-]+$`, source)
+# A provider is found by what tofu init locked for a root or a module: the
+# providers it was initialised with, by source, the registry's host left
+# off as the approved list writes them. A source changed in the HCL and not
+# in the lock does not initialise, so the plans refuse it; changed in both,
+# it is here.
+required contains [path, short] if {
+	some [path, source] in lib.provider_locks
+	parts := split(source, "/")
+	short := concat("/", array.slice(parts, 1, count(parts)))
 }
 
 approved_providers := {p.source | some p in object.get(list, "providers", [])}
@@ -320,18 +319,18 @@ deny contains msg if {
 
 deny contains msg if {
 	count(required) == 0
-	msg := "no providers found in any .tf file, so this rule proves nothing"
+	msg := "no provider is locked by any root or module, so this rule proves nothing"
 }
 
 deny contains msg if {
 	some source in {s | some [_, s] in required}
 	not source in approved_providers
 	first := min({p | some [p, s] in required; s == source})
-	msg := sprintf("%s requires the provider %q, which is not an approved supplier. A provider runs with this estate's credentials, so taking delivery from a new party is a decision rather than a line of HCL. Declare it in scripts/approved-suppliers.yml with a reason, in its own pull request.", [first, source])
+	msg := sprintf("%s locks the provider %q, which is not an approved supplier. A provider runs with this estate's credentials, so taking delivery from a new party is a decision rather than a line of HCL. Declare it in scripts/approved-suppliers.yml with a reason, in its own pull request.", [first, source])
 }
 
 deny contains msg if {
 	some source in approved_providers
 	not source in {s | some [_, s] in required}
-	msg := sprintf("scripts/approved-suppliers.yml approves the provider %q and no .tf file requires it. Remove the entry - an approval that outlives the thing it approved is how a supplier list stops describing what the estate actually takes.", [source])
+	msg := sprintf("scripts/approved-suppliers.yml approves the provider %q and no provider lock locks it. Remove the entry - an approval that outlives the thing it approved is how a supplier list stops describing what the estate actually takes.", [source])
 }
