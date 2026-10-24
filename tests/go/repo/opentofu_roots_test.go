@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"path"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 
@@ -32,7 +31,7 @@ import (
 func TestEveryOpenTofuRootIsSeenByWhatMustSeeARoot(t *testing.T) {
 	tree := repository(t)
 	files := tree.Files(t)
-	roots := openTofuRoots(tree.OpenTofu(t))
+	roots := parsed.OpenTofuRoots(tree.OpenTofu(t))
 	if len(roots) < 3 {
 		t.Fatalf("found %d OpenTofu root(s) (%v), and this estate has at least three, so the enumeration has stopped matching", len(roots), roots)
 	}
@@ -54,23 +53,6 @@ func TestEveryOpenTofuRootIsSeenByWhatMustSeeARoot(t *testing.T) {
 // estateRootDir is the one root that is not a site's: the lawyer runs it, with
 // the estate's credentials, and the contractor never does.
 const estateRootDir = "management/estate"
-
-// openTofuRoots is every directory whose OpenTofu declares a provider, which
-// is what makes a directory a root rather than a module.
-func openTofuRoots(files []parsed.OpenTofuFile) []string {
-	dirs := map[string]bool{}
-	for _, f := range files {
-		if slices.ContainsFunc(f.Body.Blocks, func(b *hclsyntax.Block) bool { return b.Type == "provider" }) {
-			dirs[path.Dir(f.Path)] = true
-		}
-	}
-	out := make([]string, 0, len(dirs))
-	for d := range dirs {
-		out = append(out, d)
-	}
-	sort.Strings(out)
-	return out
-}
 
 // rootSightings is everything that has to know a root exists, each as its
 // own parser reads it.
@@ -274,7 +256,7 @@ func TestRootSightingsNamesEachThingThatCannotSeeARoot(t *testing.T) {
 	if got := whole.problems(r); len(got) != 0 {
 		t.Fatalf("a root everything sees was refused: %v", got)
 	}
-	if got := openTofuRoots(whole.tofu); !slices.Equal(got, []string{r}) {
+	if got := parsed.OpenTofuRoots(whole.tofu); !slices.Equal(got, []string{r}) {
 		t.Errorf("roots are %v", got)
 	}
 	for name, tc := range map[string]struct {

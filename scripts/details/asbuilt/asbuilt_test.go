@@ -106,6 +106,26 @@ func TestAURLWithoutASchemeIsOpaque(t *testing.T) {
 	}
 }
 
+// A field the vault has not filled in yet - a plan from nothing reads only the
+// template's reference - stands in with the shape code takes apart: a url as
+// an owner and a name below a host, a token at its length, an id as a number.
+func TestAFieldNotYetFilledInStandsInWithItsShape(t *testing.T) {
+	f := mustFingerprinter(t, 1)
+	got := f.Field("url", "{{ op://vault/item/url }}")
+	parts := strings.Split(got, "/")
+	if !strings.HasPrefix(got, "https://") || len(parts) != 5 || !strings.HasSuffix(parts[2], ".invalid") || parts[3] == "" || parts[4] == "" {
+		t.Errorf("got %q", got)
+	}
+	if token := f.Field("api_token", "{{ op://vault/item/api_token }}"); len(token) != 40 {
+		t.Errorf("the api token stand-in is %d characters, and Cloudflare takes forty", len(token))
+	}
+	for _, field := range []string{"procurement_app_id"} {
+		if id := f.Field(field, "{{ op://vault/item/"+field+" }}"); len(id) != 8 || strings.Trim(id, "0123456789") != "" || id[0] == '0' {
+			t.Errorf("the %s stand-in is %q, which is not a number", field, id)
+		}
+	}
+}
+
 // Only what the template says the vault filled in is replaced. A literal in
 // the template is public, and a vendor attestation is compared by
 // preconditions, so both are kept.

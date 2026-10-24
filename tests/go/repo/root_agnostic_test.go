@@ -50,7 +50,7 @@ import (
 func TestNoTestNamesTheRootItReads(t *testing.T) {
 	tree := repository(t)
 	tofu := tree.OpenTofu(t)
-	roots := openTofuRoots(tofu)
+	roots := parsed.OpenTofuRoots(tofu)
 	if len(roots) < 3 {
 		t.Fatalf("found %d OpenTofu root(s), so the enumeration has stopped matching", len(roots))
 	}

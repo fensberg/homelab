@@ -7,15 +7,19 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
 	"syscall"
 	"testing"
 
+	"github.com/zclconf/go-cty/cty"
+
 	"homelab/contractor/config"
 	"homelab/contractor/steps"
 	"homelab/details/applications"
+	"homelab/details/asbuilt"
 )
 
 // UnbuiltPlans is every site's roots planned from nothing, as files a policy
@@ -67,7 +71,127 @@ func (r *Tree) UnbuiltPlans(t testing.TB) []string {
 			files = append(files, file)
 		}
 	}
+	return append(files, r.wholePlans(t, out)...)
+}
+
+// wholePlans is every root that is not a site's, planned whole from nothing
+// (asbuilt.PlanWhole): the estate's, which keeps its modules beside it. A
+// root is found by what it is (OpenTofuRoots), and its config template by
+// what it reads - the default of its config_path, rendered from the template
+// of the same name - so a root added later is planned without being listed,
+// and one with no template to plan from fails.
+func (r *Tree) wholePlans(t testing.TB, out string) []string {
+	t.Helper()
+	site := map[string]bool{}
+	for _, name := range config.Roots {
+		site["management/"+name] = true
+	}
+	tracked := r.Files(t)
+	var files []string
+	for _, root := range OpenTofuRoots(r.OpenTofu(t)) {
+		if site[root] {
+			continue
+		}
+		template, ok := r.templateOf(t, root)
+		if !ok {
+			t.Errorf("%s is a root and not a site's, and declares no config_path whose template it can be planned from, so no rule over its plan can be judged", root)
+			continue
+		}
+		plan, err := r.keptWhole(t, root, template, tracked)
+		if err != nil {
+			t.Errorf("%s does not plan from nothing, so no rule over its plan can be judged: %v", root, err)
+			continue
+		}
+		file := filepath.Join(out, path.Base(root)+".plan.json")
+		if err := os.WriteFile(file, plan, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		files = append(files, file)
+	}
 	return files
+}
+
+// templateOf is the config template a root is filled from: the default of
+// its config_path, the rendered file named for the template it is rendered
+// from.
+func (r *Tree) templateOf(t testing.TB, root string) (string, bool) {
+	t.Helper()
+	for _, b := range r.Blocks(t, "variable", "config_path") {
+		if b.Dir() != root {
+			continue
+		}
+		def, ok := b.Body.Attributes["default"]
+		if !ok {
+			return "", false
+		}
+		v, ok := Literal(def.Expr)
+		if !ok || v.IsNull() || v.Type() != cty.String || !strings.Contains(v.AsString(), ".rendered.") {
+			return "", false
+		}
+		return path.Join(root, strings.Replace(v.AsString(), ".rendered.", ".tpl.", 1)), true
+	}
+	return "", false
+}
+
+// keptWhole is a root's plan from nothing: the one made before from exactly
+// these files, or a new one, made under the same lock as a site's.
+func (r *Tree) keptWhole(t testing.TB, root, template string, tracked []string) ([]byte, error) {
+	key, err := r.planKey(t, path.Base(root))
+	if err != nil {
+		return nil, err
+	}
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return nil, err
+	}
+	plans := filepath.Join(cache, "homelab", "unbuilt-plans")
+	kept := filepath.Join(plans, key, "whole.json")
+	if plan, err := os.ReadFile(kept); err == nil {
+		return plan, nil
+	}
+	if err := os.MkdirAll(plans, 0o700); err != nil {
+		return nil, err
+	}
+	lock, err := os.OpenFile(filepath.Join(plans, "planning.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = lock.Close() }()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		return nil, err
+	}
+	defer func() { _ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) }()
+	if plan, err := os.ReadFile(kept); err == nil {
+		return plan, nil
+	}
+	body, err := os.ReadFile(r.path(template))
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, rel := range tracked {
+		if inner, ok := strings.CutPrefix(rel, root+"/"); ok {
+			files = append(files, inner)
+		}
+	}
+	// The copy two directories below the top, as the root is, in a
+	// workspace of its own that git ignores.
+	top, err := os.MkdirTemp(r.root, ".as-built-unbuilt-")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = os.RemoveAll(top) }()
+	plan, err := asbuilt.PlanWhole(asbuilt.WholeInputs{
+		Root: r.path(root), Files: files, Work: filepath.Join(top, path.Base(root)),
+		Template: body, Providers: filepath.Join(plans, "providers"),
+	}, asbuilt.Exec)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Dir(kept), 0o700); err != nil {
+		return nil, err
+	}
+	return plan, os.WriteFile(kept, plan, 0o600)
 }
 
 // keptPlans is a site's plans: the ones made before from exactly these
