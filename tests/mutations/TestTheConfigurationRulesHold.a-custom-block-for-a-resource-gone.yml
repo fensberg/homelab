@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: custom_blocks
+rule: plan_custom_blocks
 file: tests/custom-blocks.yml
 find: "  - resource: cloudflare_zero_trust_access_policy.members\n"
 replace: "  - resource: cloudflare_zero_trust_access_policy.former_members\n"

@@ -9,40 +9,33 @@
 # tests/custom-blocks.yml.
 #
 # A root is providers, credentials and state; what it builds is a module's,
-# so a second site is the same module called again. Roots are found by what a
-# root is - a directory holding a provider block - so the next one is held to
-# this without being listed. (The Kubernetes and Go halves of the same rule
+# so a second site is the same module called again. Roots are the plans the
+# rule harness makes of every root, each from nothing, and what a root
+# declares itself is what its plan's configuration has outside any module
+# call - so the next root is held to this without being listed. (The Kubernetes and Go halves of the same rule
 # are guards in tests/go/repo.)
-package rules.custom_blocks
+package rules.plan_custom_blocks
 
 import data.lib
 import rego.v1
 
 declarations := "tests/custom-blocks.yml"
 
-dir(path) := concat("/", array.slice(parts, 0, count(parts) - 1)) if parts := split(path, "/")
-
-tofu contains f if {
-	some f in lib.opentofu
+roots contains path if {
+	some [path, _, _] in lib.plan_configuration
 }
 
-roots contains dir(f.path) if {
-	some f in tofu
-	count(object.get(f.contents, "provider", {})) > 0
-}
-
-found contains sprintf("%s.%s", [type, name]) if {
-	some f in tofu
-	dir(f.path) in roots
-	some type, named in object.get(f.contents, "resource", {})
-	some name, _ in named
+found contains address if {
+	some [_, address, r] in lib.plan_configuration
+	r.mode == "managed"
+	not startswith(address, "module.")
 }
 
 declared := [d | some f in lib.at(declarations); some d in object.get(f.contents, "opentofu", [])]
 
 deny contains msg if {
 	count(roots) < 3
-	msg := sprintf("found %d OpenTofu root(s), so the enumeration has stopped matching", [count(roots)])
+	msg := sprintf("found %d plan(s) of a root, so the enumeration has stopped matching", [count(roots)])
 }
 
 deny contains msg if {

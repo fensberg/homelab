@@ -39,7 +39,7 @@ import (
 //     when this was written - and NOT the same idea written differently. The
 //     failure says so rather than letting a green run imply more.
 //   - OpenTofu: a resource declared in a root. That one is a configuration
-//     rule (policy/conftest/custom_blocks.rego), which reads the same
+//     rule (policy/conftest/plan_custom_blocks.rego), which reads the same
 //     declarations.
 const customBlocksFile = "tests/custom-blocks.yml"
 

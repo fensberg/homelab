@@ -46,7 +46,8 @@ plan contains [f.path, r] if {
 
 # plan_configuration is every resource as a plan's configuration declares
 # it, as [path, address, resource]: its address with the modules it is
-# declared in, and each of its arguments as the plan gives an expression -
+# declared in, and each of its arguments as the plan gives an expression
+# (expressions, which a resource written with no arguments has none of) -
 # a constant_value when it is written as one, and the references it is
 # worked out from when it is not. What a value is made from, where the
 # values alone cannot say: a value worked out from a stand-in for the vault
@@ -59,7 +60,7 @@ plan_configuration contains [f.path, address, r] if {
 	is_object(r)
 	is_string(r.address)
 	is_string(r.mode)
-	is_object(r.expressions)
+	is_string(r.type)
 	calls := [sprintf("module.%s", [p[i + 1]]) | some i, k in p; k == "module_calls"]
 	address := concat(".", array.concat(calls, [r.address]))
 }
