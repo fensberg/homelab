@@ -5,7 +5,7 @@
 # An action that is not here is refused by the platform before a line of it
 # runs, whoever wrote the workflow that asks for it. A new one is added
 # here first, by the estate, and
-# policy/conftest/allowed_actions.rego fails until it is.
+# policy/conftest/plan_allowed_actions.rego fails until it is.
 resource "github_actions_repository_permissions" "this" {
   repository           = var.name
   enabled              = true
