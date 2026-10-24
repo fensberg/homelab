@@ -133,7 +133,7 @@ func TestEveryMachineIsBuiltByAStepBeforeItIsWaitedFor(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, kind := range pending {
-			if !strings.HasPrefix(kind, machineResource+".") {
+			if !strings.HasPrefix(kind, MachineResource+".") {
 				continue
 			}
 			machines++
@@ -147,9 +147,6 @@ func TestEveryMachineIsBuiltByAStepBeforeItIsWaitedFor(t *testing.T) {
 		}
 	}
 	if machines == 0 {
-		t.Fatalf("the plan would build no %s, so this checked nothing", machineResource)
+		t.Fatalf("the plan would build no %s, so this checked nothing", MachineResource)
 	}
 }
-
-// machineResource is what the hypervisor's provider is asked to make.
-const machineResource = "proxmox_virtual_environment_vm"

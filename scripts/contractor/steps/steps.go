@@ -39,15 +39,19 @@ import (
 // with one of these, and a module renamed is this line.
 const inCluster = "module.cluster."
 
+// MachineResource is what the hypervisor's provider is asked to make: a
+// machine, or a template one is cloned from.
+const MachineResource = "proxmox_virtual_environment_vm"
+
 // Resource addresses in the cluster root.
 const (
 	DiskImage          = inCluster + "proxmox_download_file.talos_disk_image"
-	Template           = inCluster + "proxmox_virtual_environment_vm.talos_template"
-	ControlPlanes      = inCluster + "proxmox_virtual_environment_vm.talos_cp"
-	Workers            = inCluster + "proxmox_virtual_environment_vm.talos_worker"
+	Template           = inCluster + MachineResource + ".talos_template"
+	ControlPlanes      = inCluster + MachineResource + ".talos_cp"
+	Workers            = inCluster + MachineResource + ".talos_worker"
 	ZoneDiskImage      = inCluster + "proxmox_download_file.dmz_disk_image"
-	ZoneTemplate       = inCluster + "proxmox_virtual_environment_vm.dmz_template"
-	ZoneMachines       = inCluster + "proxmox_virtual_environment_vm.dmz"
+	ZoneTemplate       = inCluster + MachineResource + ".dmz_template"
+	ZoneMachines       = inCluster + MachineResource + ".dmz"
 	ZoneConfig         = inCluster + "talos_machine_configuration_apply.dmz"
 	ControlPlaneConfig = inCluster + "talos_machine_configuration_apply.control_plane"
 	WorkerConfig       = inCluster + "talos_machine_configuration_apply.worker"
