@@ -466,24 +466,16 @@ func (p metaPart) proves(source string) bool {
 }
 
 // A copy is handed the skips this run was given, and nothing when it was
-// given none.
+// given none. Read from the pattern rather than by setting the flag: the
+// flag is the whole binary's, and a guard running beside this one reads it.
 func TestACopyIsSkippedWhatTheLaneSkips(t *testing.T) {
-	f := flag.Lookup("test.skip")
-	if f == nil {
+	if flag.Lookup("test.skip") == nil {
 		t.Fatal("the test binary has no -test.skip flag to read")
 	}
-	was := f.Value.String()
-	t.Cleanup(func() { _ = f.Value.Set(was) })
-	if err := f.Value.Set(""); err != nil {
-		t.Fatal(err)
-	}
-	if got := laneSkips(); got != nil {
+	if got := skipsFor(""); got != nil {
 		t.Errorf("with nothing skipped, a copy was handed %v", got)
 	}
-	if err := f.Value.Set("^(TestElsewhere)$"); err != nil {
-		t.Fatal(err)
-	}
-	if got := laneSkips(); len(got) != 2 || got[0] != "-test.skip" || got[1] != "^(TestElsewhere)$" {
+	if got := skipsFor("^(TestElsewhere)$"); len(got) != 2 || got[0] != "-test.skip" || got[1] != "^(TestElsewhere)$" {
 		t.Errorf("a copy was handed %v, want the lane's own skip", got)
 	}
 }
@@ -544,10 +536,19 @@ type unbrokenRun struct {
 // was most of the removal guard's time, and past the lane's limit (#815).
 func laneSkips() []string {
 	f := flag.Lookup("test.skip")
-	if f == nil || f.Value.String() == "" {
+	if f == nil {
 		return nil
 	}
-	return []string{"-test.skip", f.Value.String()}
+	return skipsFor(f.Value.String())
+}
+
+// skipsFor is the arguments that hand a copy the skip pattern given, or
+// nothing for none.
+func skipsFor(pattern string) []string {
+	if pattern == "" {
+		return nil
+	}
+	return []string{"-test.skip", pattern}
 }
 
 // allVerdicts is runAll with nothing of the test in it, so that two runs
