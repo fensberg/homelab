@@ -1,0 +1,104 @@
+# A widened key is asked about in its own conversation.
+#
+# It is one property of the sensitive-path gate; the gate is described in
+# rules.sensitive_gate_conversation.
+package rules.sensitive_gate_keys
+
+import data.lib
+import rego.v1
+
+workflow := ".github/workflows/sensitive-paths.yml"
+
+doc := lib.workflows[workflow]
+
+steps contains step if {
+	some job in doc.jobs
+	some step in object.get(job, "steps", [])
+}
+
+run(step) := object.get(step, "run", "")
+
+asks_a_person(step) if regex.match(`(?m)^\s*go run -C scripts/attestation \.`, run(step))
+
+challenges(step) if regex.match(`^go run -C scripts/security \. challenge-keys -base "\$BASE" -head "\$HEAD" >>\s*"\$GITHUB_OUTPUT"$`, trim_space(run(step)))
+
+# The two conversations: the one about a sensitive path, and the one under a
+# topic of its own about a key handed out.
+sensitive contains step if {
+	some step in steps
+	asks_a_person(step)
+	not contains(run(step), "-topic")
+}
+
+ask contains step if {
+	some step in steps
+	asks_a_person(step)
+	contains(run(step), "-topic")
+}
+
+challenge contains step if {
+	some step in steps
+	challenges(step)
+}
+
+two_conversations if {
+	count(sensitive) > 0
+	count(ask) > 0
+}
+
+outputs := $"steps.{c.id}.outputs." if some c in challenge
+
+deny contains msg if {
+	not lib.workflows[workflow]
+	msg := $"{workflow} is not there, so how a key handed out is asked about cannot be read"
+}
+
+deny contains msg if {
+	doc
+	count(challenge) == 0
+	msg := "no step runs security challenge-keys against the pull request's base and head and writes what it finds to the step's outputs, so a key handed out is never worked out"
+}
+
+deny contains msg if {
+	some step in challenge
+	step["if"]
+	msg := $"the step that works out which keys were handed out runs only if \"{step["if"]}\"; it has to run on every pull request"
+}
+
+deny contains msg if {
+	msg := "the step that works out which keys were handed out has no id, so nothing can read what it found"
+	some step in challenge
+	object.get(step, "id", "") == ""
+}
+
+deny contains msg if {
+	doc
+	count(sensitive) + count(ask) > 0
+	not two_conversations
+	msg := "the workflow does not open two conversations - one for a sensitive path and one, under a topic of its own, for a key handed out"
+}
+
+deny contains msg if {
+	some step in ask
+	not contains(object.get(step, "if", ""), $"{outputs}asked == 'true'")
+	msg := $"the step that asks runs if \"{object.get(step, "if", "")}\", not exactly when a key was handed out"
+}
+
+deny contains msg if {
+	some step in ask
+	some name, from in {"DIGEST": "digest", "ANCHOR": "anchor", "REPORT": "report"}
+	given := object.get(object.get(step, "env", {}), name, "")
+	not contains(given, $"{outputs}{from}")
+	msg := $"the step that asks takes its {name} from \"{given}\", not from what security found, so the conversation is not keyed to the keys handed out"
+}
+
+deny contains msg if {
+	msg := "the conversation about keys is opened under the same topic as the sensitive-path one, so each would withdraw the other as superseded"
+	some step in ask
+	not own_topic(run(step))
+}
+
+own_topic(script) if {
+	some m in regex.find_all_string_submatch_n(`(?m)^\s+-topic ([a-z]+) \\$`, script, 1)
+	m[1] != "sensitive"
+}

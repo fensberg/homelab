@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: sensitive_paths
+rule: sensitive_gate_conversation
 file: .github/workflows/sensitive-paths.yml
 find: "            -pr \"$PR\" \\\n            -digest \"$DIGEST\" \\\n            -anchor \"$ANCHOR\" \\\n            -head \"$HEAD\" \\\n            -report /tmp/sensitive-report.md"
 replace: "            -pr \"$PR\" \\\n            -anchor \"$ANCHOR\" \\\n            -head \"$HEAD\" \\\n            -report /tmp/sensitive-report.md"
