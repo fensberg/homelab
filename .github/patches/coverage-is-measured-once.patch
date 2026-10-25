@@ -1,0 +1,106 @@
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index 050bcb9d..399cd7c8 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -28,6 +28,12 @@ permissions: read-all
+ # cannot be dropped by the two lists disagreeing.
+ env:
+   META_TESTS: "^(TestTheLedgerProvesEachGuardFailsWhenItShould)$"
++  # The guards that judge what another lane already ran, named once in the
++  # same way: the Go modules lane runs every module's tests with coverage, so
++  # the guard over that coverage runs there, on the profiles it wrote, and the
++  # invariants lane skips it rather than running every module's tests again
++  # (#815).
++  OWN_LANE_TESTS: "^(TestEveryUncoveredFunctionIsDeclared)$"
+ 
+ # Cancel in-progress runs if a new commit is pushed to the PR
+ concurrency:
+@@ -700,12 +706,21 @@ jobs:
+       # A list of what to test is an allow list, and everything missing from it
+       # is invisible rather than red. taskfile.yml sweeps scripts/*/go.mod for
+       # the same reason; #281 covers removing this duplicate of it.
++      #
++      # Each module's tests run once, here, and write their coverage to one
++      # directory: the gate below and the uncovered-function guard after it
++      # read what this run measured. They ran three times - here, in the gate
++      # and in the guard - and the third was most of the invariants lane
++      # (#815).
+       - name: Unit and contract tests (Go)
++        env:
++          GO_COVERAGE_PROFILES: ${{ runner.temp }}/go-coverage
+         run: |
++          mkdir -p "$GO_COVERAGE_PROFILES"
+           for dir in scripts/*/; do
+             [ -f "$dir/go.mod" ] || continue
+             echo "::group::$dir"
+-            go test -C "$dir" -covermode=atomic -coverprofile=coverage-go.out ./...
++            go test -C "$dir" -covermode=atomic -coverprofile="$GO_COVERAGE_PROFILES/$(basename "$dir").out" ./...
+             echo "::endgroup::"
+           done
+ 
+@@ -717,16 +732,26 @@ jobs:
+       # all. The gate refuses a key it has no baseline for, so a new module
+       # fails here until its floor is written into tests/coverage-baseline.json.
+       - name: Coverage gate (Go)
++        env:
++          GO_COVERAGE_PROFILES: ${{ runner.temp }}/go-coverage
+         run: |
+           for dir in scripts/*/; do
+             [ -f "$dir/go.mod" ] || continue
+             module="$(basename "$dir")"
+-            go test -C "$dir" -covermode=atomic -coverprofile=coverage-go.out ./...
+-            pct="$(go -C "$dir" tool cover -func=coverage-go.out \
++            pct="$(go -C "$dir" tool cover -func="$GO_COVERAGE_PROFILES/$module.out" \
+               | awk '/^total:/ {print substr($3, 1, length($3)-1)}')"
+             bash scripts/coverage-gate.sh "go/$module" "$pct"
+           done
+ 
++      # Every function the tests above did not run is declared, judged on the
++      # profiles they wrote. The invariants lane skips it by $OWN_LANE_TESTS.
++      - name: Every uncovered function is declared
++        working-directory: tests/go
++        env:
++          GO_COVERAGE_PROFILES: ${{ runner.temp }}/go-coverage
++          GOFLAGS: -v
++        run: go test ./repo/ -run "$OWN_LANE_TESTS"
++
+       # --- OpenTofu --------------------------------------------------------
+       - name: Invariant tests (OpenTofu)
+         run: |
+@@ -872,9 +897,10 @@ jobs:
+       # drives a real `tofu` against a scratch workspace.
+       - name: Repository invariants and the encryption rehearsal
+         working-directory: tests/go
+-        # The two meta-tests run in the lane below, in parallel with this one.
+-        # They are skipped by the same variable that selects them there, so
+-        # one declaration decides both and no test can fall between the two.
++        # The two meta-tests run in the lane below, in parallel with this one,
++        # and the coverage guard in the Go modules lane. Each set is skipped
++        # by the same variable that selects it there, so one declaration
++        # decides both and no test can fall between the two.
+         env:
+           # Go's default of ten minutes is not a budget anybody set, and the
+           # guards passed it on #790 while they moved onto tests/parsed: the
+@@ -882,7 +908,7 @@ jobs:
+           # This is a ceiling for a stuck run, not the target. -v prints each
+           # guard's time, which is what says where the time went.
+           GOFLAGS: -timeout=30m -v
+-        run: go test ./... -skip "$META_TESTS"
++        run: go test ./... -skip "$META_TESTS|$OWN_LANE_TESTS"
+ 
+   meta:
+     # Skipped, which the queue reads as passed, when the queue would land
+diff --git a/tests/mutations/TestHeavyGuardsRunOnEveryPullRequest.an-own-lane-guard-run-nowhere.yml b/tests/mutations/TestHeavyGuardsRunOnEveryPullRequest.an-own-lane-guard-run-nowhere.yml
+new file mode 100644
+index 00000000..0a6d2eab
+--- /dev/null
++++ b/tests/mutations/TestHeavyGuardsRunOnEveryPullRequest.an-own-lane-guard-run-nowhere.yml
+@@ -0,0 +1,8 @@
++guard: TestHeavyGuardsRunOnEveryPullRequest
++file: .github/workflows/pr-validation.yml
++find: 'run: go test ./repo/ -run "$OWN_LANE_TESTS"'
++replace: 'run: go test ./repo/ -run "^TestSomethingElse$"'
++mentions: "skips $OWN_LANE_TESTS in the full run of tests/go and no lane runs them"
++why: >
++  A guard the invariants lane leaves to a lane of its own runs nowhere if
++  that lane stops selecting it, and a skipped guard is a green one.
