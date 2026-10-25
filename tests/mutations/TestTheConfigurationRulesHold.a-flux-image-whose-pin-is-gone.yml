@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: suppliers
+rule: supplier_images
 file: clusters/core/flux-system/kustomization.yaml
 find: "    digest: sha256:16ada99456385100698a5d7adf90aba8a2089d987ab541c9566b6d7b0e897038\n"
 replace: "    tag: v1\n"

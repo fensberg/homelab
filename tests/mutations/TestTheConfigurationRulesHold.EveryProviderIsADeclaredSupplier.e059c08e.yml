@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: suppliers
+rule: supplier_providers
 file: management/platform/.terraform.lock.hcl
 find: 'provider "registry.opentofu.org/hashicorp/kubernetes" {'
 replace: 'provider "registry.opentofu.org/evilcorp/kubernetes" {'

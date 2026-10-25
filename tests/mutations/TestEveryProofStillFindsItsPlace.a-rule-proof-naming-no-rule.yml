@@ -1,6 +1,6 @@
 guard: TestEveryProofStillFindsItsPlace
 file: tests/mutations/TestTheConfigurationRulesHold.EveryProviderIsADeclaredSupplier.e059c08e.yml
-find: "guard: TestTheConfigurationRulesHold\nrule: suppliers\n"
+find: "guard: TestTheConfigurationRulesHold\nrule: supplier_providers\n"
 replace: "guard: TestTheConfigurationRulesHold\n"
 mentions: "this entry has no rule, so it proves nothing"
 why: >
