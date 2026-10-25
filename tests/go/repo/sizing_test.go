@@ -26,6 +26,7 @@ import (
 // A size nobody has accounted for is the one that gets cut on the strength
 // of a quiet week.
 func TestEverythingThatReservesSaysWhereItsSizeCameFrom(t *testing.T) {
+	t.Parallel()
 	tree := repository(t)
 	apps := tree.Applications(t)
 	core := tree.CoreSizing(t)

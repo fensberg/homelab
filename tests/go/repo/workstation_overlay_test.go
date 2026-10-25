@@ -24,6 +24,7 @@ import (
 // reaches nothing, since `tailscale up --auth-key=”` exits zero having joined
 // nothing.
 func TestTheWorkstationIsProvisionedOntoTheOverlay(t *testing.T) {
+	t.Parallel()
 	commands := workstationCommands(t)
 	if len(tailscaleUps(commands)) == 0 {
 		t.Error("workstation/provision.yml never joins the overlay.\n\n" +
@@ -41,6 +42,7 @@ func TestTheWorkstationIsProvisionedOntoTheOverlay(t *testing.T) {
 // The router tag approves subnet routes. A workstation wearing it could claim
 // a site's whole range.
 func TestTheWorkstationDoesNotWearTheRouterTag(t *testing.T) {
+	t.Parallel()
 	if slices.Contains(advertisedTags(t), "tag:homelab-router") {
 		t.Error("workstation/provision.yml uses the router tag.\n\n" +
 			"autoApprovers trusts that tag to advertise subnet routes, so a workstation " +
@@ -52,6 +54,7 @@ func TestTheWorkstationDoesNotWearTheRouterTag(t *testing.T) {
 // anything. Fail closed: "no key supplied" and "joined successfully" must not
 // look the same afterwards.
 func TestAWorkstationWithNoOverlayKeyIsRefused(t *testing.T) {
+	t.Parallel()
 	if !assertsThat(workstationPlay(t), "overlay_auth_key | length > 0") {
 		t.Error("nothing refuses an empty overlay_auth_key.\n\n" +
 			"`tailscale up --auth-key=''` exits zero having joined nothing, so the " +
@@ -64,6 +67,7 @@ func TestAWorkstationWithNoOverlayKeyIsRefused(t *testing.T) {
 // somebody apply, or `tailscale up` is refused at first boot on a machine
 // nobody is watching.
 func TestTheWorkstationTagIsDocumentedInThePolicy(t *testing.T) {
+	t.Parallel()
 	tags := advertisedTags(t)
 	if len(tags) == 0 {
 		t.Fatal("the workstation advertises no tag, so there is nothing whose policy to look for")

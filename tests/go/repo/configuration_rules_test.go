@@ -107,6 +107,7 @@ func TestTheConfigurationRulesHold(t *testing.T) {
 // Every rule is held to what it claims by tests of its own: Conftest's
 // verify runs each *_test.rego beside the rules.
 func TestEveryConfigurationRuleProvesItself(t *testing.T) {
+	heavy(t, "runs every rule's own tests with conftest verify, seconds and growing with each rule")
 	collectedPackages(t)
 	out, ok := runConftest(t, "verify")
 	if !ok {
@@ -224,6 +225,7 @@ func isTestPackage(pkg string) bool { return strings.HasSuffix(pkg, "_test") }
 // package lib, which Rego joins to the first, and a rule in a file named
 // like a test, which Conftest runs like any other.
 func TestOnlyTheSelectorsReadTheInput(t *testing.T) {
+	t.Parallel()
 	var libs, readers []string
 	for rel, tree := range policyFiles(t) {
 		switch {
@@ -250,6 +252,7 @@ func TestOnlyTheSelectorsReadTheInput(t *testing.T) {
 }
 
 func TestReadsInputCountsTheInputAndNothingThatSaysIt(t *testing.T) {
+	t.Parallel()
 	tree := map[string]any{"rules": []any{
 		map[string]any{"type": "ref", "value": []any{map[string]any{"type": "var", "value": "input"}, map[string]any{"type": "string", "value": "path"}}},
 		map[string]any{"type": "string", "value": "input"},

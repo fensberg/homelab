@@ -43,6 +43,7 @@ var (
 // anything public is allowed; what is public is the vendor's edge ports; and
 // what is left is refused.
 func TestTheWorkstationsConnectorIsHeldToItsOwnSSHPort(t *testing.T) {
+	t.Parallel()
 	const address, uid, resolver = "192.0.2.10", "4321", "127.0.0.53"
 	body, err := lockRules(t, address, uid, resolver)
 	if err != nil {
@@ -135,6 +136,7 @@ func lockFaults(body, address, uid, resolver string) []string {
 }
 
 func TestLockFaultsFindsEachWayALockDoesNotHold(t *testing.T) {
+	t.Parallel()
 	const address, uid, resolver = "192.0.2.10", "4321", "127.0.0.53"
 	good := []string{
 		"type filter hook output priority filter; policy accept;",

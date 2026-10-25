@@ -2,6 +2,7 @@ package repo
 
 import (
 	"go/ast"
+	"go/parser"
 	"go/token"
 	"path/filepath"
 	"regexp"
@@ -47,6 +48,7 @@ func heavy(t *testing.T, why string) {
 // with no match passes with "no tests to run" - so every name must be a test
 // that exists.
 func TestHeavyGuardsRunOnEveryPullRequest(t *testing.T) {
+	t.Parallel()
 	var wf struct {
 		Env  map[string]string `yaml:"env"`
 		Jobs map[string]struct {
@@ -147,4 +149,91 @@ func takesT(fn *ast.FuncDecl) bool {
 	}
 	pkg, ok := sel.X.(*ast.Ident)
 	return ok && pkg.Name == "testing" && sel.Sel.Name == "T"
+}
+
+// Every guard that runs at push runs beside the others. The push ran 253
+// guards one after another and took 27 seconds against a budget of ten; side
+// by side they take under eight. A guard that is heavy is not at push, and
+// keeps how it runs in the pull request: heavy suites side by side once held
+// a millisecond Rego test past conftest's five seconds (#781). A guard that
+// changes the process - its environment or where it runs - cannot run beside
+// another, and Go refuses t.Setenv in one that tries.
+func TestEveryGuardAtPushRunsBesideTheOthers(t *testing.T) {
+	t.Parallel()
+	tree := repository(t)
+	fset := token.NewFileSet()
+	read := 0
+	for _, rel := range tree.Files(t) {
+		if filepath.Dir(rel) != guardsDir || !strings.HasSuffix(rel, "_test.go") {
+			continue
+		}
+		for _, d := range tree.Go(t, fset, rel).Decls {
+			fn, ok := d.(*ast.FuncDecl)
+			if !ok || fn.Recv != nil || !strings.HasPrefix(fn.Name.Name, "Test") || !takesT(fn) || fn.Body == nil {
+				continue
+			}
+			read++
+			if why := runsAlone(fn); why != "" {
+				continue
+			}
+			t.Errorf("%s: %s runs at push and does not call t.Parallel(), so every guard after it waits. Call it first; a guard that cannot run beside others changes the process, and says so by doing it.", fset.Position(fn.Pos()), fn.Name.Name)
+		}
+	}
+	if read < 100 {
+		t.Fatalf("read only %d guards from %s, which is not this package", read, guardsDir)
+	}
+}
+
+// runsAlone is why a test does not run beside the others - it is heavy, or it
+// changes the process - or nothing when it should, or already does.
+func runsAlone(fn *ast.FuncDecl) string {
+	name := fn.Type.Params.List[0].Names[0].Name
+	why := "no reason"
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		switch f := call.Fun.(type) {
+		case *ast.Ident:
+			if f.Name == "heavy" {
+				why = "heavy"
+			}
+		case *ast.SelectorExpr:
+			if id, ok := f.X.(*ast.Ident); ok && id.Name == name && f.Sel.Name == "Parallel" {
+				why = "runs beside the others"
+			}
+			if processChanges[f.Sel.Name] {
+				why = "changes the process"
+			}
+		}
+		return true
+	})
+	if why == "no reason" {
+		return ""
+	}
+	return why
+}
+
+// processChanges is what a test cannot do while another runs.
+var processChanges = map[string]bool{"Setenv": true, "Unsetenv": true, "Clearenv": true, "Chdir": true}
+
+// The reading, on tests made up here.
+func TestAGuardIsSeenToRunBesideTheOthersOrToSayWhyNot(t *testing.T) {
+	t.Parallel()
+	for src, want := range map[string]string{
+		"func TestA(t *testing.T) { t.Parallel() }":                        "runs beside the others",
+		"func TestA(t *testing.T) { heavy(t, \"slow\") }":                  "heavy",
+		"func TestA(t *testing.T) { t.Setenv(\"A\", \"b\") }":              "changes the process",
+		"func TestA(t *testing.T) { if false { return }; doSomething(t) }": "",
+		"func TestA(t *testing.T) { s := \"t.Parallel()\"; _ = s }":        "",
+	} {
+		f, err := parser.ParseFile(token.NewFileSet(), "a_test.go", "package a\n"+src, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := runsAlone(f.Decls[0].(*ast.FuncDecl)); got != want {
+			t.Errorf("%s: got %q, want %q", src, got, want)
+		}
+	}
 }

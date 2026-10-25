@@ -48,6 +48,7 @@ func runGate(t *testing.T, baseline, language, current string) (stdout, stderr s
 const gateFixture = `{"baselines": {"go/example": 40, "js": 0}}`
 
 func TestTheCoverageGateHoldsItsFloor(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name     string
 		current  string
@@ -92,6 +93,7 @@ func TestTheCoverageGateHoldsItsFloor(t *testing.T) {
 // to refuse: "I was not told what belongs here" and "nothing is wrong" look
 // identical in an exit code, and only one of them is ever true.
 func TestTheCoverageGateRefusesWhatItCannotJudge(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, baseline, language, current, mentions string
 	}{

@@ -23,6 +23,7 @@ import (
 // invokes is a file.
 
 func TestTheHookShimRunsTheGuardBeforePreCommit(t *testing.T) {
+	t.Parallel()
 	for _, hook := range []string{"pre-commit", "pre-push"} {
 		commands := readShim(t, hook)
 
@@ -51,6 +52,7 @@ func TestTheHookShimRunsTheGuardBeforePreCommit(t *testing.T) {
 // A shim that exits zero on a failing guard is a shim that reports rather than
 // refuses. `set -e` is what makes the guard's exit code stop the commit.
 func TestTheHookShimFailsOnAFailingGuard(t *testing.T) {
+	t.Parallel()
 	for _, hook := range []string{"pre-commit", "pre-push", "commit-msg"} {
 		setsE := slices.ContainsFunc(readShim(t, hook), func(c parsed.Command) bool {
 			return slices.Equal(c.Words, []string{"set", "-euo", "pipefail"})
@@ -64,6 +66,7 @@ func TestTheHookShimFailsOnAFailingGuard(t *testing.T) {
 
 // git will not run a shim it cannot execute, and will not say so loudly.
 func TestTheHookShimsAreExecutable(t *testing.T) {
+	t.Parallel()
 	for _, hook := range []string{"pre-commit", "pre-push", "commit-msg"} {
 		info, err := repository(t).Stat("githooks/" + hook)
 		if err != nil {
@@ -80,6 +83,7 @@ func TestTheHookShimsAreExecutable(t *testing.T) {
 // .git/hooks - which pre-commit owns and overwrites - and the guard is a file
 // nobody runs.
 func TestSetupPointsGitAtTheShims(t *testing.T) {
+	t.Parallel()
 	setup := parsed.Commands(repository(t).Shell(t, installDependencies))
 	points := slices.ContainsFunc(setup, func(c parsed.Command) bool {
 		i := slices.Index(c.Words, "core.hooksPath")
@@ -132,6 +136,7 @@ func runsTheDeliveryGuard(c parsed.Command) bool {
 // take-delivery step have to agree, and a hook that stops agreeing is refused
 // like any other.
 func TestEverySystemHookIsSkippedInTheFormatLane(t *testing.T) {
+	t.Parallel()
 	cfg := parsePreCommitConfig(t)
 
 	defaults := cfg.DefaultStages
@@ -281,6 +286,7 @@ func lockedPythonPackage(entry string) (string, bool) {
 // is not that one hook was missing. It is that adding a stage to the config
 // looks complete and is not, and the next stage added would go the same way.
 func TestEveryInstalledHookTypeHasAShim(t *testing.T) {
+	t.Parallel()
 	var cfg struct {
 		Types []string `yaml:"default_install_hook_types"`
 	}

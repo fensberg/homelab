@@ -41,6 +41,7 @@ type supplierChartGaps struct {
 }
 
 func TestEveryChartsImagesAreGovernedOrDeclared(t *testing.T) {
+	t.Parallel()
 	tree := repository(t)
 
 	var declared supplierChartGaps

@@ -101,6 +101,7 @@ func owned(f parsed.OpenTofuFile) []string {
 }
 
 func TestEstateObjectsAreDeclaredOnlyInTheEstateRoot(t *testing.T) {
+	t.Parallel()
 	estateDeclares := 0
 	for _, f := range repository(t).OpenTofu(t) {
 		rel := f.Path

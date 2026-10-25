@@ -289,6 +289,7 @@ func ownerOutsideItsAddress(owner, name string, lines []textFinding, belongs map
 }
 
 func TestOwnerOutsideItsAddressFindsTheNameAndNotTheAddress(t *testing.T) {
+	t.Parallel()
 	belongs := map[string]string{"NOTICE": "the holder", "history/": "what happened"}
 	for label, tc := range map[string]struct {
 		rel, body string

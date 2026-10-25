@@ -60,6 +60,7 @@ const (
 // here: the failure this guards is a substitution that ate a line, not one that
 // produced a syntax error.
 func TestThePlaceholderConfigRendersTheRealTemplate(t *testing.T) {
+	t.Parallel()
 	stdout, body, err := runPlaceholderConfig(t, "")
 	if err != nil {
 		t.Fatalf("the script refused the template that ships in this repository: %v\n%s", err, stdout)
@@ -97,6 +98,7 @@ missing attribute and name the HCL rather than the substitution that dropped it.
 // marker the sweep cannot match. A stray `{{` with no closing braces anywhere
 // after it is that case, and it is what a half-finished edit looks like.
 func TestThePlaceholderConfigRefusesAnUnresolvedMarker(t *testing.T) {
+	t.Parallel()
 	stdout, _, err := runPlaceholderConfig(t, `{"organization": {"name": "{{ broken"}`)
 	if err == nil {
 		t.Fatal("the script accepted a template with an unresolved marker. That file " +
@@ -121,6 +123,7 @@ func TestThePlaceholderConfigRefusesAnUnresolvedMarker(t *testing.T) {
 // which `tofu validate` then fails on from inside a provider configuration
 // block, naming neither this script nor the template.
 func TestThePlaceholderConfigRefusesOutputThatIsNotJSON(t *testing.T) {
+	t.Parallel()
 	stdout, body, err := runPlaceholderConfig(t, `{"organization": {"name": "{{ broken" }}`)
 	if err == nil {
 		t.Fatalf(`the script exited 0 having written:
@@ -142,6 +145,7 @@ this check exists to replace with a clear one.`, body)
 // string "op://homelab/...". This is the backstop for the hermetic version of
 // the same check, and it had never been run.
 func TestThePlaceholderConfigRefusesAnUnwrappedVaultReference(t *testing.T) {
+	t.Parallel()
 	stdout, _, err := runPlaceholderConfig(t, `{"organization": {"name": "op://homelab/organization/name"}}`)
 	if err == nil {
 		t.Fatal("the script accepted a bare op:// reference. It survives every schema " +
@@ -161,6 +165,7 @@ func TestThePlaceholderConfigRefusesAnUnwrappedVaultReference(t *testing.T) {
 // repository URL has a scheme, and private_key reaches a Kubernetes secret's
 // binary_data, which must be valid base64.
 func TestThePlaceholderConfigKeepsTheShapeProvidersCheck(t *testing.T) {
+	t.Parallel()
 	_, body, err := runPlaceholderConfig(t, `{
   "source_control": {
     "repo_url": "{{ op://homelab/source-control/url }}",

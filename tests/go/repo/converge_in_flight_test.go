@@ -23,6 +23,7 @@ import (
 // converge asks for; the budget is whichever one selects them; the classes
 // are every PriorityClass the site declares.
 func TestAConvergeInFlightIsNotEvicted(t *testing.T) {
+	t.Parallel()
 	tree := repository(t)
 	_, manifest := fluxObject(t, kindHelmRelease, runnerScaleSet)
 	set := yamlScalar(t, manifest, "runnerScaleSetName")

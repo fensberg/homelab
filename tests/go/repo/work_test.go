@@ -30,6 +30,7 @@ import (
 // Whether what a job says matches how long it really takes is asked nightly,
 // of GitHub (tests/go/api).
 func TestEveryJobOnTheEstatesRunnersIsOnTheRunnersItsKindAllows(t *testing.T) {
+	t.Parallel()
 	declared := repository(t).Work(t)
 	said := map[string]harness.Work{}
 	for _, w := range declared {

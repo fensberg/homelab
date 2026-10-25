@@ -45,6 +45,7 @@ const (
 // whether they collide is a property of the computation over every octet a
 // site may have, not of one value somebody wrote down.
 func TestThePodAndServiceNetworksCannotCollideWithASite(t *testing.T) {
+	t.Parallel()
 	// The cluster root takes both from the plan, or the plan's answer below
 	// describes nothing the cluster runs.
 	for _, name := range []string{"pod_cidr", "service_cidr"} {

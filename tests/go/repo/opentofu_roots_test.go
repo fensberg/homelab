@@ -29,6 +29,7 @@ import (
 // directory with a provider block - and holds each to the list below. A root
 // nobody has thought about fails every line of it at once, which is the point.
 func TestEveryOpenTofuRootIsSeenByWhatMustSeeARoot(t *testing.T) {
+	t.Parallel()
 	tree := repository(t)
 	files := tree.Files(t)
 	roots := parsed.OpenTofuRoots(tree.OpenTofu(t))
@@ -240,6 +241,7 @@ func tofuOf(t *testing.T, files map[string]string) []parsed.OpenTofuFile {
 }
 
 func TestRootSightingsNamesEachThingThatCannotSeeARoot(t *testing.T) {
+	t.Parallel()
 	const r = "management/new"
 	set := func(v string) map[string]bool { return map[string]bool{v: true} }
 	whole := rootSightings{
@@ -289,6 +291,7 @@ func TestRootSightingsNamesEachThingThatCannotSeeARoot(t *testing.T) {
 }
 
 func TestSiteRootProblemsHoldsTheRootsToTheContractors(t *testing.T) {
+	t.Parallel()
 	site := config.Roots
 	cluster, platform := "management/"+config.ClusterRoot, "management/"+config.PlatformRoot
 	for name, tc := range map[string]struct {

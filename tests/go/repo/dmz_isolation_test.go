@@ -143,6 +143,7 @@ func runDMZ(t *testing.T, existing []string) (after []string, stdout string) {
 }
 
 func TestAnUntrustedZoneIsClosedToThePrivateEstate(t *testing.T) {
+	t.Parallel()
 	after, _ := runDMZ(t, nil)
 
 	if len(after) == 0 {
@@ -173,6 +174,7 @@ that closes it.`, private, strings.Join(after, "\n  "))
 // DNS with it - the node comes up, joins nothing, and reports no error anybody
 // is watching.
 func TestAnUntrustedZoneKeepsItsGatewayAndItsOwnSubnet(t *testing.T) {
+	t.Parallel()
 	after, _ := runDMZ(t, nil)
 
 	gateway := indexOfRule(after, "FORWARD -s 198.51.100.0/24 -d 198.51.100.1/32 -j ACCEPT")
@@ -209,6 +211,7 @@ zone's own route. Both accepts have to be reached first.`, strings.Join(after, "
 // unbounded growth the SNAT dedupe beside it exists to clean up after Proxmox,
 // and there would be no dedupe for these.
 func TestClosingTheZoneTwiceAddsNothing(t *testing.T) {
+	t.Parallel()
 	first, _ := runDMZ(t, nil)
 
 	// Feed the first run's output back in, which is what a second run sees.
@@ -257,6 +260,7 @@ func indexOfRule(rules []string, want string) int {
 // exists for node-level compromise, and a port added "while we are here" is
 // the estate's control plane handed to whatever escaped a container.
 func TestAnUntrustedZoneCanJoinTheClusterAndReachNothingElse(t *testing.T) {
+	t.Parallel()
 	after, _ := runDMZ(t, nil)
 	const zone = "FORWARD -s 198.51.100.0/24"
 	drop := indexOfRule(after, zone+" -d 10.0.0.0/8 -j DROP")

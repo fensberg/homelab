@@ -48,6 +48,7 @@ import (
 // repository in a temporary directory is not reading this one: for tests
 // under scripts/, only a file that finds the real repository is held to it.
 func TestNoTestNamesTheRootItReads(t *testing.T) {
+	t.Parallel()
 	tree := repository(t)
 	tofu := tree.OpenTofu(t)
 	roots := parsed.OpenTofuRoots(tofu)
@@ -274,6 +275,7 @@ func fluxObject(t *testing.T, kind, name string) (path string, docs []any) {
 func beside(manifest, name string) string { return harness.Beside(manifest, name) }
 
 func TestRootsNamedRefusesEachWayOfNamingARoot(t *testing.T) {
+	t.Parallel()
 	roots := []string{"ground/alpha", "ground/beta"}
 	names := map[string]bool{"widgets.tf": true}
 	file := func(body string) []byte {

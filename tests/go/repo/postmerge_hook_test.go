@@ -22,6 +22,7 @@ import (
 // Run for real rather than read, in a repository where the sweeper cannot be
 // built, which is the path where silence would do the damage.
 func TestThePostMergeHookSaysWhenItCouldNotCollect(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	env := []string{
 		"PATH=" + os.Getenv("PATH"),

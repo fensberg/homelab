@@ -40,6 +40,7 @@ type ledgerCompleteness struct {
 }
 
 func TestEveryGuardIsProvedOrDeclaredUnprovable(t *testing.T) {
+	t.Parallel()
 	skipIfInner(t)
 	tree := repository(t)
 
@@ -149,6 +150,7 @@ for this one, or prove an older one and lower the ceiling in the same diff.`, ow
 }
 
 func TestTheOwedCeilingFitsTheDebtExactly(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		owed, ceiling int
 		want          string

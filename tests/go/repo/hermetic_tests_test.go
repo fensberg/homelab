@@ -28,6 +28,7 @@ import (
 // machine that writes it. It only appears on a differently-configured one,
 // which by then is somebody else's afternoon.
 func TestPackagesThatShellToGitNeutraliseUserConfig(t *testing.T) {
+	t.Parallel()
 	tree := repository(t)
 	fset := token.NewFileSet()
 

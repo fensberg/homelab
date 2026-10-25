@@ -14,6 +14,7 @@ import (
 // --- the repository is clean ------------------------------------------------
 
 func TestRepositoryHasNoDuplicateKeys(t *testing.T) {
+	t.Parallel()
 	tree := repository(t)
 	checked := 0
 

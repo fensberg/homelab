@@ -12,6 +12,7 @@ import (
 // route that still says InfoInhibitor but sits after a catch-all would pass a
 // spelling check and page Slack every hour (#532).
 func TestAlertsLandWhereTheEstateDecided(t *testing.T) {
+	t.Parallel()
 	route := alertRoute(t)
 	for _, c := range []struct {
 		labels map[string]string

@@ -41,6 +41,7 @@ import (
 // the guards run from - so each way is proved by its table,
 // TestTextReadsFindsEveryWayAGuardCouldReadTheRepository.
 func TestNoGuardReadsAFileAsText(t *testing.T) {
+	t.Parallel()
 	tree := repository(t)
 	programs := deliveredPrograms(t, tree)
 	fset := token.NewFileSet()
@@ -271,6 +272,7 @@ func gitVerb(args []ast.Expr, name func(ast.Expr) (string, bool)) (string, bool)
 // Each way a guard could reach the repository other than through
 // tests/parsed is refused, and the ways it may run things are not.
 func TestTextReadsFindsEveryWayAGuardCouldReadTheRepository(t *testing.T) {
+	t.Parallel()
 	programs := map[string]bool{"go": true, "git": true, "bash": true, "conftest": true}
 	for name, c := range map[string]struct {
 		src     string

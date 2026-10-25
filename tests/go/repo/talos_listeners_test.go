@@ -43,6 +43,7 @@ import (
 // is being told to listen somewhere other than loopback, and that is the fact
 // both sides have to agree about.
 func TestEveryDeclaredControlPlaneListenerIsDialled(t *testing.T) {
+	t.Parallel()
 	declared := declaredListeners(t, repository(t), declMachineConfig)
 	if len(declared) == 0 {
 		t.Fatal(`talos.tf declares no control-plane listener.

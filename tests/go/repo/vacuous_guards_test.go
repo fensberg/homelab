@@ -221,6 +221,7 @@ func failsTheTest(block *ast.BlockStmt) bool {
 }
 
 func TestEveryGuardThatDiscoversItsSubjectAssertsItFoundSome(t *testing.T) {
+	t.Parallel()
 	tree := repository(t)
 	fset := token.NewFileSet()
 	var vacuous []string
@@ -296,6 +297,7 @@ usually a filter that still matches something.`, len(vacuous), strings.Join(vacu
 // still be refused - otherwise any comparison against any variable would pass
 // for a floor and the guard would stop meaning anything.
 func TestAFloorIsRecognisedHoweverItIsSpelled(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		src  string

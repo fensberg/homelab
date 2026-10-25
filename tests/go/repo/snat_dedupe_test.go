@@ -133,6 +133,7 @@ const (
 // Ten runs of the playbook left ten identical rules. One run of this must
 // leave one.
 func TestTheSnatDedupeCollapsesDuplicatesToOne(t *testing.T) {
+	t.Parallel()
 	rules := []string{otherRule}
 	for range 10 {
 		rules = append(rules, ourRule)
@@ -157,6 +158,7 @@ func TestTheSnatDedupeCollapsesDuplicatesToOne(t *testing.T) {
 // Idempotent, because it runs on every playbook run. A task that removed the
 // last rule would break the estate's outbound path on the second run.
 func TestTheSnatDedupeLeavesASingleRuleAlone(t *testing.T) {
+	t.Parallel()
 	after, out := runSnat(t, []string{otherRule, ourRule})
 
 	if len(after) != 2 {
@@ -171,6 +173,7 @@ func TestTheSnatDedupeLeavesASingleRuleAlone(t *testing.T) {
 // Scoped by -s, so somebody else's NAT rule on the hypervisor is not this
 // task's business. Deleting one would be a networking change nobody asked for.
 func TestTheSnatDedupeLeavesUnrelatedRulesAlone(t *testing.T) {
+	t.Parallel()
 	after, _ := runSnat(t, []string{otherRule, ourRule, ourRule})
 
 	var found bool
@@ -187,6 +190,7 @@ func TestTheSnatDedupeLeavesUnrelatedRulesAlone(t *testing.T) {
 // A host that has never had the rule is not a failure. The task runs before
 // the SDN apply has necessarily ever installed one.
 func TestTheSnatDedupeIsANoOpWhenTheRuleIsAbsent(t *testing.T) {
+	t.Parallel()
 	after, out := runSnat(t, []string{otherRule})
 
 	if len(after) != 1 {

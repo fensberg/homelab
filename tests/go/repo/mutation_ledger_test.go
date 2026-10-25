@@ -391,6 +391,7 @@ func refusedBy(out, guard, rule string) bool {
 }
 
 func TestRefusedByReadsTheRuleFromEachHarnesssReport(t *testing.T) {
+	t.Parallel()
 	semgrep := "    code_rules_test.go:169: a code rule refuses the repository:\n\n" +
 		"          taskfile.yml:130: no-workflow-or-task-picks-a-site-by-name: names a site as a value.\n" +
 		"    code_rules_test.go:154: the-teardown-resolves-the-bucket found nothing, and teardown.go does not\n"
@@ -465,6 +466,7 @@ func (p metaPart) proves(source string) bool {
 }
 
 func TestReadMetaPartTakesOnlyAPartItCanPlace(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		value string
 		want  metaPart
@@ -487,6 +489,7 @@ func TestReadMetaPartTakesOnlyAPartItCanPlace(t *testing.T) {
 }
 
 func TestEveryProofFallsInExactlyOnePartOfTheLedger(t *testing.T) {
+	t.Parallel()
 	sources := []string{"TestA.1.yml", "TestA.2.yml", "TestB.x.yml", "modules/applications/a/tests/mutations.yml#0", "", "TestC.long-name-of-a-proof.yml"}
 	for _, total := range []int{2, 4, 17} {
 		for _, s := range sources {
@@ -564,6 +567,7 @@ func testNamedBy(line string) (string, bool) {
 }
 
 func TestOutputOfKeepsOneTestsLinesFromAnInterleavedRun(t *testing.T) {
+	t.Parallel()
 	out := []byte(strings.Join([]string{
 		"=== RUN   TestA",
 		"=== PAUSE TestA",
@@ -711,6 +715,7 @@ func placeProblems(t *testing.T, tree *parsed.Tree, m mutation) []string {
 // minutes in. Nothing here runs a guard: it reads each entry and the file it
 // names, which is the part of the ledger's judgement that costs nothing.
 func TestEveryProofStillFindsItsPlace(t *testing.T) {
+	t.Parallel()
 	tree := repository(t)
 	entries := append(append([]mutation{}, readLedger(t).Mutations...), applicationMutations(t)...)
 	if len(entries) < 100 {

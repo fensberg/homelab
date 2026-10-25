@@ -121,6 +121,7 @@ func livesIn(rel string, a applications.Application, apps []applications.Applica
 }
 
 func TestNamedOutsideAllowsAnApplicationsNameOnlyWhereItLives(t *testing.T) {
+	t.Parallel()
 	app := func(name string, requires ...string) applications.Application {
 		return applications.Application{Name: name, Root: applications.Dir + "/" + name, Requires: requires}
 	}

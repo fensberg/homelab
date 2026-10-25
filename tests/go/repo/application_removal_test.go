@@ -174,6 +174,7 @@ func blockOf(a applications.Application) func(doc any) bool {
 // runs its directory, and nothing else: not another application's, and not
 // one whose name only begins with its own.
 func TestABlockIsAnApplicationsOwnSourceAndWhatRunsIt(t *testing.T) {
+	t.Parallel()
 	app := applications.Application{Name: "first", Root: applications.Dir + "/first"}
 	doc := func(kind, name, path string) any {
 		return map[string]any{"kind": kind, "metadata": map[string]any{"name": name}, "spec": map[string]any{"path": path}}

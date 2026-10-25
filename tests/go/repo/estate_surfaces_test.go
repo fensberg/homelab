@@ -141,6 +141,7 @@ func lifecycleVerbs(t *testing.T) []string {
 }
 
 func TestEveryEstateSurfaceIsNamedByATestOrIsADeclaredDebt(t *testing.T) {
+	t.Parallel()
 	blocked := blocklistEntries(t)
 
 	type surface struct {

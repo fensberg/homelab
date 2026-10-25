@@ -111,6 +111,7 @@ func authoredHere(t *testing.T, rel string) bool {
 // a plausible number, and it returns paths relative to the root rather than
 // absolute ones, which is what every caller assumes when it matches on prefixes.
 func TestTheTrackedEnumerationSeesTheWholeRepository(t *testing.T) {
+	t.Parallel()
 	files := trackedFiles(t)
 
 	for _, rel := range files {
@@ -151,6 +152,7 @@ whole repository.`, dir)
 // An entry for something that no longer exists makes the excluded set look
 // larger than it is, and hides that a guard stopped covering something real.
 func TestEveryUnauthoredPathStillExists(t *testing.T) {
+	t.Parallel()
 	files := trackedFiles(t)
 
 	for _, skip := range unauthored(t) {

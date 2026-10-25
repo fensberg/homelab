@@ -192,6 +192,7 @@ func isHistory(rel string) bool {
 }
 
 func TestDanglingInFindsWhatIsGoneAndLeavesWhatIsThere(t *testing.T) {
+	t.Parallel()
 	declared := map[string]bool{"TestThere": true, "TestAVeryLongNameThatWraps": true}
 	exists := map[string]bool{"tests/go/repo/there_test.go": true}
 	for name, c := range map[string]struct {
@@ -214,6 +215,7 @@ func TestDanglingInFindsWhatIsGoneAndLeavesWhatIsThere(t *testing.T) {
 }
 
 func TestDanglingFindingJudgesEachNameAScanFound(t *testing.T) {
+	t.Parallel()
 	declared := map[string]bool{"TestThere": true, "TestAVeryLongNameThatWraps": true}
 	exists := map[string]bool{"tests/go/repo/there_test.go": true}
 	for name, c := range map[string]struct {

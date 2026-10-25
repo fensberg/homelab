@@ -40,6 +40,7 @@ func sensor(t *testing.T, in string, env []string, changed string) (stdout, stde
 }
 
 func TestEverySensitivePathExists(t *testing.T) {
+	t.Parallel()
 	tree, entries := loadSensitivePaths(t)
 	for _, e := range entries {
 		if !tree.Exists(e.Path) {
@@ -57,6 +58,7 @@ Update this line in the same change that moved the file.`, e.Line, e.Path)
 // "probe.go returns a Status and never the value it read" is a reviewer being
 // told what to look for.
 func TestEverySensitivePathExplainsItself(t *testing.T) {
+	t.Parallel()
 	_, entries := loadSensitivePaths(t)
 	for _, e := range entries {
 		if e.Why == "" {
@@ -74,6 +76,7 @@ Name the property that breaks, not the fact that one exists.`, e.Line, e.Path, e
 // The building code must all be covered. Adding a rule to this package without
 // covering it here would leave the newest guard as the least protected one.
 func TestTheCodeLawsAreCoveredBySensitivePaths(t *testing.T) {
+	t.Parallel()
 	tree, entries := loadSensitivePaths(t)
 
 	covered := func(rel string) bool {
@@ -137,6 +140,7 @@ func runSensor(t *testing.T, changed string) (string, error) {
 }
 
 func TestSensorTripsOnAGuardedPath(t *testing.T) {
+	t.Parallel()
 	out, err := runSensor(t, "tests/go/repo/vaultcheck_test.go\nREADME.md\n")
 	if err != nil {
 		t.Fatalf("sensor failed: %v", err)
@@ -152,6 +156,7 @@ func TestSensorTripsOnAGuardedPath(t *testing.T) {
 }
 
 func TestSensorIsQuietOnAnInnocuousChange(t *testing.T) {
+	t.Parallel()
 	out, err := runSensor(t, "README.md\ndocs/ideas.md\n")
 	if err != nil {
 		t.Fatalf("sensor failed: %v", err)
@@ -170,6 +175,7 @@ func TestSensorIsQuietOnAnInnocuousChange(t *testing.T) {
 // was added to the list the test failed for a reason that had nothing to do
 // with anchoring.
 func TestSensorDoesNotMatchAPathPrefixedElsewhere(t *testing.T) {
+	t.Parallel()
 	_, entries := loadSensitivePaths(t)
 
 	var decoys []string
@@ -195,6 +201,7 @@ func TestSensorDoesNotMatchAPathPrefixedElsewhere(t *testing.T) {
 
 // An entry without a trailing slash names one file, not a prefix.
 func TestSensorFileEntryMatchesOnlyItself(t *testing.T) {
+	t.Parallel()
 	hit, err := runSensor(t, "config/management.tpl.json\n")
 	if err != nil {
 		t.Fatalf("sensor failed: %v", err)
@@ -247,6 +254,7 @@ const removedProofs = "tests/mutations-removed.yml"
 // with a reason, stops the check. Without this, a proof that is one of two
 // for its guard could be deleted and nothing would fail.
 func TestAProofCannotBeRemovedWithoutSayingSo(t *testing.T) {
+	t.Parallel()
 	site := t.TempDir()
 	write := func(rel, body string) {
 		t.Helper()
@@ -290,6 +298,7 @@ func TestAProofCannotBeRemovedWithoutSayingSo(t *testing.T) {
 // reason. A line naming a proof that is still there is a removal approved
 // before it has been made.
 func TestARemovalNamesAProofThatIsReallyGone(t *testing.T) {
+	t.Parallel()
 	tree := repository(t)
 	var list struct {
 		Removed []struct {
@@ -317,6 +326,7 @@ func TestARemovalNamesAProofThatIsReallyGone(t *testing.T) {
 // touched, and the conversation opened for it was anchored to a file the
 // pull request did not hold, which GitHub refused on every attempt (#692).
 func TestABranchBehindMainIsJudgedByItsOwnChanges(t *testing.T) {
+	t.Parallel()
 	site := t.TempDir()
 	git := func(args ...string) string {
 		t.Helper()
