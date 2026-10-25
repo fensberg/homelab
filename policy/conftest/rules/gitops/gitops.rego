@@ -16,8 +16,8 @@
 # Reintroducing it would take two steps - a token back in the config, and a
 # secretRef back in gotk-sync.yaml - so both are checked. Either one alone is
 # inert, which is exactly why neither would be caught by a run failing.
-# about. Decoding into a struct rather than grepping means a secretRef
-# indented into some other block cannot pass by not matching a regexp.
+# That the break-glass identity is kept out of the same template is
+# rules.break_glass_identity.
 package rules.gitops
 
 import data.lib
@@ -28,6 +28,16 @@ sources contains f if {
 	f.contents.kind == "GitRepository"
 	not endswith(f.path, "gotk-components.yaml")
 }
+
+# And the config template, which is where the token would have to be
+# declared before OpenTofu could reference it at all. Read as structure: the
+# obvious string to search for is "source_control.token", and it would never
+# have matched - the key is nested JSON, and the vault path it holds spells
+# the item "source-control" with a hyphen. So any field under source_control
+# whose name suggests a credential is refused, whatever the reference behind
+# it looks like.
+
+template := [f | some f in lib.at("config/management.tpl.json")]
 
 deny contains msg if {
 	count(sources) == 0
@@ -46,16 +56,6 @@ deny contains msg if {
 	msg := $"{f.path} clones from \"{object.get(f.contents.spec, "url", "")}\", which is not an anonymous https:// URL. Anonymous sync is what makes the missing secretRef correct. An ssh remote needs a deploy key, which is the same credential this rule exists to keep out of state."
 }
 
-# And the config template, which is where the token would have to be
-# declared before OpenTofu could reference it at all. Read as structure: the
-# obvious string to search for is "source_control.token", and it would never
-# have matched - the key is nested JSON, and the vault path it holds spells
-# the item "source-control" with a hyphen. So any field under source_control
-# whose name suggests a credential is refused, whatever the reference behind
-# it looks like.
-
-template := [f | some f in lib.at("config/management.tpl.json")]
-
 deny contains msg if {
 	not template[0].contents.source_control
 	msg := "the config template no longer declares source_control - this rule is checking the wrong file"
@@ -65,28 +65,4 @@ deny contains msg if {
 	some field in ["token", "password", "pat", "ssh_key", "deploy_key"]
 	field in object.keys(template[0].contents.source_control)
 	msg := $"config/management.tpl.json declares source_control.{field}. Declaring it renders it into config/management.rendered.json on every run, whether or not anything reads it - one more secret on disk for a clone that needs none."
-}
-
-# The break-glass identity is not in the config template. The rendered config
-# is written to disk by the Render phase and read by every later phase. The
-# recipient belongs there - it is public and the Backup phase needs it. The
-# identity does not: it is only ever needed by a human performing a restore
-# (policy/semgrep/breakglass-opentofu.yml keeps it out of OpenTofu too).
-
-template_says(word) if {
-	walk(template[0].contents, [path, v])
-	some s in array.concat([v | is_string(v)], [k | some k in path; is_string(k)])
-	contains(s, word)
-}
-
-deny contains msg if {
-	some word in ["state_backup/identity", "state_backup.identity", "backup_identity"]
-	template_says(word)
-	msg := $"config/management.tpl.json references \"{word}\". Adding it there would render the private half into config/management.rendered.json on every run, next to every other secret. The recipient belongs in the template because encryption needs it; the identity is only ever needed by a human performing a restore."
-}
-
-deny contains msg if {
-	template[0]
-	not template_says("state_backup/recipient")
-	msg := "the config template no longer references state_backup/recipient - the rule keeping the identity out of it is checking the wrong file"
 }

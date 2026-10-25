@@ -37,12 +37,3 @@ test_a_token_in_the_template_is_refused if {
 test_no_source_control_in_the_template_is_refused if {
 	denies(gitops.deny, "no longer declares source_control") with input as [good[0]]
 }
-
-test_the_break_glass_identity_in_the_template_is_refused if {
-	i := [good[0], {"path": "config/management.tpl.json", "contents": {"source_control": {"repo_url": "x"}, "state_backup": {"recipient": "{{ op://estate/state_backup/recipient }}", "identity": "{{ op://estate/state_backup/identity }}"}}}]
-	denies(gitops.deny, `references "state_backup/identity"`) with input as i
-}
-
-test_a_template_without_the_recipient_is_refused if {
-	denies(gitops.deny, "no longer references state_backup/recipient") with input as [good[0], {"path": "config/management.tpl.json", "contents": {"source_control": {"repo_url": "x"}}}]
-}

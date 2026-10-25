@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: workflow_jobs
+rule: job_hardening
 file: .github/workflows/zz-starts-with-an-unhardened-action.yml
 create: |
   name: planted

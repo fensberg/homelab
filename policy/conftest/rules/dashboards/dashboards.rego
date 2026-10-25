@@ -1,23 +1,21 @@
-# substituted is a "$" that something on a dashboard's way to Grafana would
-# take for a variable of its own: Flux takes the braced form, and the lane
-# that validates takes a bare name too.
-# dashboards is every dashboard in what Flux applies, by its path. Found by
-# what it is - a JSON file holding panels - and not by where it is kept.
-# A dashboard is kept in git, reaches Grafana, and says what each picture is
-# for.
+# A dashboard reaches Grafana as it was written, and says what each picture
+# is for.
 #
-# Three ways one fails without anything saying so. It holds a variable: Flux
+# Two ways one fails without anything saying so. It holds a variable: Flux
 # substitutes into everything it applies, and the lane that validates
 # substitutes a bare "$name" too, so a dashboard's own variable is blanked
-# on the way in and its panels are empty for no reason anybody can see. It
-# is written and never handed over: a file nothing lists is a dashboard that
-# is not there. And it is a picture with no account of itself, which is how
-# monitoring becomes decoration - this epoch's own words for it.
+# on the way in and its panels are empty for no reason anybody can see. And
+# it is a picture with no account of itself, which is how
+# monitoring becomes decoration - this epoch's own words for it. That it is handed to Grafana at all is
+# rules.dashboards_listed.
 package rules.dashboards
 
 import data.lib
 import rego.v1
 
+# substituted is a "$" that something on a dashboard's way to Grafana would
+# take for a variable of its own: Flux takes the braced form, and the lane
+# that validates takes a bare name too.
 substituted := `\$(\{|[A-Za-z_])\w*`
 
 # A dashboard is a JSON file Flux applies that has panels and a schema
@@ -30,8 +28,6 @@ declared contains f if {
 	f.contents.schemaVersion
 }
 
-dir(path) := concat("/", array.slice(parts, 0, count(parts) - 1)) if parts := split(path, "/")
-
 base(path) := parts[count(parts) - 1] if parts := split(path, "/")
 
 text(of, key) := trim_space(s) if {
@@ -40,6 +36,11 @@ text(of, key) := trim_space(s) if {
 }
 
 text(of, key) := "" if not is_string(object.get(of, key, ""))
+
+asks(p) if {
+	some target in object.get(p, "targets", [])
+	text(target, "expr") != ""
+}
 
 deny contains msg if {
 	count(declared) == 0
@@ -68,11 +69,6 @@ deny contains msg if {
 	msg := $"{f.path} has no panel"
 }
 
-asks(p) if {
-	some target in object.get(p, "targets", [])
-	text(target, "expr") != ""
-}
-
 deny contains msg if {
 	some f in declared
 	some p in f.contents.panels
@@ -95,32 +91,4 @@ deny contains msg if {
 	text(p, "description") != ""
 	not asks(p)
 	msg := $"{f.path}: the panel \"{text(p, "title")}\" asks Prometheus nothing"
-}
-
-# The kustomization beside a dashboard's directory lists it, and labels what
-# it generates for the sidecar that hands dashboards to Grafana.
-listing(f) := k if {
-	some k in lib.named("kustomization.yaml")
-	k.path == $"{dir(dir(f.path))}/kustomization.yaml"
-}
-
-deny contains msg if {
-	some f in declared
-	not listing(f)
-	msg := $"{f.path} is not handed to Grafana: no kustomization is beside its directory to list it"
-}
-
-deny contains msg if {
-	some f in declared
-	k := listing(f)
-	want := $"{base(dir(f.path))}/{base(f.path)}"
-	not want in {file | some g in object.get(k.contents, "configMapGenerator", []); some file in object.get(g, "files", [])}
-	msg := $"{f.path} is not handed to Grafana: the kustomization beside its directory does not list it, so it is a file and not a dashboard."
-}
-
-deny contains msg if {
-	some f in declared
-	k := listing(f)
-	object.get(k.contents, ["generatorOptions", "labels", "grafana_dashboard"], "") == ""
-	msg := $"{f.path} is listed and not labelled grafana_dashboard, so the sidecar that hands dashboards to Grafana does not see it."
 }

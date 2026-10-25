@@ -44,15 +44,6 @@ test_a_panel_that_asks_nothing_is_refused if {
 	denies(dashboards.deny, "asks Prometheus nothing") with input as [board({"panels": [object.remove(panel, ["targets"])]}), listed]
 }
 
-test_a_dashboard_nothing_lists_is_refused if {
-	denies(dashboards.deny, "a file and not a dashboard") with input as [board({}), listing([], {"grafana_dashboard": "1"})]
-	denies(dashboards.deny, "no kustomization is beside its directory") with input as [board({})]
-}
-
-test_an_unlabelled_listing_is_refused if {
-	denies(dashboards.deny, "not labelled grafana_dashboard") with input as [board({}), listing(["dashboards/where.json"], {})]
-}
-
 test_no_dashboard_is_refused if {
 	denies(dashboards.deny, "no dashboard was found") with input as []
 }

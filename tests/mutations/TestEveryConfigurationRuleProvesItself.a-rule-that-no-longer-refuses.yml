@@ -1,5 +1,5 @@
 guard: TestEveryConfigurationRuleProvesItself
-file: policy/conftest/rules/workflow_jobs/workflow_jobs.rego
+file: policy/conftest/rules/job_hardening/job_hardening.rego
 find: |
   deny contains msg if {
   	count(lib.jobs) == 0
