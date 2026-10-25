@@ -41,11 +41,6 @@ test_the_watch_as_it_should_be_passes if {
 	count(scheduled_workflows.deny) == 0 with input as good
 }
 
-test_the_most_often_cron_decides if {
-	scheduled_workflows.asked_for["hourly.yml"] == "hourly" with input as good
-	scheduled_workflows.asked_for["weekly.yml"] == "weekly" with input as good
-}
-
 test_a_scheduled_workflow_not_asked_about_is_refused if {
 	denies(scheduled_workflows.deny, "weekday.yml runs on a schedule and the cluster is not asked about it") with input as array.concat(workflows, [scrape(["hourly.yml", "daily.yml", "weekly.yml"], "15m"), good_rules])
 }
@@ -59,47 +54,10 @@ test_any_other_question_is_refused if {
 	denies(scheduled_workflows.deny, "which is not a workflow's latest completed scheduled run") with input as array.concat(workflows, [s, good_rules])
 }
 
-test_asking_too_often_is_refused if {
-	denies(scheduled_workflows.deny, "asks GitHub 48 times an hour: 4 workflows every 5 minutes. A caller with no token is allowed 60") with input as array.concat(workflows, [scrape(scheduled, "5m"), good_rules])
-}
-
-test_an_interval_not_in_minutes_is_refused if {
-	denies(scheduled_workflows.deny, "which is not a number of minutes") with input as array.concat(workflows, [scrape(scheduled, "1h"), good_rules])
-}
-
 test_no_watch_is_refused if {
 	denies(scheduled_workflows.deny, "0 ScrapeConfig named scheduled-workflows") with input as array.concat(workflows, [good_rules])
 }
 
 test_no_scheduled_workflow_is_refused if {
 	denies(scheduled_workflows.deny, "no workflow runs on a schedule") with input as [scrape([], "15m"), good_rules]
-}
-
-test_a_cron_not_of_five_fields_is_refused if {
-	denies(scheduled_workflows.deny, "is scheduled by \"@daily\", which is not five fields") with input as array.concat(good, [wf("odd.yml", ["@daily"])])
-}
-
-test_a_workflow_with_no_deadline_is_refused if {
-	r := rules([due(`x{instance=~"daily.yml|weekday.yml"}`, "daily"), due(`x{instance=~"weekly.yml"}`, "weekly")])
-	denies(scheduled_workflows.deny, "hourly.yml is asked for hourly and has no deadline") with input as array.concat(workflows, [scrape(scheduled, "15m"), r])
-}
-
-test_the_wrong_deadline_is_refused if {
-	r := rules([due(`x{instance=~"daily.yml|weekday.yml|hourly.yml"}`, "daily"), due(`x{instance=~"weekly.yml"}`, "weekly")])
-	denies(scheduled_workflows.deny, "either never late or always late") with input as array.concat(workflows, [scrape(scheduled, "15m"), r])
-}
-
-test_two_deadlines_are_refused if {
-	r := rules([due(`x{instance=~"hourly.yml"}`, "hourly"), due(`x{instance=~"daily.yml|weekday.yml|hourly.yml"}`, "daily"), due(`x{instance=~"weekly.yml"}`, "weekly")])
-	denies(scheduled_workflows.deny, "hourly.yml is given 2 deadlines") with input as array.concat(workflows, [scrape(scheduled, "15m"), r])
-}
-
-test_an_alert_naming_no_workflow_is_refused if {
-	r := rules([due(`x{instance=~"hourly.yml"}`, "hourly"), due(`x{instance=~"daily.yml|weekday.yml"}`, "daily"), due(`x{instance=~"weekly.yml"}`, "weekly"), due("x", "daily")])
-	denies(scheduled_workflows.deny, "names no workflow") with input as array.concat(workflows, [scrape(scheduled, "15m"), r])
-}
-
-test_a_deadline_for_no_scheduled_workflow_is_refused if {
-	r := rules([due(`x{instance=~"hourly.yml"}`, "hourly"), due(`x{instance=~"daily.yml|weekday.yml|gone.yml"}`, "daily"), due(`x{instance=~"weekly.yml"}`, "weekly")])
-	denies(scheduled_workflows.deny, "gives gone.yml a deadline") with input as array.concat(workflows, [scrape(scheduled, "15m"), r])
 }
