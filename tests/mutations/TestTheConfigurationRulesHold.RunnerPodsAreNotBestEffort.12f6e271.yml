@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: runners
+rule: runner_requests
 file: clusters/core/infrastructure/configs/runner-scale-set.yaml
 find: "memory: 2Gi"
 replace: "ephemeral-storage: 1Gi"

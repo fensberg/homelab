@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: versions
+rule: client_skew
 file: modules/infrastructure/cluster/variables.tf
 find: "  talos_version = \"v1.13.9\"\n"
 replace: "  talos_version = \"v1.10.0\"\n"

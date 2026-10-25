@@ -341,11 +341,12 @@ func rulesDeclaredIn(t *testing.T, tree *parsed.Tree, dir string) map[string]boo
 	t.Helper()
 	declared := map[string]bool{}
 	for _, rel := range tree.Files(t) {
-		if filepath.Dir(rel) != dir {
-			continue
-		}
+		// The code rules are the files of their directory; the
+		// configuration rules are every policy file beneath theirs, each
+		// package in a directory of its own.
+		inDir, under := filepath.Dir(rel) == dir, strings.HasPrefix(rel, dir+"/")
 		switch {
-		case strings.HasSuffix(rel, ".yml"):
+		case strings.HasSuffix(rel, ".yml") && inDir:
 			var doc struct {
 				Rules []struct {
 					ID string `yaml:"id"`
@@ -355,7 +356,7 @@ func rulesDeclaredIn(t *testing.T, tree *parsed.Tree, dir string) map[string]boo
 			for _, r := range doc.Rules {
 				declared[r.ID] = true
 			}
-		case strings.HasSuffix(rel, ".rego"):
+		case strings.HasSuffix(rel, ".rego") && under:
 			if name, ok := strings.CutPrefix(regoPackage(tree.Rego(t, rel)), "rules."); ok && !isTestPackage(name) {
 				declared[name] = true
 			}

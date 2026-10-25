@@ -128,7 +128,7 @@ jobs:
   # longer mints is a red patrol within the hour.
   #
   # A job of its own, so the patrol that looks at the estate goes on holding
-  # no key at all. policy/conftest/app_keys.rego holds this to every App key
+  # no key at all. policy/conftest/rules/app_keys/app_keys.rego holds this to every App key
   # any workflow is handed: a new one that is not proved here is refused.
   # ---------------------------------------------------------------------
   keys:

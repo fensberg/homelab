@@ -80,6 +80,7 @@ earlier epoch whose decisions you are about to touch.
 | 11  | Black Box, White Glove | an estate for each client                         | Not started | [11-black-box-white-glove.md](11-black-box-white-glove.md) |
 | 12  | Vendor Account         | `management/estate/`                              | Not started | [12-vendor-account.md](12-vendor-account.md)               |
 | 13  | Game Streaming         | `management/hypervisor/`, `modules/applications/` | Not started | [13-game-streaming.md](13-game-streaming.md)               |
+| 14  | Second Site            | `config/`, `management/`, `clusters/`             | Not started | [14-second-site.md](14-second-site.md)                     |
 
 ## Working an epoch
 

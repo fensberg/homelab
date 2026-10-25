@@ -22,7 +22,7 @@
 # reintroducing the old name does not reintroduce the old exposure.
 #
 # The rendered config's half is a configuration rule
-# (policy/conftest/gitops.rego), and the contractor's is
+# (policy/conftest/rules/gitops/gitops.rego), and the contractor's is
 # breakglass-contractor.yml.
 rules:
   - id: the-break-glass-identity-is-never-referenced-by-opentofu

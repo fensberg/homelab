@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+rule: supplier_hooks
+file: scripts/approved-suppliers.yml
+find: "  - repo: https://github.com/rbubley/mirrors-prettier\n"
+replace: "  - repo: https://github.com/rbubley/mirrors-prettier-gone\n"
+mentions: "runs https://github.com/rbubley/mirrors-prettier and scripts/approved-suppliers.yml does not declare it"
+why: >
+  Every repository pre-commit clones runs on every commit. One the list no
+  longer declares is code nobody approved running with the developer's rights.

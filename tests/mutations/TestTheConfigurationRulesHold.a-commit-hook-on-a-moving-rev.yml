@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: suppliers
+rule: supplier_hooks
 file: .pre-commit-config.yaml
 find: "  - repo: https://github.com/rbubley/mirrors-prettier\n    rev: v3.9.6\n"
 replace: "  - repo: https://github.com/rbubley/mirrors-prettier\n    rev: main\n"

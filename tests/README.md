@@ -153,12 +153,12 @@ guard here (decided 2026-10-16).
 
 ### Reaching the self-hosted runner from a pull request
 
-`policy/conftest/pull_request_runners.rego` guards the one line this
-repository used to cross deliberately: a pull request's code running on the
-estate's runner. The plan of a pull request did, reading real state with real
-credentials, behind a fork guard and an environment reviewer - and a fork
-guard is not a same-repo-branch guard, so every collaborator, bot and leaked
-token was one branch away from the estate's network.
+`policy/conftest/rules/pull_request_runners/pull_request_runners.rego` guards
+the one line this repository used to cross deliberately: a pull request's code
+running on the estate's runner. The plan of a pull request did, reading real
+state with real credentials, behind a fork guard and an environment reviewer -
+and a fork guard is not a same-repo-branch guard, so every collaborator, bot and
+leaked token was one branch away from the estate's network.
 
 It no longer does. `plan-infrastructure.yml` plans each site against the
 as-built record on GitHub's runner, with no credential (#554), and the rule is

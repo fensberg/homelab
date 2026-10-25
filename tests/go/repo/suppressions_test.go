@@ -331,9 +331,10 @@ func (s silencers) configEntries(t *testing.T) []configEntry {
 							continue
 						}
 						for i := 0; i+1 < len(n.Content); i += 2 {
-							// A rule switched off. One given settings is
-							// still on, and is not a silencing.
-							if v := n.Content[i+1]; v.Kind != yaml.ScalarNode || v.Value != "false" {
+							// A rule switched off: false, or a level of
+							// ignore. One given settings is still on, and
+							// is not a silencing.
+							if v := n.Content[i+1]; !switchedOff(v) {
 								continue
 							}
 							k := n.Content[i]
@@ -497,4 +498,21 @@ func TestEveryToolThatArrivesSaysHowItIsSilenced(t *testing.T) {
 		t.Errorf("%s names %d tool(s) that no longer arrive:\n\n  %s\n\nRemove them with the tool.",
 			silencersFile, len(gone), strings.Join(gone, "\n  "))
 	}
+}
+
+// switchedOff says whether a rule's entry in a tool's configuration turns it
+// off: set to false, or given a level of ignore, which is how Regal does it.
+func switchedOff(v *yaml.Node) bool {
+	if v.Kind == yaml.ScalarNode {
+		return v.Value == "false"
+	}
+	if v.Kind != yaml.MappingNode {
+		return false
+	}
+	for i := 0; i+1 < len(v.Content); i += 2 {
+		if v.Content[i].Value == "level" && v.Content[i+1].Value == "ignore" {
+			return true
+		}
+	}
+	return false
 }

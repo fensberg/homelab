@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: suppliers
+rule: supplier_reasons
 file: scripts/approved-suppliers.yml
 find: "    reason: The operator running the state database."
 replace: '    reason: ""'

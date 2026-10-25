@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: cni
+rule: cni_ipam
 file: clusters/bootstrap/cilium.yaml
 find: '  ipam: "kubernetes"'
 replace: '  ipam: "cluster-pool"'

@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+rule: hook_tasks
+file: .pre-commit-config.yaml
+find: "        entry: task delivery-guard\n"
+replace: "        entry: task delivery-guards\n"
+mentions: "and taskfile.yml has no such task"
+why: >
+  A hook that calls a task that does not exist fails with task's own error
+  rather than a verdict, which is a guard broken in the direction of noise.

@@ -59,7 +59,7 @@ func TestVersionsAreDeclaredOnceAndSharedByBoth(t *testing.T) {
 	// .github/actions/versions exports the same pins into the job environment,
 	// so the name went on breaking rclone everywhere outside the image build
 	// until the Backup phase lost five nights to it (#487). The pin itself is
-	// RCLONE_DEB_VERSION now, and the namespace is guarded in policy/conftest/versions.rego.
+	// RCLONE_DEB_VERSION now, and the namespace is guarded in policy/conftest/rules/rclone_namespace/rclone_namespace.rego.
 	argFor := map[string]string{
 		"TOFU_VERSION":       "TOFU_VERSION",
 		"RCLONE_DEB_VERSION": "RCLONE_DEB_VERSION",

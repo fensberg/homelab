@@ -1,13 +1,10 @@
 guard: TestTheConfigurationRulesHold
-rule: suppliers
-file: management/platform/versions.tf
-find: 'kubernetes = { source = "hashicorp/kubernetes"'
-replace: 'kubernetes = { source = "evilcorp/kubernetes"'
+rule: supplier_providers
+file: management/platform/.terraform.lock.hcl
+find: 'provider "registry.opentofu.org/hashicorp/kubernetes" {'
+replace: 'provider "registry.opentofu.org/evilcorp/kubernetes" {'
 mentions: "is not an approved supplier"
 why: >
-  A provider is third-party code downloaded at init time and executed with
-  this estate's credentials - the hypervisor API token, the cluster PKI,
-  the object storage keys. Swapping one source for another is a single word
-  in an HCL block and would otherwise reach the estate with nobody deciding
-  to take delivery from that party. The mutation is the exact shape of a
-  typosquat.
+  A provider runs with this estate's credentials. One from a party nobody
+  approved, taken by changing its source and initialising again, is in the
+  lock that init writes, and every run after takes delivery from it.

@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: pools
+rule: plan_pool_names
 file: modules/infrastructure/cluster/pools.tf
 find: 'resource "proxmox_pool_membership" "workers"'
 replace: 'resource "proxmox_pool_membership" "by_function"'

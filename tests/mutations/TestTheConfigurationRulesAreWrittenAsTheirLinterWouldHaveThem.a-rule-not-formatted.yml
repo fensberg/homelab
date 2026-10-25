@@ -1,0 +1,8 @@
+guard: TestTheConfigurationRulesAreWrittenAsTheirLinterWouldHaveThem
+file: policy/conftest/rules/workflow_pipefail/workflow_pipefail.rego
+find: "deny contains msg if {\n\tcount(lib.workflows) == 0\n"
+replace: "deny  contains msg if {\n\tcount(lib.workflows) == 0\n"
+mentions: "opa-fmt"
+why: >
+  A policy file Regal would refuse is one written differently from the rest.
+  The lint has to run, and a refusal has to fail the guard.

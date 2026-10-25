@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: control_plane_metrics
+rule: plan_control_plane_metrics
 file: clusters/core/infrastructure/controllers/kube-prometheus-stack.yaml
 find: "    kubeScheduler:\n      enabled: true\n"
 replace: "    kubeScheduler:\n      enabled: false\n"

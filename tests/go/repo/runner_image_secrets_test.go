@@ -176,5 +176,5 @@ func declaredNames(built []dockerInstruction) []string {
 }
 
 // scaleSetImage is the image a scale set's manifest names. That every one is
-// pinned by digest is a configuration rule (policy/conftest/runner_images.rego).
+// pinned by digest is a configuration rule (policy/conftest/rules/runner_images/runner_images.rego).
 var scaleSetImage = regexp.MustCompile(`(?m)^\s*image:\s*(\S+)`)

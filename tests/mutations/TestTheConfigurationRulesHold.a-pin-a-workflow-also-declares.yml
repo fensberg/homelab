@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+rule: version_pins
+file: scripts/versions.env
+find: "RCLONE_DEB_VERSION=1.75.0\n"
+replace: "RCLONE_DEB_VERSION=1.75.0\nSKIP=1\n"
+mentions: "declares SKIP itself"
+why: >
+  What versions.env pins it alone pins. A key it takes on that a workflow
+  already writes down is a second declaration of the same value.

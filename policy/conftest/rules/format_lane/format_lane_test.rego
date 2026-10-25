@@ -1,0 +1,37 @@
+package rules.format_lane_test
+
+import data.rules.format_lane
+import rego.v1
+
+setup_go := {"path": ".github/workflows/setup-go/action.yml", "contents": {"runs": {"using": "composite", "steps": [{"uses": "actions/setup-go@0123", "with": {"go-version": "${{ env.GO_VERSION }}"}}]}}}
+
+lane(steps) := {"path": ".github/workflows/pr-validation.yml", "contents": {"jobs": {"format": {"steps": steps}}}}
+
+go := {"uses": "$/.github/workflows/setup-go"}
+
+gate := {"run": "go run -C scripts/security . guard-deliveries -before-install"}
+
+deliver := {"run": "scripts/take-delivery.sh pre-commit pre-commit-hooks"}
+
+run := {"run": "pre-commit run --all-files --show-diff-on-failure"}
+
+denies(msgs, words) if {
+	some msg in msgs
+	contains(msg, words)
+}
+
+test_the_gate_first_on_the_pinned_go_passes if {
+	count(format_lane.deny) == 0 with input as [setup_go, lane([go, gate, deliver, run])]
+}
+
+test_no_gate_is_refused if {
+	denies(format_lane.deny, "does not run the supplier gate before installing") with input as [setup_go, lane([go, deliver, run])]
+}
+
+test_a_delivery_before_the_gate_is_refused if {
+	denies(format_lane.deny, `runs "scripts/take-delivery.sh" before the supplier gate`) with input as [setup_go, lane([go, deliver, gate, run])]
+}
+
+test_no_format_lane_is_refused if {
+	denies(format_lane.deny, "no job runs pre-commit run --all-files") with input as [setup_go]
+}

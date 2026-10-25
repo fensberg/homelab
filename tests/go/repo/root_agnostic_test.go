@@ -15,6 +15,7 @@ import (
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 
+	"homelab/contractor/steps"
 	"homelab/tests/harness"
 	"homelab/tests/parsed"
 )
@@ -49,7 +50,7 @@ import (
 func TestNoTestNamesTheRootItReads(t *testing.T) {
 	tree := repository(t)
 	tofu := tree.OpenTofu(t)
-	roots := openTofuRoots(tofu)
+	roots := parsed.OpenTofuRoots(tofu)
 	if len(roots) < 3 {
 		t.Fatalf("found %d OpenTofu root(s), so the enumeration has stopped matching", len(roots))
 	}
@@ -171,7 +172,7 @@ func rootsNamed(rel string, fset *token.FileSet, f *ast.File, roots []string, to
 var (
 	declMachineConfig = []string{"data", "talos_machine_configuration", "controlplane"}
 	declClusterHealth = []string{"data", "talos_cluster_health"}
-	declMachines      = []string{"resource", "proxmox_virtual_environment_vm", "talos_cp"}
+	declMachines      = []string{"resource", steps.MachineResource, "talos_cp"}
 	declPools         = []string{"resource", "proxmox_virtual_environment_pool", "control_plane"}
 	declInvariants    = []string{"resource", "terraform_data", "invariants"}
 )

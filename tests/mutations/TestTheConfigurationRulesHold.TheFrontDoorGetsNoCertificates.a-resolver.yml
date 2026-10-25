@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: one_owner_per_layer
+rule: front_door_gets_no_certificates
 file: clusters/core/infrastructure/controllers/traefik.yaml
 find: "    certificatesResolvers: {}\n"
 replace: "    certificatesResolvers:\n      own:\n        acme: {}\n"

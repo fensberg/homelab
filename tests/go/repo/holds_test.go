@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"homelab/contractor/config"
+	"homelab/contractor/steps"
 	"homelab/details/applications"
 	"homelab/details/capacity"
 	"homelab/details/holds"
@@ -344,7 +345,7 @@ func TestAMachinesMemoryIsTheSameWhereItIsMadeAndWhereItIsBudgeted(t *testing.T)
 	for resource, role := range map[string]config.MachineRole{
 		"talos_cp": config.ControlPlane, "talos_worker": config.Worker, "dmz": config.Untrusted,
 	} {
-		machine := tree.Declaring(t, "resource", "proxmox_virtual_environment_vm", resource)
+		machine := tree.Declaring(t, "resource", steps.MachineResource, resource)
 		given := parsed.Attribute(machine.Body, "memory", "dedicated")
 		if given == nil {
 			t.Fatalf("the machine %s is given no memory", resource)

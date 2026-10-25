@@ -56,7 +56,8 @@ permissions:
 # feeding a working one is a green step. Naming the shell explicitly gets
 # `bash --noprofile --norc -eo pipefail {0}` instead.
 #
-# policy/conftest/workflow_shape.rego asserts this is present.
+# policy/conftest/rules/workflow_pipefail/workflow_pipefail.rego asserts this
+# is present.
 defaults:
   run:
     shell: bash
@@ -159,9 +160,10 @@ jobs:
       # only as YAML inside a workflow is a convention somebody remembered to
       # write, and a convention fails.
       #
-      # policy/conftest/sensitive_paths.rego asserts this step exists, that
-      # the invocation is one that can actually run, and that nothing here
-      # has gone back to labels.
+      # policy/conftest/rules/sensitive_gate_conversation asserts this step
+      # exists and that the invocation is one that can actually run, and
+      # policy/conftest/rules/sensitive_gate_labels that nothing here has gone
+      # back to labels.
       #
       # `go run -C <dir> .` rather than `go run ./scripts/attestation`: this
       # repository has no module at its root, deliberately - each program is

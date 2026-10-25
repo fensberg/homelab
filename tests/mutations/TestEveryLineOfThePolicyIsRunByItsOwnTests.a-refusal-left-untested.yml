@@ -1,0 +1,9 @@
+guard: TestEveryLineOfThePolicyIsRunByItsOwnTests
+file: policy/conftest/rules/workflow_tmpdir/workflow_tmpdir_test.rego
+find: "\ntest_no_workflow_is_refused if {\n"
+replace: "\nno_workflow_is_refused if {\n"
+mentions: "workflow_tmpdir/workflow_tmpdir.rego: rows"
+why: >
+  A refusal with no test of its own may never fire, and the ledger, which
+  proves the rule refuses a broken tree somewhere, cannot tell. Named so
+  that OPA does not run it, the test is as good as gone.

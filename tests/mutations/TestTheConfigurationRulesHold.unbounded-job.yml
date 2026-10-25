@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: workflow_jobs
+rule: job_timeout
 file: .github/workflows/zz-an-unbounded-job.yml
 create: |
   name: planted

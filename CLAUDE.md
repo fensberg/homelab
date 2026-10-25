@@ -99,13 +99,13 @@ the site's own service account, with read and write on `site0` and read on
 `site0-shared` and `estate-shared`, and nothing else. The contractor refuses a
 token that can see more (`scripts/details/vaults`).
 
-**None of them needs a reviewer.** Every job naming an
-environment runs from `main` or on a schedule, never from a pull request: a
-pull request's plan runs on GitHub's runner against the as-built record and
-holds no credential (#554). So the only thing that reaches the estate is a
-merge, and the pull request's approval is the only gate.
-`policy/conftest/pull_request_runners.rego` refuses any pull-request job on the
-estate's runner.
+**None of them needs a reviewer.** Every job naming an environment runs from
+`main` or on a schedule, never from a pull request: a pull request's plan runs
+on GitHub's runner against the as-built record and holds no credential (#554).
+So the only thing that reaches the estate is a merge, and the pull request's
+approval is the only gate.
+`policy/conftest/rules/pull_request_runners/pull_request_runners.rego` refuses
+any pull-request job on the estate's runner.
 
 ## Invariants
 
@@ -487,11 +487,12 @@ that password across sites would mean compromising one reaches all - the
 backup recipient is the exception precisely because it is a public key, and
 sharing it costs nothing.
 
-Hostnames, credentials and even the site's human name are `op://` references,
-so the file shows the shape of the estate without revealing what or where
-anything is. Every one of them must be wrapped in `{{ }}` - `op inject`
-substitutes nothing else, and a bare `op://` string is valid JSON that reaches
-the reader verbatim. `policy/conftest/config_template.rego` asserts it.
+Hostnames, credentials and even the site's human name are `op://` references, so
+the file shows the shape of the estate without revealing what or where anything
+is. Every one of them must be wrapped in `{{ }}` - `op inject` substitutes
+nothing else, and a bare `op://` string is valid JSON that reaches the reader
+verbatim. `policy/conftest/rules/config_template/config_template.rego` asserts
+it.
 
 **Every `op://` reference in the template must resolve.** There is no way to
 leave a placeholder site or node, so add the vault items first, then the
@@ -702,8 +703,9 @@ runs a build, a converge and a teardown through the real phases with `tofu`,
 `op`, `age` and `rclone` replaced on PATH by programs that log what they were
 asked. It asserts what reaches tofu and in which root, not what a phase
 prints. A phase added to a verb has to be run there or declared not to be.
-`plan_unbuilt_test.go` plans both roots from nothing with the real providers
-and a stand-in for every vault value.
+`steps.PlanUnbuilt` plans both roots from nothing with the real providers
+and a stand-in for every vault value; its test holds the plan to that, and
+the configuration rules judge OpenTofu on the plan it makes.
 
 Coverage is a ratchet, not a threshold: `tests/coverage-baseline.json` is a
 floor a pull request may not drop below and is free to leave alone.

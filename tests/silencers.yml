@@ -36,6 +36,14 @@ tools:
     arrives_as: [SEMGREP_VERSION]
     marks: ["nosemgrep"]
 
+  regal:
+    arrives_as: [REGAL_VERSION]
+    marks: ["regal ignore:"]
+    config:
+      # A rule is switched off by giving it level: ignore.
+      - file: .regal/config.yaml
+        maps: [rules.*]
+
   conftest:
     arrives_as: [CONFTEST_VERSION]
     # A rule is excused for a file by an exception rule in the policy.

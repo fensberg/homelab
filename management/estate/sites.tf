@@ -6,6 +6,8 @@
 # name is cosmetic and its id is what a token holds. one() fails the plan if
 # the name ever matches nothing or more than one.
 data "cloudflare_account_api_token_permission_groups_list" "r2_bucket_write" {
+  count = var.offline ? 0 : 1
+
   account_id = local.access.account_id
   name       = "Workers R2 Storage Bucket Item Write"
 }
@@ -14,6 +16,8 @@ data "cloudflare_account_api_token_permission_groups_list" "r2_bucket_write" {
 # it: what the safety officer holds, so the party that checks a copy exists
 # can never be what destroys one.
 data "cloudflare_account_api_token_permission_groups_list" "r2_bucket_read" {
+  count = var.offline ? 0 : 1
+
   account_id = local.access.account_id
   name       = "Workers R2 Storage Bucket Item Read"
 }
@@ -39,11 +43,11 @@ module "site" {
   tunnel_routes   = local.site_routes[each.key]
   served          = local.site_served[each.key]
   rules_from      = local.rules_from[each.key]
-  zone            = data.cloudflare_zone.estate.zone_id
-  zone_read       = one(data.cloudflare_account_api_token_permission_groups_list.zone_read.result).id
-  dns_write       = one(data.cloudflare_account_api_token_permission_groups_list.dns_write.result).id
-  r2_bucket_write = one(data.cloudflare_account_api_token_permission_groups_list.r2_bucket_write.result).id
-  r2_bucket_read  = one(data.cloudflare_account_api_token_permission_groups_list.r2_bucket_read.result).id
+  zone            = local.read.zone
+  zone_read       = local.read.zone_read
+  dns_write       = local.read.dns_write
+  r2_bucket_write = local.read.r2_bucket_write
+  r2_bucket_read  = local.read.r2_bucket_read
 }
 
 # Read by the lawyer after an apply, and written into each site's -shared

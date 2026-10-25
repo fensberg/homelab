@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: required_checks
+rule: plan_required_checks
 file: .github/workflows/pr-validation.yml
 find: "    name: \"Test (go, tofu, vitest)\"\n"
 replace: "    name: \"Tests (go, tofu, vitest)\"\n"

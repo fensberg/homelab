@@ -20,7 +20,7 @@ import (
 // a new branch and a new pull request.
 //
 // So the rule is enforced by a pre-push hook, and a configuration rule keeps
-// the hook wired (policy/conftest/push_hooks.rego). What is left here is that
+// the hook wired (policy/conftest/rules/push_hooks/push_hooks.rego). What is left here is that
 // the hook and signedpush agree on the one ref a push may go to.
 type preCommitConfig struct {
 	DefaultStages []string `yaml:"default_stages"`

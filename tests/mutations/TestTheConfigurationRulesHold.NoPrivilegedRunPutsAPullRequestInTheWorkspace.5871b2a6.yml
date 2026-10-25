@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: workflow_trust
+rule: privileged_workspace
 file: .github/workflows/zz-privileged-reset.yml
 create: |
   name: planted

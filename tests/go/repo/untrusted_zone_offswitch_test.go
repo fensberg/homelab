@@ -1,11 +1,7 @@
 package repo
 
 import (
-	"slices"
-	"strings"
 	"testing"
-
-	"github.com/hashicorp/hcl/v2"
 )
 
 // The untrusted zone has an off switch, and it has to keep working.
@@ -23,45 +19,9 @@ import (
 // turns up when somebody wonders what vnetdmz is for months later.
 //
 // See docs/epochs/03-workload.md, "Removing the untrusted zone".
-
-// Every zone resource keys off the machines, never off the site.
 //
-// `for_each = toset(local.dmz_hypervisors)` builds nothing when the zone is
-// empty, because that list is derived from the machines. `for_each =
-// toset(local.all_vm_hypervisors)` would build the same resource on every
-// hypervisor forever, and would read as correct in review - it is the line the
-// resource beside it uses.
-func TestEveryZoneResourceIsKeyedOffItsMachines(t *testing.T) {
-	var checked int
-	for _, block := range repository(t).Blocks(t, "resource") {
-		// A zone's resource is named for it.
-		if len(block.Labels) < 2 || !strings.Contains(block.Labels[1], "dmz") {
-			continue
-		}
-		forEach, ok := block.Body.Attributes["for_each"]
-		if !ok {
-			continue // not a per-machine resource at all
-		}
-		checked++
-		if !slices.ContainsFunc(forEach.Expr.Variables(), func(ref hcl.Traversal) bool {
-			return slices.ContainsFunc(ref, func(step hcl.Traverser) bool {
-				attr, is := step.(hcl.TraverseAttr)
-				return is && strings.Contains(attr.Name, "dmz")
-			})
-		}) {
-			t.Errorf(`%s is a zone resource keyed off %s.
-
-That builds it whether or not any untrusted machine exists, so an estate that
-has deprecated its last untrusted workload keeps maintaining the zone. Key it
-off a dmz collection - those are derived from the machines and are empty when
-there are none.`, block.Address(), repository(t).Source(t, forEach.Expr))
-		}
-	}
-	if checked == 0 {
-		t.Fatal("no zone resource with a for_each was found, so this test proves nothing.\n\n" +
-			"Either the zone moved or its resources stopped being per-machine.")
-	}
-}
+// That every zone resource is keyed off the zone is a rule over the plan
+// (policy/conftest/rules/plan_zone_off_switch/plan_zone_off_switch.rego); the playbook's half is here.
 
 // Every zone task in the playbook loops over the zones.
 //

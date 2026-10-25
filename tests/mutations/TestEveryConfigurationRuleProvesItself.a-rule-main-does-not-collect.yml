@@ -1,7 +1,7 @@
 guard: TestEveryConfigurationRuleProvesItself
-file: policy/conftest/workflow_jobs.rego
-find: "package rules.workflow_jobs\n"
-replace: "package workflow_jobs\n"
+file: policy/conftest/rules/job_hardening/job_hardening.rego
+find: "package rules.job_hardening\n"
+replace: "package job_hardening\n"
 mentions: "a rule anywhere else never runs and says nothing"
 why: >
   Conftest asks one namespace, main, and main collects the packages under

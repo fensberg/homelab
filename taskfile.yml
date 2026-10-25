@@ -487,7 +487,7 @@ tasks:
     desc: "Re-render the committed Cilium manifest from the pinned chart version"
     cmds:
       # The manifest is generated and committed, so its image digests are
-      # reviewable and policy/conftest/suppliers.rego can read them. That only holds while
+      # reviewable and policy/conftest/rules/supplier_images/supplier_images.rego can read them. That only holds while
       # anyone can reproduce it, so the render is a verb rather than a note
       # telling the next person which helm flags were used.
       #

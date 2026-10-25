@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+rule: alert_channel
+file: clusters/core/infrastructure/controllers/kube-prometheus-stack.yaml
+find: "{{ if .Annotations.first_step }}First: {{ .Annotations.first_step }}{{ else if .Annotations.runbook_url }}"
+replace: "{{ if .Annotations.runbook_url }}"
+mentions: "does not print an alert's first step"
+why: >
+  Every alert carries a first step so that whoever is paged reads it. A
+  template that stops printing it leaves every step written and none read.

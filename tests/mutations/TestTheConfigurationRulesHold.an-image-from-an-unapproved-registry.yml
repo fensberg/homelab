@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: suppliers
+rule: supplier_images
 file: clusters/core/infrastructure/configs/scheduled-workflows.yaml
 find: "          image: quay.io/prometheuscommunity/json-exporter:"
 replace: "          image: registry.example.invalid/prometheuscommunity/json-exporter:"

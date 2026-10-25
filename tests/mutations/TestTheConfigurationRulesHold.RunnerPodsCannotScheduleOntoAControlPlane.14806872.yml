@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: runners
+rule: runner_affinity
 file: clusters/core/infrastructure/configs/runner-scale-set.yaml
 # Anchored on the priority class above it, because this file now carries
 # the same anti-control-plane rule twice - once for the runner and once for

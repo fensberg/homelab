@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: version_pins
+rule: version_exports
 file: .github/actions/versions/action.yml
 find: "_VERSION=[A-Za-z0-9][A-Za-z0-9._+-]*$"
 replace: "_VERSION=.*$"

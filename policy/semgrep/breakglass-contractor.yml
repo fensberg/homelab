@@ -7,7 +7,7 @@
 # phase that holds the private half could decrypt the backups it is writing,
 # which is the property this key exists to deny. Keeping it out of OpenTofu
 # and out of the rendered config is breakglass-opentofu.yml and
-# policy/conftest/gitops.rego.
+# policy/conftest/rules/gitops/gitops.rego.
 rules:
   - id: the-break-glass-identity-is-read-only-by-the-restore-path
     # Followed as data, from the identity's reference - or its path written

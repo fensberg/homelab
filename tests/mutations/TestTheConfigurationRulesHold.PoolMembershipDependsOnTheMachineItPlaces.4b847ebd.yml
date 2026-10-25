@@ -1,9 +1,9 @@
 guard: TestTheConfigurationRulesHold
-rule: pools
+rule: plan_pool_destroy_order
 file: modules/infrastructure/cluster/pools.tf
 find: "vm_id   = proxmox_virtual_environment_vm.talos_worker[each.key].vm_id"
 replace: "vm_id   = each.value.vm_id"
-mentions: "no dependency edge"
+mentions: "creates no dependency edge"
 why: >
   The number is identical either way, so nothing about the estate that gets
   built changes and no plan looks different. What is lost is the ordering on

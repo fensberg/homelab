@@ -54,6 +54,14 @@ var shapes = map[string]func(f *Fingerprinter, v string) string{
 	// Split on "/" to find the owner and repository.
 	"repo_url":    (*Fingerprinter).url,
 	"webhook_url": (*Fingerprinter).url,
+	// The estate's repository, split the same way.
+	"url": (*Fingerprinter).url,
+	// Cloudflare checks the token's format when the provider configures:
+	// forty characters.
+	"api_token": func(f *Fingerprinter, v string) string { return f.hex(v, 40) },
+	// The App that delivers unreviewed, whose id the OpenTofu takes as a
+	// number.
+	"procurement_app_id": (*Fingerprinter).digits,
 	// Proxmox checks the token's format when the provider configures.
 	"token_id":     (*Fingerprinter).proxmoxTokenID,
 	"token_secret": (*Fingerprinter).uuid,
@@ -87,6 +95,12 @@ func (f *Fingerprinter) address(v string) string {
 }
 
 func (f *Fingerprinter) url(v string) string {
+	if strings.HasPrefix(strings.TrimSpace(v), "{{") {
+		// A field with no value yet, only the vault's reference to one, as a
+		// plan from nothing has it: a URL of the shape every one of these
+		// has, an owner and a name below a host.
+		return "https://" + f.Opaque(v) + ".invalid/" + f.Opaque(v+"/owner") + "/" + f.Opaque(v+"/name")
+	}
 	scheme, rest, found := strings.Cut(v, "://")
 	if !found {
 		return f.Opaque(v)
@@ -113,6 +127,16 @@ func (f *Fingerprinter) uuid(v string) string {
 
 func (f *Fingerprinter) hex(v string, n int) string {
 	return strings.Repeat(hex.EncodeToString(f.mac(v)), 2)[:n]
+}
+
+// digits is a stand-in for a number: eight digits, the first never a zero.
+func (f *Fingerprinter) digits(v string) string {
+	d := f.mac(v)
+	out := []byte{'1' + d[0]%9}
+	for _, b := range d[1:8] {
+		out = append(out, '0'+b%10)
+	}
+	return string(out)
 }
 
 func (f *Fingerprinter) base64(v string) string {

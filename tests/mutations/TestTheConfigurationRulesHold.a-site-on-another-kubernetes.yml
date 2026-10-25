@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+rule: scheduler_version
+file: modules/infrastructure/cluster/variables.tf
+find: "  kubernetes_version = \"1.36.3\"\n"
+replace: "  kubernetes_version = \"1.36.4\"\n"
+mentions: "a change is tried with Kubernetes 1.36.3 and a site runs 1.36.4"
+why: >
+  A site that moves its Kubernetes leaves the engineer trying changes on the
+  scheduler it no longer runs, and stamping what the site would not do.

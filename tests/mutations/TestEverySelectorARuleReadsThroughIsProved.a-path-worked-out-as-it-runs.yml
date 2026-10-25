@@ -1,5 +1,5 @@
 guard: TestEverySelectorARuleReadsThroughIsProved
-file: policy/conftest/push_hooks.rego
+file: policy/conftest/rules/hook_tasks/hook_tasks.rego
 find: 'lib.at("taskfile.yml")'
 replace: 'lib.at(concat("", ["taskfile", ".yml"]))'
 mentions: "gives lib.at a path it works out as it runs"

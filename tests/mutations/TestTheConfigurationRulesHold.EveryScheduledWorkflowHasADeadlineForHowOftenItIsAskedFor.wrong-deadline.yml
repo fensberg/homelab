@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: scheduled_workflows
+rule: scheduled_deadlines
 file: clusters/core/infrastructure/configs/scheduled-workflows.yaml
 find: 'instance=~"integration-tests.yml|site-sweep.yml"'
 replace: 'instance=~"integration-tests.yml|site-sweep.yml|security-patrol.yml"'

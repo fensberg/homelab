@@ -1,7 +1,7 @@
 guard: TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake
 file: .github/pull-request-runner-image/Dockerfile
-find: "kwokctl opa opentofu pre-commit pre-commit-hooks semgrep shellcheck zizmor"
-replace: "kwokctl opa opentofu pre-commit pre-commit-hooks semgrep shellcheck trufflehog zizmor"
+find: "kwokctl opa opentofu pre-commit pre-commit-hooks regal semgrep shellcheck zizmor"
+replace: "kwokctl opa opentofu pre-commit pre-commit-hooks regal semgrep shellcheck trufflehog zizmor"
 mentions: "carries trufflehog, which no job of a pool takes delivery of"
 why: >
   A tool added because a job might want it one day is weight every runner

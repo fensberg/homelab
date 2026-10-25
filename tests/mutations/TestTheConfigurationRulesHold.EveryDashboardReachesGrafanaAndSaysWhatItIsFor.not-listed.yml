@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: dashboards
+rule: dashboards_listed
 file: clusters/core/infrastructure/configs/kustomization.yaml
 find: "    files: [dashboards/where-the-time-goes.json]"
 replace: "    files: []"

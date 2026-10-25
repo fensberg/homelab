@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_talosconfig
+file: modules/infrastructure/cluster/talos.tf
+find: "  endpoints            = local.node_ips\n"
+replace: "  endpoints            = [local.node_ips[0]]\n"
+mentions: "and the site has 3 control plane(s)"
+why: >
+  Every control plane proxies the Talos API, so a talosconfig naming one of
+  them as its endpoint is a credential that stops working exactly when that
+  machine is the one being diagnosed - the case a diagnostic exists for.

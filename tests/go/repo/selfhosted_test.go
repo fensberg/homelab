@@ -9,7 +9,7 @@ import (
 // The pools a pull request's job may use, and the readings of a workflow's
 // runners and triggers the guards share. That no pull request's job runs on
 // the estate's runner is a configuration rule now
-// (policy/conftest/pull_request_runners.rego).
+// (policy/conftest/rules/pull_request_runners/pull_request_runners.rego).
 
 // pullRequestPools are self-hosted pools built for pull-request work: no
 // secret, a machine of their own in an untrusted zone, and egress that

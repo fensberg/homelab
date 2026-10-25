@@ -9,7 +9,7 @@ import (
 
 // How the guards that still read workflows in Go find a uses line and tell
 // a file GitHub executes. The rule that once lived beside these is a
-// configuration rule now (policy/conftest/action_commits.rego).
+// configuration rule now (policy/conftest/rules/action_commits/action_commits.rego).
 
 var (
 	usesLine     = regexp.MustCompile(`(?m)^\s*(?:-\s+)?uses:\s*["']?([^\s"'#]+)`)

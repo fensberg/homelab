@@ -2,14 +2,14 @@ package repo
 
 import (
 	"fmt"
-	"homelab/tests/parsed"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
 	"strings"
 	"testing"
+
+	"homelab/tests/parsed"
 )
 
 // The configuration rules: policy/conftest, run by Conftest over every file
@@ -82,9 +82,12 @@ func TestTheConfigurationRulesHold(t *testing.T) {
 	if !repository(t).IsDir(conftestRules) {
 		t.Fatalf("%s is not there, so no configuration rule runs", conftestRules)
 	}
+	heavy(t, "plans every site's roots from nothing, for the rules over OpenTofu, which takes seconds")
 	// How it is run - every package, every file at once - is conftest.toml's
-	// to say, so this, the lane and a person at a terminal run it alike.
-	args := append([]string{"test"}, conftestInputs(t)...)
+	// to say, so this, the lane and a person at a terminal run it alike. The
+	// plans go with the files: OpenTofu is judged on what it would make, as
+	// it works that out, and not on its source.
+	args := append(append([]string{"test"}, conftestInputs(t)...), repository(t).UnbuiltPlans(t)...)
 	out, ok := runConftest(t, args...)
 	if !ok {
 		var refused []string
@@ -111,6 +114,28 @@ func TestEveryConfigurationRuleProvesItself(t *testing.T) {
 	}
 	if !strings.Contains(out, "passed") {
 		t.Errorf("conftest verify ran no tests, so no rule has shown it refuses anything:\n\n%s", out)
+	}
+}
+
+// regalProgram is OPA's own linter for Rego, delivered by
+// scripts/take-delivery.sh.
+const regalProgram = "regal"
+
+// Every rule is written as OPA's linter would have it: one property to a
+// package, each in a directory of its own, and its refusals together. What
+// Regal checks and how strictly is .regal/config.yaml's to say, so this, the
+// lane and a person at a terminal lint alike.
+func TestTheConfigurationRulesAreWrittenAsTheirLinterWouldHaveThem(t *testing.T) {
+	heavy(t, "lints every policy file with regal")
+	if _, err := exec.LookPath(regalProgram); err != nil {
+		t.Fatal("regal is not on PATH; take delivery of it: scripts/take-delivery.sh regal")
+	}
+	stdout, stderr, err := repository(t).Invoke(parsed.Run{Env: []string{"NO_COLOR=1"}}, regalProgram, "lint", conftestRules)
+	if err != nil {
+		if _, failed := err.(*exec.ExitError); !failed {
+			t.Fatalf("regal could not be run: %v", err)
+		}
+		t.Errorf("a policy file is not written as Regal would have it:\n\n%s%s", stdout, stderr)
 	}
 }
 
@@ -172,7 +197,7 @@ func policyFiles(t *testing.T) map[string]regoTree {
 	t.Helper()
 	files := map[string]regoTree{}
 	for _, rel := range trackedFiles(t) {
-		if filepath.Dir(rel) == conftestRules && strings.HasSuffix(rel, ".rego") {
+		if strings.HasPrefix(rel, conftestRules+"/") && strings.HasSuffix(rel, ".rego") {
 			files[rel] = parseRego(t, rel)
 		}
 	}
@@ -236,9 +261,9 @@ func TestReadsInputCountsTheInputAndNothingThatSaysIt(t *testing.T) {
 	}
 }
 
-// rulePackage is a rule's package as policy/conftest/main.rego collects it,
+// rulePackage is a rule's package as policy/conftest/main/main.rego collects it,
 // or one of the packages beside the rules.
-var rulePackage = regexp.MustCompile(`^(rules\.[a-z0-9_]+|lib|main|main_test)$`)
+var rulePackage = regexp.MustCompile(`^(rules\.[a-z0-9_]+|lib|lib_test|main|main_test)$`)
 
 // collectedPackages refuses a policy file whose package main does not
 // collect: Conftest asks main alone, so a rule in any other package would

@@ -1,9 +1,9 @@
 guard: TestTheConfigurationRulesHold
-rule: cni
+rule: plan_health_gate
 file: modules/infrastructure/cluster/talos.tf
 find: "    terraform_data.cilium,"
 replace: "    talos_cluster_kubeconfig.this,"
-mentions: "does not depend on"
+mentions: "does not depend on terraform_data.cilium"
 why: >
   Replaced with a dependency that is already there rather than deleted, so
   the mutation is the realistic one: somebody tidying a depends_on list and

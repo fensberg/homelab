@@ -70,7 +70,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # Unpinned for the reason .github/runner-image/Dockerfile gives - the archive
 # keeps only the current version of a package - and on a base that cannot
 # move.
-# proved by TestTheConfigurationRulesHold (policy/conftest/image_bases.rego)
+# proved by TestTheConfigurationRulesHold (policy/conftest/rules/image_bases/image_bases.rego)
 # hadolint ignore=DL3008
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -124,10 +124,10 @@ ENV PATH=/home/runner/.local/bin:/opt/hostedtoolcache/go/${GO_VERSION}/x64/bin:/
 RUN --mount=type=bind,from=reads,target=/reads \
     bash /reads/scripts/take-delivery.sh \
         checkov codespell conftest etcd hadolint kube-apiserver kube-scheduler kubeconform kubectl kustomize \
-        kwokctl opa opentofu pre-commit pre-commit-hooks semgrep shellcheck zizmor
+        kwokctl opa opentofu pre-commit pre-commit-hooks regal semgrep shellcheck zizmor
 
 # Each one runs, as the account a job runs as, before the image is published.
 RUN for b in go node git envsubst tofu checkov codespell conftest etcd hadolint kube-apiserver kube-scheduler \
-        kubeconform kubectl kustomize kwokctl opa pre-commit semgrep shellcheck zizmor; do \
+        kubeconform kubectl kustomize kwokctl opa pre-commit regal semgrep shellcheck zizmor; do \
         command -v "$b" >/dev/null || { echo "missing: $b"; exit 1; }; \
     done

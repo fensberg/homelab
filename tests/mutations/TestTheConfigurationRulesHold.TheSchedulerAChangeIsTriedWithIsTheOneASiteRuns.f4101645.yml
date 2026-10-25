@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: versions
+rule: scheduler_version
 file: scripts/versions.env
 find: "KUBERNETES_VERSION=1.36.3"
 replace: "KUBERNETES_VERSION=1.35.9"

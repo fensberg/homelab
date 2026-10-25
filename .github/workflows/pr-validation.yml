@@ -68,7 +68,8 @@ concurrency:
 # rather than errors. It is set on every workflow, including those with no
 # `run:` step today, so the one added tomorrow is already covered.
 #
-# policy/conftest/workflow_shape.rego asserts this is present.
+# policy/conftest/rules/workflow_pipefail/workflow_pipefail.rego asserts this
+# is present.
 defaults:
   run:
     shell: bash
@@ -856,9 +857,11 @@ jobs:
         # nothing checking what arrived.
         # Conftest and Semgrep run the configuration and code rules in
         # policy/, which the guards here prove like any other
-        # (TestTheConfigurationRulesHold, TestTheCodeRulesHold), and OPA reads
-        # the configuration rules themselves (TestOnlyTheSelectorsReadTheInput).
-        run: scripts/take-delivery.sh opentofu kustomize conftest opa semgrep
+        # (TestTheConfigurationRulesHold, TestTheCodeRulesHold), OPA reads
+        # the configuration rules themselves (TestOnlyTheSelectorsReadTheInput)
+        # and Regal lints them
+        # (TestTheConfigurationRulesAreWrittenAsTheirLinterWouldHaveThem).
+        run: scripts/take-delivery.sh opentofu kustomize conftest opa regal semgrep
 
       # Untagged, so this compiles and runs only the hermetic tests in
       # tests/go: the repository-invariant checks and the state-encryption
@@ -952,9 +955,11 @@ jobs:
         # nothing checking what arrived.
         # Conftest and Semgrep run the configuration and code rules in
         # policy/, which the guards here prove like any other
-        # (TestTheConfigurationRulesHold, TestTheCodeRulesHold), and OPA reads
-        # the configuration rules themselves (TestOnlyTheSelectorsReadTheInput).
-        run: scripts/take-delivery.sh opentofu kustomize conftest opa semgrep
+        # (TestTheConfigurationRulesHold, TestTheCodeRulesHold), OPA reads
+        # the configuration rules themselves (TestOnlyTheSelectorsReadTheInput)
+        # and Regal lints them
+        # (TestTheConfigurationRulesAreWrittenAsTheirLinterWouldHaveThem).
+        run: scripts/take-delivery.sh opentofu kustomize conftest opa regal semgrep
 
       # The test that proves the other tests: the mutation ledger breaks each
       # guarded file and checks its guard fails. It re-runs a large part of

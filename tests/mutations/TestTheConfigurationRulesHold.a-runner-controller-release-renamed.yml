@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+rule: runner_namespaces
+file: clusters/core/infrastructure/controllers/actions-runner-controller.yaml
+find: "  name: gha-runner-scale-set-controller\n"
+replace: "  name: runner-controller\n"
+mentions: "0 HelmRelease named gha-runner-scale-set-controller were found"
+why: >
+  The namespace the manifest names is read off the release OpenTofu's local
+  describes. A release under another name is one nothing compares.

@@ -1,7 +1,7 @@
 guard: TestEveryProofStillFindsItsPlace
 file: tests/mutations/TestTheConfigurationRulesHold.EveryProviderIsADeclaredSupplier.e059c08e.yml
-find: "rule: suppliers\n"
-replace: "rule: suppliers_as_they_were\n"
+find: "rule: supplier_providers\n"
+replace: "rule: supplier_providers_as_they_were\n"
 mentions: "which policy/conftest does not declare"
 why: >
   A rule renamed or retired leaves its proofs naming nothing. Found at push,

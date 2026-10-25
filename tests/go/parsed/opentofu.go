@@ -332,3 +332,20 @@ func unconverted(expr hclsyntax.Expression) hclsyntax.Expression {
 	}
 	return expr
 }
+
+// OpenTofuRoots is every directory whose OpenTofu declares a provider, which
+// is what makes a directory a root rather than a module.
+func OpenTofuRoots(files []OpenTofuFile) []string {
+	dirs := map[string]bool{}
+	for _, f := range files {
+		if slices.ContainsFunc(f.Body.Blocks, func(b *hclsyntax.Block) bool { return b.Type == "provider" }) {
+			dirs[path.Dir(f.Path)] = true
+		}
+	}
+	out := make([]string, 0, len(dirs))
+	for d := range dirs {
+		out = append(out, d)
+	}
+	sort.Strings(out)
+	return out
+}

@@ -13,7 +13,7 @@ import (
 
 // The estate's runners. That their manifests agree with OpenTofu, that each
 // job names its site, that they keep off the control plane and that none is
-// BestEffort are configuration rules (policy/conftest/runners.rego). What is
+// BestEffort are configuration rules (policy/conftest/rules/runners/runners.rego). What is
 // left here is how other guards find and read the runner sets.
 
 // The runners' two Helm releases, which is what their manifests are found by.
