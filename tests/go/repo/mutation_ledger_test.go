@@ -469,6 +469,7 @@ func (p metaPart) proves(source string) bool {
 // given none. Read from the pattern rather than by setting the flag: the
 // flag is the whole binary's, and a guard running beside this one reads it.
 func TestACopyIsSkippedWhatTheLaneSkips(t *testing.T) {
+	t.Parallel()
 	if flag.Lookup("test.skip") == nil {
 		t.Fatal("the test binary has no -test.skip flag to read")
 	}

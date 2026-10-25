@@ -406,6 +406,7 @@ func guardedFixture(t *testing.T) (*token.FileSet, *ast.File) {
 // A lane's profiles are read where it says they are, and a module it did not
 // profile is refused rather than passed over.
 func TestACoverageProfileIsReadWhereTheLaneWroteIt(t *testing.T) {
+	t.Parallel()
 	if p, err := coverageProfile("", "contractor"); p != "" || err != nil {
 		t.Errorf("with no directory given, got %q, %v; want the profile made here", p, err)
 	}
