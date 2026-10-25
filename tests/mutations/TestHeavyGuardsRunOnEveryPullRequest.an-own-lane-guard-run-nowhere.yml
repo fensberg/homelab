@@ -1,0 +1,8 @@
+guard: TestHeavyGuardsRunOnEveryPullRequest
+file: .github/workflows/pr-validation.yml
+find: 'run: go test ./repo/ -run "$OWN_LANE_TESTS"'
+replace: 'run: go test ./repo/ -run "^TestSomethingElse$"'
+mentions: "skips $OWN_LANE_TESTS in the full run of tests/go and no lane runs them"
+why: >
+  A guard the invariants lane leaves to a lane of its own runs nowhere if
+  that lane stops selecting it, and a skipped guard is a green one.
