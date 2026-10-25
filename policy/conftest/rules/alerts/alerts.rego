@@ -1,5 +1,5 @@
-# Every alert the estate declares says what it means and the first thing to
-# try, and the channel is shown both.
+# Every alert the estate declares says what it is, what it means and the
+# first thing to try (the channel shows the step: rules.alert_channel).
 #
 # An alert that says only that something is wrong is read by somebody who
 # then has to work out what to do about it, usually tired and usually from a
@@ -53,23 +53,4 @@ deny contains msg if {
 deny contains msg if {
 	count(declared) == 0
 	msg := "no alert was found in what Flux applies, so this checked nothing"
-}
-
-stack := [f | some f in lib.objects; f.contents.kind == "HelmRelease"; f.contents.metadata.name == "kube-prometheus-stack"]
-
-shows_the_first_step(f) if {
-	walk(f.contents, [_, v])
-	is_string(v)
-	contains(v, ".Annotations.first_step")
-}
-
-deny contains msg if {
-	count(stack) != 1
-	msg := $"{count(stack)} HelmRelease named kube-prometheus-stack were found, so what the channel is shown cannot be read"
-}
-
-deny contains msg if {
-	some f in stack
-	not shows_the_first_step(f)
-	msg := $"{f.path}: what Alertmanager sends the channel does not print an alert's first step, so every alert's is written and none is read."
 }

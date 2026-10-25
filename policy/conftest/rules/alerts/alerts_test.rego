@@ -5,16 +5,12 @@ import rego.v1
 
 rule(rules) := {"path": "f.yaml", "contents": {"kind": "PrometheusRule", "spec": {"groups": [{"rules": rules}]}}}
 
-stack(template) := {"path": "s.yaml", "contents": {"kind": "HelmRelease", "metadata": {"name": "kube-prometheus-stack"}, "spec": {"values": {"alertmanager": {"config": {"receivers": [{"text": template}]}}}}}}
-
-shown := stack("{{ .Annotations.first_step }}")
-
 whole := {"summary": "It is down.", "description": "Nothing answers.", "first_step": "Start it."}
 
 unsaid(annotations) := alerts.unsaid("f.yaml", "A", annotations)
 
 test_the_alerts_of_a_rule_and_of_nothing_else_are_read if {
-	i := [rule([{"record": "a:recorded", "expr": "vector(1)"}, {"alert": "Whole", "annotations": whole}]), {"path": "g.yaml", "contents": {"kind": "ConfigMap", "spec": {"groups": [{"rules": [{"alert": "NotARule"}]}]}}}, shown]
+	i := [rule([{"record": "a:recorded", "expr": "vector(1)"}, {"alert": "Whole", "annotations": whole}]), {"path": "g.yaml", "contents": {"kind": "ConfigMap", "spec": {"groups": [{"rules": [{"alert": "NotARule"}]}]}}}]
 	count(alerts.declared) == 1 with input as i
 	count(alerts.deny) == 0 with input as i
 }
@@ -42,11 +38,6 @@ test_a_bare_alert_owes_all_three if {
 }
 
 test_no_alert_is_refused if {
-	some msg in alerts.deny with input as [shown]
+	some msg in alerts.deny with input as []
 	contains(msg, "no alert was found")
-}
-
-test_a_channel_not_shown_the_step_is_refused if {
-	some msg in alerts.deny with input as [rule([{"alert": "Whole", "annotations": whole}]), stack("{{ .Annotations.summary }}")]
-	contains(msg, "does not print an alert's first step")
 }
