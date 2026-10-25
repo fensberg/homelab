@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: workflow_shape
+rule: contractor_token
 file: .github/workflows/integration-tests.yml
 find: "          GH_TOKEN: ${{ github.token }}\n          SITE: ${{ matrix.site }}\n        run: ./toolshed/contractor record-as-built"
 replace: "          SITE: ${{ matrix.site }}\n        run: ./toolshed/contractor record-as-built"

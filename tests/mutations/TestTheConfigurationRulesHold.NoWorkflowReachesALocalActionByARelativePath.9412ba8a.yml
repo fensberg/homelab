@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: workflow_shape
+rule: local_action_refs
 file: .github/workflows/clerk.yml
 find: "uses: $/.github/actions/versions"
 replace: "uses: ./.github/actions/versions"
