@@ -34,7 +34,7 @@ import (
 //     person pastes;
 //   - no OpenTofu `datastore_id` or `bridge` is a quoted string, so a name
 //     that was never declared anywhere cannot be written in either: a rule
-//     over the plan's configuration (policy/conftest/plan_placements_not_written.rego).
+//     over the plan's configuration (policy/conftest/rules/plan_placements_not_written/plan_placements_not_written.rego).
 //
 // Documentation and the mutation ledger are not read: prose naming a Proxmox
 // default explains it, and the ledger names what it plants to prove this.

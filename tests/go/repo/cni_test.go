@@ -16,9 +16,9 @@ import (
 // See docs/epochs/03-workload.md, "Cilium arrives from OpenTofu, between
 // bootstrap and the health gate". That the health gate waits for it, that its
 // agent reaches every node and that its MTU is pinned are configuration rules
-// (policy/conftest/cni.rego); that every machine turns the built-in CNI and
+// (policy/conftest/rules/cni/cni.rego); that every machine turns the built-in CNI and
 // kube-proxy off and declares KubePrism on Cilium's port are rules over the
-// plan (policy/conftest/plan_builtin_cni_off.rego, plan_kubeprism.rego). What
+// plan (policy/conftest/rules/plan_builtin_cni_off/plan_builtin_cni_off.rego, plan_kubeprism.rego). What
 // is left here is the render.
 
 const cniVersion = "CILIUM_VERSION"

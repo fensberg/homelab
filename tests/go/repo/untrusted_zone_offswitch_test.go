@@ -21,7 +21,7 @@ import (
 // See docs/epochs/03-workload.md, "Removing the untrusted zone".
 //
 // That every zone resource is keyed off the zone is a rule over the plan
-// (policy/conftest/plan_zone_off_switch.rego); the playbook's half is here.
+// (policy/conftest/rules/plan_zone_off_switch/plan_zone_off_switch.rego); the playbook's half is here.
 
 // Every zone task in the playbook loops over the zones.
 //

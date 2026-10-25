@@ -125,7 +125,7 @@ governed:
     read_by: >-
       scripts/versions.env is sourced by the provisioning script, the runner
       image build and the composite action, and the configuration rules
-      (policy/conftest/version_pins.rego, versions.rego) read it.
+      (policy/conftest/rules/version_pins/version_pins.rego, versions.rego) read it.
   - kind: ".toml"
     parsed_by: [conftest, semgrep]
     read_by: "gitleaks, which loads .gitleaks.toml on every pre-commit run."

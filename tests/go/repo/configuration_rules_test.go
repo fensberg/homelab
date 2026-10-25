@@ -2,14 +2,14 @@ package repo
 
 import (
 	"fmt"
-	"homelab/tests/parsed"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
 	"strings"
 	"testing"
+
+	"homelab/tests/parsed"
 )
 
 // The configuration rules: policy/conftest, run by Conftest over every file
@@ -175,7 +175,7 @@ func policyFiles(t *testing.T) map[string]regoTree {
 	t.Helper()
 	files := map[string]regoTree{}
 	for _, rel := range trackedFiles(t) {
-		if filepath.Dir(rel) == conftestRules && strings.HasSuffix(rel, ".rego") {
+		if strings.HasPrefix(rel, conftestRules+"/") && strings.HasSuffix(rel, ".rego") {
 			files[rel] = parseRego(t, rel)
 		}
 	}
@@ -239,7 +239,7 @@ func TestReadsInputCountsTheInputAndNothingThatSaysIt(t *testing.T) {
 	}
 }
 
-// rulePackage is a rule's package as policy/conftest/main.rego collects it,
+// rulePackage is a rule's package as policy/conftest/main/main.rego collects it,
 // or one of the packages beside the rules.
 var rulePackage = regexp.MustCompile(`^(rules\.[a-z0-9_]+|lib|main|main_test)$`)
 

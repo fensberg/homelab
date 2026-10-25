@@ -28,7 +28,7 @@ import (
 // this repository would notice.
 //
 // That every machine is told both ranges is a rule over the plan
-// (policy/conftest/plan_cluster_network.rego). What is left here is whether
+// (policy/conftest/rules/plan_cluster_network/plan_cluster_network.rego). What is left here is whether
 // the ranges the address plan computes can collide, which is a test of that
 // module's arithmetic and goes down to its own tests.
 

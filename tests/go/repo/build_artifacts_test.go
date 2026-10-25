@@ -7,7 +7,7 @@ import (
 
 // Every program is built into toolshed/, which is ignored wholesale; that the
 // taskfile builds there and .gitignore ignores it is a configuration rule
-// (policy/conftest/toolshed.rego). These are the half only git can answer.
+// (policy/conftest/rules/toolshed/toolshed.rego). These are the half only git can answer.
 
 // A compiled binary that is neither tracked nor ignored is one `git add -A`
 // away from being committed.

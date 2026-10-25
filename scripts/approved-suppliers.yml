@@ -37,7 +37,7 @@
 # Read this before trusting it.
 #
 #   Catches:      an unapproved registry or an unpinned image COMMITTED to this
-#                 repository. policy/conftest/suppliers.rego fails the build.
+#                 repository. policy/conftest/rules/suppliers/suppliers.rego fails the build.
 #   Catches:      a workflow inventing its own egress endpoint instead of
 #                 declaring it here.
 #   DOES NOT      a command pasted into a terminal. Nothing in CI can see that.
@@ -54,7 +54,7 @@
 # software with the same name, and nothing in git records that it moved.
 #
 # WHAT THIS GOVERNS, AND WHAT IT DOES NOT. This covers image references WRITTEN
-# IN THIS REPOSITORY. The image rule in policy/conftest/suppliers.rego walks
+# IN THIS REPOSITORY. The image rule in policy/conftest/rules/suppliers/suppliers.rego walks
 # clusters/** and checks what it finds spelled out there.
 #
 # It does not cover an image a Helm chart pulls by its own default, because
@@ -401,7 +401,7 @@ charts:
 # arrangement as a container image pinned by digest at its point of use. This
 # file answers the other half: who the estate takes delivery from.
 #
-# policy/conftest/suppliers.rego asserts the two agree in both directions, so
+# policy/conftest/rules/suppliers/suppliers.rego asserts the two agree in both directions, so
 # a provider cannot be added in one place and be invisible in the other.
 providers:
   - source: bpg/proxmox
@@ -1364,12 +1364,22 @@ tools:
     reason: >-
       Reads the configuration rules themselves: `opa parse` gives each rule's
       syntax tree, so a guard can tell which of the selectors in
-      policy/conftest/lib.rego a rule reads its files through, and refuse one
+      policy/conftest/lib/lib.rego a rule reads its files through, and refuse one
       that reads the input any other way; `opa eval` asks a selector which
       files it picks, with the same engine Conftest runs them on. The engine
       Conftest embeds, from the same publisher, at the version it embeds.
       Agreed 2026-10-18, over OPA's Go library in the tests module and over
       selectors written as globs.
+  - source: open-policy-agent/regal
+    version: REGAL_VERSION
+    fetch: https://github.com/open-policy-agent/regal/releases/download/v{version}/regal_Linux_x86_64
+    reason: >-
+      Lints the configuration rules themselves: Rego that is correct and
+      still badly written - a rule that judges by matching text, a variable
+      that shadows another, a test that asserts nothing - which the rules'
+      own tests and the mutation ledger cannot see. Open Policy Agent's own
+      linter for Rego, from the publisher of OPA and Conftest. Agreed
+      2026-10-24 for PR 3 of the guard migration.
   - source: kubernetes-sigs/kwok
     version: KWOK_VERSION
     binary: kwokctl
@@ -1586,7 +1596,7 @@ tools:
 # was is what surfaced this.
 #
 # A hook must be listed here AND pinned by rev in .pre-commit-config.yaml.
-# policy/conftest/suppliers.rego fails the build when one is not.
+# policy/conftest/rules/suppliers/suppliers.rego fails the build when one is not.
 #
 # Audit the cache against this list with:
 #   for d in ~/.cache/pre-commit/repo*/; do git -C "$d" remote get-url origin; done

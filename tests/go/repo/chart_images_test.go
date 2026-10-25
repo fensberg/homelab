@@ -10,7 +10,7 @@ import (
 //
 // THE GAP THIS CLOSES. `scripts/approved-suppliers.yml` opens its registries
 // section by saying an image must come from an approved registry AND be pinned
-// by digest. The image rule in policy/conftest/suppliers.rego enforces that for
+// by digest. The image rule in policy/conftest/rules/suppliers/suppliers.rego enforces that for
 // image references WRITTEN IN THIS REPOSITORY, which is not the same set: an
 // image a chart pulls by its own default has no reference here to read.
 //
@@ -103,7 +103,7 @@ repository nor appears in chart_images_not_governed_here.
 So nothing here knows what it pulls or from where, and the registries section
 of scripts/approved-suppliers.yml reads as though it did. Either set the image
 registry and digest in the HelmRelease's own values - which brings them into
-the suppliers rule (policy/conftest/suppliers.rego) with no new machinery,
+the suppliers rule (policy/conftest/rules/suppliers/suppliers.rego) with no new machinery,
 and is what the estate already does for the runner image - or declare the gap
 with what it pulls and what would close it.`, where, chart)
 	}

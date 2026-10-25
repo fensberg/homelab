@@ -1,5 +1,5 @@
 guard: TestEveryConfigurationRuleProvesItself
-file: policy/conftest/workflow_jobs.rego
+file: policy/conftest/rules/workflow_jobs/workflow_jobs.rego
 find: "package rules.workflow_jobs\n"
 replace: "package workflow_jobs\n"
 mentions: "a rule anywhere else never runs and says nothing"

@@ -1,6 +1,6 @@
 # The CNI: what the cluster's pod network is made of. That the cluster's
 # health is not asked before the CNI is applied is the health gate's
-# (policy/conftest/plan_health_gate.rego).
+# (policy/conftest/rules/plan_health_gate/plan_health_gate.rego).
 package rules.cni
 
 import data.lib

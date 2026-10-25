@@ -17,10 +17,10 @@ by whatever built the cluster.
 
 `cilium.yaml` is generated — run `task render-cni` after changing
 `cilium-values.yaml` or `CILIUM_VERSION` in `scripts/versions.env`, and commit
-both. It is committed rather than fetched at apply time so its image digests
-are reviewable here and `policy/conftest/suppliers.rego` can read them; that
-rule walks all of `clusters/`, which is the other reason this lives under this
-tree.
+both. It is committed rather than fetched at apply time so its image digests are
+reviewable here and `policy/conftest/rules/suppliers/suppliers.rego` can read
+them; that rule walks all of `clusters/`, which is the other reason this lives
+under this tree.
 
 The full reasoning, including why Talos `inlineManifests` and the Helm provider
 were both rejected, is in

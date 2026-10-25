@@ -98,7 +98,7 @@ func newSetupFixture(t *testing.T, ghBehaviour string) *setupFixture {
 	//
 	// The pin key is named rather than derived from the tool name. rclone's is
 	// RCLONE_DEB_VERSION, because RCLONE_VERSION is a name rclone itself reads
-	// as `--version` (#487, and policy/conftest/versions.rego guards the namespace), so
+	// as `--version` (#487, and policy/conftest/rules/versions/versions.rego guards the namespace), so
 	// upper-casing the tool name would ask for a key that is deliberately not
 	// there.
 	pins := versionsPinned(t)

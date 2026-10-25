@@ -65,6 +65,10 @@ https://get.opentofu.org/install-opentofu.sh --hash=sha256:e4e899ae7bd86241fd17a
 https://github.com/oras-project/oras/releases/download/v1.3.4/oras_1.3.4_linux_amd64.tar.gz --hash=sha256:f27adb935022d94df8dc77719c322dda592c78a0d57a6f7dcdd8d900b248c454
 # [end]
 
+# [fetch: regal REGAL_VERSION=0.43.0]
+https://github.com/open-policy-agent/regal/releases/download/v0.43.0/regal_Linux_x86_64 --hash=sha256:5e7d030064e307d54e6ffa3d85b8d9052d3d40b7afa10262c86c886f8a76559d
+# [end]
+
 # [fetch: shellcheck SHELLCHECK_VERSION=0.11.0]
 https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz --hash=sha256:8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
 # [end]

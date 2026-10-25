@@ -121,7 +121,7 @@ resource "proxmox_virtual_environment_pool" "templates" {
 #
 # Each iterates the same local its machines' VM resource iterates, so a machine
 # cannot exist without landing in a pool: there is no third list to keep in
-# step, and policy/conftest/plan_pool_membership.rego fails if the plan would
+# step, and policy/conftest/rules/plan_pool_membership/plan_pool_membership.rego fails if the plan would
 # make a machine no membership places.
 
 # EVERY ONE OF THESE READS vm_id OFF THE VM RESOURCE, AND MUST.
@@ -139,7 +139,7 @@ resource "proxmox_virtual_environment_pool" "templates" {
 # how machines end up orphaned.
 #
 # It failed exactly that way twice in one session before the edges were added.
-# policy/conftest/plan_pool_destroy_order.rego refuses the shorter spelling now.
+# policy/conftest/rules/plan_pool_destroy_order/plan_pool_destroy_order.rego refuses the shorter spelling now.
 
 resource "proxmox_pool_membership" "control_plane" {
   for_each = local.control_plane
