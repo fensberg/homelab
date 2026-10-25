@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: runners
+rule: runner_names
 file: clusters/core/infrastructure/configs/runner-scale-set-batch.yaml
 find: "runnerScaleSetName: homelab-batch-${SITE}"
 replace: "runnerScaleSetName: homelab-spare-${SITE}"
