@@ -27,3 +27,8 @@ test_a_privileged_fetch_without_a_worktree_is_refused if {
 }
 
 watcher(extra) := {"path": ".github/workflows/w.yml", "contents": object.union({"true": {"workflow_run": {}}, "permissions": {"issues": "write", "contents": "read"}, "jobs": {"j": {"steps": [{"uses": "$/.github/workflows/mobilize", "with": {"checkout": "false"}}, {"run": "echo ${{ github.event.workflow_run.conclusion }}"}]}}}, extra)}
+
+test_no_privileged_workflow_is_refused if {
+	some msg in privileged_workspace.deny with input as []
+	contains(msg, "no workflow runs on a privileged trigger")
+}

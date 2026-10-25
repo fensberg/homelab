@@ -55,3 +55,11 @@ test_an_undeclared_provider_is_refused if {
 test_an_approved_provider_nobody_requires_is_refused if {
 	denies(supplier_providers.deny, `approves the provider "hashicorp/gone"`) with input as swap(0, list({"providers": [{"source": "hashicorp/kubernetes", "reason": "r"}, {"source": "hashicorp/gone", "reason": "r"}]}))
 }
+
+test_no_provider_declared_is_refused if {
+	denies(supplier_providers.deny, "declares no providers") with input as swap(0, list({"providers": []}))
+}
+
+test_no_provider_locked_is_refused if {
+	denies(supplier_providers.deny, "no provider is locked by any root or module") with input as [list({})]
+}

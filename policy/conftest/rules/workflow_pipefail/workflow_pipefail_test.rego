@@ -20,3 +20,8 @@ test_a_workflow_in_shape_passes if {
 }
 
 test_a_workflow_without_a_pipefail_shell_is_refused if denies(workflow_pipefail.deny, "does not set a pipefail shell") with input as [wf(object.remove(base, ["defaults"]))]
+
+test_no_workflow_is_refused if {
+	some msg in workflow_pipefail.deny with input as []
+	contains(msg, "found no workflows")
+}

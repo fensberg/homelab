@@ -74,3 +74,7 @@ test_a_deadline_for_no_scheduled_workflow_is_refused if {
 	r := rules([due(`x{instance=~"hourly.yml"}`, "hourly"), due(`x{instance=~"daily.yml|weekday.yml|gone.yml"}`, "daily"), due(`x{instance=~"weekly.yml"}`, "weekly")])
 	denies(scheduled_deadlines.deny, "gives gone.yml a deadline") with input as array.concat(workflows, [scrape(scheduled, "15m"), r])
 }
+
+test_no_scheduled_workflow_is_refused if {
+	denies(scheduled_deadlines.deny, "no workflow was found with a schedule") with input as [good_rules]
+}

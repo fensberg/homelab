@@ -30,3 +30,8 @@ test_sterilizing_needs_no_token if {
 test_a_token_from_the_job_counts if {
 	count(contractor_token.deny) == 0 with input as [wf(object.union(base, {"jobs": object.union(base.jobs, {"converge": {"env": {"GITHUB_TOKEN": "t"}, "steps": [{"run": "./toolshed/contractor converge-site"}]}})}))]
 }
+
+test_no_contractor_step_is_refused if {
+	some msg in contractor_token.deny with input as [wf(object.remove(base, ["jobs"]))]
+	contains(msg, "found no step that runs the contractor")
+}

@@ -33,3 +33,11 @@ test_a_shared_action_that_takes_a_version_is_refused if {
 	restatable := {"path": ".github/workflows/setup-go/action.yml", "contents": {"inputs": {"go-version": {}}, "runs": {"steps": [{"with": {"go-version": "${{ env.GO_VERSION }}"}}]}}}
 	denies(format_lane_go.deny, "sets up Go without reading GO_VERSION") with input as [restatable, lane([go, gate, deliver, run])]
 }
+
+test_a_lane_that_reads_go_version_itself_passes if {
+	count(format_lane_go.deny) == 0 with input as [lane([{"uses": "actions/setup-go@0123", "with": {"go-version": "${{ env.GO_VERSION }}"}}, gate, deliver, run])]
+}
+
+test_no_format_lane_is_refused if {
+	denies(format_lane_go.deny, "no job runs pre-commit run --all-files") with input as [setup_go]
+}

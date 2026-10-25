@@ -98,3 +98,7 @@ test_reachable_from_a_pull_request if {
 	pull_request_runners.reachable("github.event.pull_request.head.repo.full_name == github.repository")
 	pull_request_runners.reachable("inputs.run_it == 'yes'")
 }
+
+test_a_label_that_is_not_text_reads_as_empty if {
+	pull_request_runners.as_label(["self-hosted"]) == ""
+}

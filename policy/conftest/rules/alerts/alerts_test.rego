@@ -41,3 +41,8 @@ test_no_alert_is_refused if {
 	some msg in alerts.deny with input as []
 	contains(msg, "no alert was found")
 }
+
+test_an_alert_that_owes_something_is_refused if {
+	some msg in alerts.deny with input as [rule([{"alert": "Bare", "annotations": {}}])]
+	contains(msg, "the alert Bare does not say")
+}

@@ -51,3 +51,7 @@ test_everything_declared_and_pinned_passes if {
 test_an_undeclared_egress_host_is_refused if {
 	denies(supplier_egress.deny, `reaches "evil.example:443"`) with input as swap(4, workflow("github.com:443\nevil.example:443\n"))
 }
+
+test_no_allowed_endpoints_is_refused if {
+	denies(supplier_egress.deny, "no allowed-endpoints entries found") with input as [list({})]
+}

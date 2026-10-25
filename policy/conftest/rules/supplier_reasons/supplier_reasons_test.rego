@@ -58,3 +58,22 @@ test_an_exemption_with_no_trigger_or_issue_is_refused if {
 	denies(supplier_reasons.deny, "gives no trigger") with input as array.concat([e], array.slice(i, 1, count(i)))
 	denies(supplier_reasons.deny, "names no issue") with input as array.concat([e], array.slice(i, 1, count(i)))
 }
+
+test_no_registry_or_endpoint_is_refused if {
+	empty := list({"registries": [], "endpoints": []})
+	denies(supplier_reasons.deny, "declares no registries") with input as [empty]
+	denies(supplier_reasons.deny, "declares no endpoints") with input as [empty]
+}
+
+test_every_kind_of_entry_owes_a_reason if {
+	silent := list({
+		"charts": [{"url": "https://charts.example.org", "reason": ""}],
+		"endpoints": [{"group": "github", "reason": " ", "hosts": ["github.com:443"]}],
+		"exemptions": [{"path": "clusters/x.yaml", "trigger": "t", "issue": 1, "reason": ""}],
+		"providers": [{"source": "hashicorp/kubernetes", "reason": ""}],
+	})
+	denies(supplier_reasons.deny, `chart source "https://charts.example.org" is approved with no reason given`) with input as [silent]
+	denies(supplier_reasons.deny, `endpoint group "github" is approved with no reason given`) with input as [silent]
+	denies(supplier_reasons.deny, `exemption for "clusters/x.yaml" gives no reason`) with input as [silent]
+	denies(supplier_reasons.deny, `provider "hashicorp/kubernetes" is approved with no reason given`) with input as [silent]
+}

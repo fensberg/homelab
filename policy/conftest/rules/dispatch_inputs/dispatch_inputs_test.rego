@@ -32,3 +32,15 @@ test_a_dispatched_workflow_with_inputs_that_reads_passes if {
 }
 
 watcher(extra) := {"path": ".github/workflows/w.yml", "contents": object.union({"true": {"workflow_run": {}}, "permissions": {"issues": "write", "contents": "read"}, "jobs": {"j": {"steps": [{"uses": "$/.github/workflows/mobilize", "with": {"checkout": "false"}}, {"run": "echo ${{ github.event.workflow_run.conclusion }}"}]}}}, extra)}
+
+dispatched(jobs) := {"path": ".github/workflows/d.yml", "contents": {"on": {"workflow_dispatch": {"inputs": {"what": {}}}}, "permissions": "read-all", "jobs": jobs}}
+
+test_a_dispatched_job_that_may_write_is_refused if {
+	some msg in dispatch_inputs.deny with input as [dispatched({"publish": {"permissions": {"contents": "write"}}})]
+	contains(msg, "its job publish may write contents")
+}
+
+test_a_dispatched_job_with_write_all_is_refused if {
+	some msg in dispatch_inputs.deny with input as [dispatched({"publish": {"permissions": "write-all"}})]
+	contains(msg, "has permissions: write-all")
+}

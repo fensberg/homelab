@@ -48,3 +48,8 @@ test_a_policy_nothing_binds_is_refused if {
 	some msg in uncounted_pods.deny with input as [policy(good_policy)]
 	contains(msg, "A policy nothing binds refuses nothing")
 }
+
+test_no_policy_is_refused if {
+	some msg in uncounted_pods.deny with input as [binding(good_binding)]
+	contains(msg, "0 ValidatingAdmissionPolicy named uncounted-pods were found")
+}

@@ -41,3 +41,8 @@ test_the_scalar_form_on_a_job_is_read if {
 test_a_group_naming_everything_passes if {
 	count(concurrency_groups.deny) == 0 with input as [wf(group({"pull_request": {}, "issue_comment": {}}, {"group": "c-${{ github.event.pull_request.number || github.event.issue.number }}-${{ github.event_name == 'issue_comment' && github.event.comment.id || 'read' }}"}))]
 }
+
+test_no_concurrency_group_is_refused if {
+	some msg in concurrency_groups.deny with input as [wf(object.remove(base, ["concurrency"]))]
+	contains(msg, "no concurrency group was found")
+}

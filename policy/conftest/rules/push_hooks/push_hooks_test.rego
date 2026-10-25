@@ -37,3 +37,7 @@ test_a_guard_that_is_not_fail_fast_is_refused if {
 test_a_guard_after_another_pre_push_hook_is_refused if {
 	denies(push_hooks.deny, "should be first") with input as [config([validate, guard]), tasks]
 }
+
+test_a_hook_configuration_of_nothing_is_refused if {
+	denies(push_hooks.deny, "the hook configuration parsed to nothing") with input as [config([]), tasks]
+}

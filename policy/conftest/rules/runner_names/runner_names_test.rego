@@ -53,3 +53,7 @@ test_a_set_nothing_asks_for_is_refused if {
 test_the_converges_set_missing_is_refused if {
 	denies(runner_names.deny, "(self-hosted) is not among them") with input as array.concat(array.slice(good, 0, 2), array.slice(good, 3, 5))
 }
+
+test_no_workflow_asking_for_the_estates_runners_is_refused if {
+	denies(runner_names.deny, "no workflow asks for a runner of the estate's") with input as swap(4, workflow(["ubuntu-latest"]))
+}

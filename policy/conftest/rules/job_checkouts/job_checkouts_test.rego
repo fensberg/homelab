@@ -43,3 +43,8 @@ test_actions_reached_in_a_loop_are_refused if {
 	]
 	denies(job_checkouts.deny, "more than four deep") with input as files
 }
+
+test_an_action_that_cannot_be_read_is_refused if {
+	some msg in job_checkouts.deny with input as [workflow({"j": job([harden, {"uses": "$/.github/workflows/gone"}, checkout({"persist-credentials": false})])})]
+	contains(msg, "uses $/.github/workflows/gone, which cannot be read")
+}

@@ -40,3 +40,16 @@ test_a_cluster_version_declared_twice_is_refused if {
 	twice := {"path": "modules/c/talos.tf", "contents": {"locals": [{"kubernetes_version": "1.31.1"}]}}
 	denies(client_skew.deny, "kubernetes_version is declared as a version 2 time(s)") with input as array.concat(good, [twice])
 }
+
+test_no_talosctl_pin_is_refused if {
+	denies(client_skew.deny, "could not find TALOSCTL_VERSION") with input as with_one(0, env({"TALOSCTL_VERSION": "latest"}))
+}
+
+test_no_kubectl_pin_is_refused if {
+	denies(client_skew.deny, "could not find KUBECTL_VERSION") with input as with_one(0, env({"KUBECTL_VERSION": "latest"}))
+}
+
+test_a_talos_version_declared_twice_is_refused if {
+	twice := {"path": "modules/d/variables.tf", "contents": {"locals": [{"talos_version": "v1.13.9"}]}}
+	denies(client_skew.deny, "talos_version is declared as a version 2 time(s)") with input as array.concat(good, [twice])
+}

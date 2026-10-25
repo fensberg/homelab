@@ -53,3 +53,8 @@ test_a_job_with_no_steps_is_refused if {
 test_no_jobs_at_all_is_refused if {
 	denies(job_hardening.deny, "found no jobs in any workflow") with input as []
 }
+
+test_a_step_is_named_by_what_it_says_of_itself if {
+	job_hardening.ident({}) == "(unnamed step)"
+	job_hardening.inner_ident([]) == "(no steps)"
+}

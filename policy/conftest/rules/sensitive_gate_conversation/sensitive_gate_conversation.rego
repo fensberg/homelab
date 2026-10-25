@@ -24,19 +24,12 @@ run(step) := object.get(step, "run", "")
 
 asks_a_person(step) if regex.match(`(?m)^\s*go run -C scripts/attestation \.`, run(step))
 
-challenges(step) if regex.match(`^go run -C scripts/security \. challenge-keys -base "\$BASE" -head "\$HEAD" >>\s*"\$GITHUB_OUTPUT"$`, trim_space(run(step)))
-
 # The two conversations: the one about a sensitive path, and the one under a
 # topic of its own about a key handed out.
 sensitive contains step if {
 	some step in steps
 	asks_a_person(step)
 	not contains(run(step), "-topic")
-}
-
-challenge contains step if {
-	some step in steps
-	challenges(step)
 }
 
 # The tripwire opens a conversation.

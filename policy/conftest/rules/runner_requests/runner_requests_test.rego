@@ -41,3 +41,8 @@ test_a_runner_with_no_memory_request_is_refused if {
 test_no_scale_set_is_refused if {
 	denies(runner_requests.deny, "no runner scale set was found") with input as [controller, locals]
 }
+
+test_a_scale_set_with_no_containers_is_refused if {
+	bare := {"path": "clusters/core/bare.yaml", "contents": {"kind": "HelmRelease", "metadata": {"name": "bare"}, "spec": {"chart": {"spec": {"chart": "gha-runner-scale-set"}}, "values": {}}}}
+	denies(runner_requests.deny, "the runner scale set bare declares no containers") with input as array.concat(good, [bare])
+}

@@ -51,3 +51,8 @@ test_a_chart_that_says_nothing_is_refused if {
 test_no_control_plane_is_refused if {
 	denies(plan_control_plane_metrics.deny, "no control plane's machine configuration") with input as [chart(every_component), plan([])]
 }
+
+test_no_monitoring_release_is_refused if {
+	some msg in plan_control_plane_metrics.deny with input as [cps(exposing)]
+	contains(msg, "0 HelmRelease named kube-prometheus-stack were found")
+}

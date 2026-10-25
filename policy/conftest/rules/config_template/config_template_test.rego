@@ -33,3 +33,8 @@ test_too_few_references_is_refused if {
 	some msg in config_template.deny with input as [{"path": "config/management.tpl.json", "contents": {"k": "{{ op://a/b/c }}"}}]
 	contains(msg, "only 1 wrapped references found")
 }
+
+test_no_template_is_refused if {
+	some msg in config_template.deny with input as []
+	contains(msg, "config/management.tpl.json was not read")
+}

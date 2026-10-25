@@ -41,3 +41,8 @@ test_a_front_door_with_nothing_to_read_is_refused if {
 	some msg in front_door_gets_no_certificates.deny with input as front_door({})
 	contains(msg, "its settings could not be read")
 }
+
+test_no_front_door_is_refused if {
+	some msg in front_door_gets_no_certificates.deny with input as []
+	contains(msg, "0 HelmRelease named traefik were found")
+}

@@ -39,3 +39,7 @@ test_a_digest_of_the_whole_diff_is_refused if {
 test_no_workflow_is_refused if {
 	denies(sensitive_gate_digest.deny, "is not there") with input as []
 }
+
+test_a_digest_that_reads_the_list_in_its_script_passes if {
+	sensitive_gate_digest.reads_the_file_list({"run": "echo \"${{ steps.sensor.outputs.files }}\" | sha256sum"})
+}

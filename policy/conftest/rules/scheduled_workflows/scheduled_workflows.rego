@@ -21,8 +21,6 @@ name := "scheduled-workflows"
 
 basename(path) := parts[count(parts) - 1] if parts := split(path, "/")
 
-on_of(doc) := object.get(doc, "on", object.get(doc, "true", {}))
-
 scheduled contains basename(file) if {
 	some file, doc in lib.workflows
 	"schedule" in lib.triggers(doc)

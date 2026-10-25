@@ -37,3 +37,12 @@ test_the_runners_as_they_should_be_pass if {
 test_a_namespace_the_manifest_never_mentions_is_refused if {
 	denies(runner_namespaces.deny, `local.runners_namespace = "arc-elsewhere"`) with input as swap(1, {"path": "modules/p/variables.tf", "contents": {"locals": [{"runner_system_namespace": "arc-systems", "runners_namespace": "arc-elsewhere"}]}})
 }
+
+test_a_namespace_declared_twice_is_refused if {
+	again := {"path": "modules/q/variables.tf", "contents": {"locals": [{"runners_namespace": "arc-runners"}]}}
+	denies(runner_namespaces.deny, "local.runners_namespace is declared 2 time(s)") with input as array.concat(good, [again])
+}
+
+test_no_controller_release_is_refused if {
+	denies(runner_namespaces.deny, "0 HelmRelease named gha-runner-scale-set-controller were found") with input as array.slice(good, 1, count(good))
+}

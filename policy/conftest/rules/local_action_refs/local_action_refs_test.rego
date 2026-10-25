@@ -32,3 +32,8 @@ any_relative if {
 test_a_local_action_by_the_repository_passes if {
 	not any_relative with input as [{"path": ".github/workflows/w.yml", "contents": {"defaults": {"run": {"shell": "bash"}}, "jobs": {"j": {"steps": [{"uses": "$/.github/actions/versions"}]}}}}]
 }
+
+test_no_workflow_is_refused if {
+	some msg in local_action_refs.deny with input as []
+	contains(msg, "found no workflows")
+}

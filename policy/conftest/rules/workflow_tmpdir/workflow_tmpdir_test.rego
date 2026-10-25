@@ -26,3 +26,8 @@ test_a_step_reading_tmpdir_is_refused if {
 test_a_comment_in_a_script_naming_tmpdir_is_not_a_read if {
 	count(workflow_tmpdir.deny) == 0 with input as [wf(object.union(base, {"jobs": object.union(base.jobs, {"t": {"steps": [{"run": "# never $TMPDIR\ncd \"$RUNNER_TEMP\""}]}})}))]
 }
+
+test_no_workflow_is_refused if {
+	some msg in workflow_tmpdir.deny with input as []
+	contains(msg, "found no workflows")
+}

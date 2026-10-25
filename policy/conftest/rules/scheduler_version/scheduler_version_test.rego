@@ -27,3 +27,7 @@ test_pins_in_step_with_the_cluster_pass if {
 test_a_scheduler_not_the_sites_is_refused if {
 	denies(scheduler_version.deny, "a change is tried with Kubernetes 1.35.9 and a site runs 1.36.3") with input as with_one(0, env({"KUBERNETES_VERSION": "1.35.9"}))
 }
+
+test_no_kubernetes_pin_is_refused if {
+	denies(scheduler_version.deny, "pins no KUBERNETES_VERSION=X.Y.Z") with input as with_one(0, env({"KUBERNETES_VERSION": "latest"}))
+}

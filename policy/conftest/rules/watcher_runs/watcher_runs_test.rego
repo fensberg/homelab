@@ -40,3 +40,14 @@ test_a_watcher_that_does_not_say_check_nothing_out_is_refused if {
 test_a_watcher_that_may_write_is_refused if {
 	denies(watcher_runs.deny, "may write contents") with input as [clerk, watcher({"permissions": {"contents": "write"}})]
 }
+
+test_a_watcher_that_does_not_spell_out_its_permissions_is_refused if {
+	w := {"path": ".github/workflows/w.yml", "contents": {"true": {"workflow_run": {}}, "jobs": {}}}
+	denies(watcher_runs.deny, "does not spell out its permissions") with input as [w]
+}
+
+test_a_watchers_job_is_held_to_the_same_permissions if {
+	jobs := {"jobs": {"read": {"permissions": "write-all", "steps": []}, "write": {"permissions": {"contents": "write"}, "steps": []}}}
+	denies(watcher_runs.deny, "in its job read, does not spell out its permissions") with input as [watcher(jobs)]
+	denies(watcher_runs.deny, "in its job write, may write contents") with input as [watcher(jobs)]
+}

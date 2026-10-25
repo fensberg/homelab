@@ -22,3 +22,8 @@ test_a_workflow_in_shape_passes if {
 test_a_client_id_fed_an_app_id_is_refused if {
 	denies(app_token_inputs.deny, "Integration not found") with input as [wf(object.union(base, {"jobs": object.union(base.jobs, {"mint": {"steps": [{"with": {"client-id": "${{ secrets.A_BOT_APP_ID }}"}}]}})}))]
 }
+
+test_no_token_input_is_refused if {
+	some msg in app_token_inputs.deny with input as [wf(object.remove(base, ["jobs"]))]
+	contains(msg, "no workflow passes a secret to a GitHub App token input")
+}

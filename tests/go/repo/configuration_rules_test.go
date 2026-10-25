@@ -263,7 +263,7 @@ func TestReadsInputCountsTheInputAndNothingThatSaysIt(t *testing.T) {
 
 // rulePackage is a rule's package as policy/conftest/main/main.rego collects it,
 // or one of the packages beside the rules.
-var rulePackage = regexp.MustCompile(`^(rules\.[a-z0-9_]+|lib|main|main_test)$`)
+var rulePackage = regexp.MustCompile(`^(rules\.[a-z0-9_]+|lib|lib_test|main|main_test)$`)
 
 // collectedPackages refuses a policy file whose package main does not
 // collect: Conftest asks main alone, so a rule in any other package would

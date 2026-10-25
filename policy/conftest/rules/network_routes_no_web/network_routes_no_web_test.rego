@@ -26,3 +26,13 @@ test_a_network_with_nothing_to_read_is_refused if {
 	some msg in network_routes_no_web.deny with input as network({})
 	contains(msg, "none could be read")
 }
+
+test_a_setting_that_is_not_a_switch_reads_as_off if {
+	network_routes_no_web.as_text(3) == ""
+	network_routes_no_web.as_text(true) == "true"
+}
+
+test_no_network_settings_is_refused if {
+	some msg in network_routes_no_web.deny with input as []
+	contains(msg, "0 ConfigMap named cilium-config were found")
+}

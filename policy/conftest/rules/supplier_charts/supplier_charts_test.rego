@@ -56,3 +56,11 @@ test_the_repositorys_own_and_its_releases_are_not_suppliers if {
 	i := array.concat(good, [source("https://github.com/owner/name"), source("oci://${RELEASE_REPOSITORY}-thing-release")])
 	count(supplier_charts.deny) == 0 with input as i
 }
+
+test_no_repository_of_its_own_is_refused if {
+	denies(supplier_charts.deny, "names no repository on GitHub") with input as swap(1, {"path": "clusters/core/flux-system/gotk-sync.yaml", "contents": {"kind": "GitRepository", "metadata": {"name": "flux-system"}, "spec": {"url": "ssh://elsewhere/x"}}})
+}
+
+test_no_chart_source_is_refused if {
+	denies(supplier_charts.deny, "no chart sources found under clusters/") with input as [list({}), own]
+}

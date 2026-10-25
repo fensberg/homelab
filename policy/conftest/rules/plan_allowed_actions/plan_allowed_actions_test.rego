@@ -60,3 +60,5 @@ test_no_setting_at_all_is_refused if {
 	some msg in plan_allowed_actions.deny with input as [workflow(uses)]
 	contains(msg, "no github_actions_repository_permissions is in any plan")
 }
+
+test_too_few_actions_read_is_refused if says(plan_allowed_actions.deny, "only 1 action(s) were found") with input as [tf(wall), workflow([$"actions/fetch@{sha}"])]

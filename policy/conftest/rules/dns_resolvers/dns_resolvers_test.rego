@@ -42,3 +42,8 @@ test_an_address_with_nothing_to_do_with_resolving_passes if {
 test_two_declarations_are_refused if {
 	denies(dns_resolvers.deny, "declared 2 time(s)") with input as array.concat(with_file({}), [{"path": "modules/d/v.tf", "contents": {"locals": [{"dns_resolvers": ["1.1.1.1"]}]}}])
 }
+
+test_too_few_files_read_is_refused if {
+	some msg in dns_resolvers.deny with input as [declared]
+	contains(msg, "only 1 OpenTofu file(s) were read")
+}

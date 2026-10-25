@@ -70,3 +70,7 @@ test_a_stale_exemption_is_refused if {
 	e := list({"exemptions": [{"path": "clusters/core/app/deploy.yaml", "rule": "digest-pinned-images", "reason": "r", "trigger": "t", "issue": 1}]})
 	denies(supplier_images.deny, "is exempted from digest pinning but no longer needs to be") with input as swap(0, e)
 }
+
+test_no_image_reference_is_refused if {
+	denies(supplier_images.deny, "no image references found under clusters/") with input as [list({})]
+}

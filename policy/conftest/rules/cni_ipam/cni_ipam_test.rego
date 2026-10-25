@@ -30,3 +30,7 @@ test_another_ipam_mode_is_refused if {
 	denies(cni_ipam.deny, `not "kubernetes"`) with input as with_one(2, config({"mtu": "1450", "ipam": "cluster-pool"}))
 	denies(cni_ipam.deny, "declares no ipam mode") with input as with_one(2, config({"mtu": "1450"}))
 }
+
+test_no_cilium_config_is_refused if {
+	denies(cni_ipam.deny, "0 ConfigMap named cilium-config were found") with input as []
+}

@@ -33,3 +33,8 @@ test_no_keys_job_is_refused if {
 	some msg in app_keys.deny with input as holders
 	contains(msg, "has no \"keys\" job")
 }
+
+test_a_keys_job_handed_no_key_is_refused if {
+	some msg in app_keys.deny with input as array.concat(holders, [patrol([])])
+	contains(msg, "is handed no App key")
+}

@@ -65,3 +65,7 @@ test_a_hook_declared_with_no_reason_is_refused if {
 	silent := list({"hooks": [{"repo": "https://github.com/pre-commit/pre-commit-hooks", "reason": " "}]})
 	denies(supplier_hooks.deny, "is declared with no reason") with input as swap(0, silent)
 }
+
+test_no_hook_declared_is_refused if {
+	denies(supplier_hooks.deny, "no commit hooks are declared as suppliers") with input as swap(0, list({"hooks": []}))
+}

@@ -47,3 +47,8 @@ test_a_panel_that_asks_nothing_is_refused if {
 test_no_dashboard_is_refused if {
 	denies(dashboards.deny, "no dashboard was found") with input as []
 }
+
+test_a_field_that_is_not_text_reads_as_empty if {
+	dashboards.text({"title": 3}, "title") == ""
+	dashboards.text({"title": " Pressure "}, "title") == "Pressure"
+}

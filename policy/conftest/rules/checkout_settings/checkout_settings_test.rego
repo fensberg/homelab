@@ -22,3 +22,8 @@ test_a_checkout_pointed_at_other_code_is_refused if {
 }
 
 watcher(extra) := {"path": ".github/workflows/w.yml", "contents": object.union({"true": {"workflow_run": {}}, "permissions": {"issues": "write", "contents": "read"}, "jobs": {"j": {"steps": [{"uses": "$/.github/workflows/mobilize", "with": {"checkout": "false"}}, {"run": "echo ${{ github.event.workflow_run.conclusion }}"}]}}}, extra)}
+
+test_no_checkout_is_refused if {
+	some msg in checkout_settings.deny with input as []
+	contains(msg, "no actions/checkout step was found")
+}

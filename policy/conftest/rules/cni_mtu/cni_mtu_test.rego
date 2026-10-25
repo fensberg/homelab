@@ -38,3 +38,11 @@ test_a_render_that_disagrees_is_refused if {
 	denies(cni_mtu.deny, "pins MTU 1450 and the committed manifest says 1500") with input as with_one(2, config({"mtu": "1500", "ipam": "kubernetes"}))
 	denies(cni_mtu.deny, "carries no mtu") with input as with_one(2, config({"ipam": "kubernetes"}))
 }
+
+test_no_values_beside_the_render_is_refused if {
+	denies(cni_mtu.deny, "no cilium-values.yaml is beside the rendered CNI") with input as [agent([]), config({"mtu": "1450"})]
+}
+
+test_no_cilium_config_is_refused if {
+	denies(cni_mtu.deny, "0 ConfigMap named cilium-config were found") with input as [agent([]), values(1450)]
+}
