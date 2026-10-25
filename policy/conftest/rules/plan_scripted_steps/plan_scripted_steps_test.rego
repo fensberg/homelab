@@ -7,8 +7,8 @@ configured(provisioners) := {"path": "site-cluster.plan.json", "contents": {"con
 
 step(interpreter) := {"type": "local-exec", "expressions": object.union({"command": {"references": ["path.module"]}}, interpreter)}
 
-denies(i, words) if {
-	some msg in plan_scripted_steps.deny with input as i
+denies(msgs, words) if {
+	some msg in msgs
 	contains(msg, words)
 }
 
@@ -17,13 +17,13 @@ test_a_step_run_by_bash_passes if {
 }
 
 test_a_step_left_to_sh_is_refused if {
-	denies([configured([step({})])], "module.cluster.terraform_data.step: scripted steps do not name bash")
+	denies(plan_scripted_steps.deny, "module.cluster.terraform_data.step: scripted steps do not name bash") with input as [configured([step({})])]
 }
 
 test_a_step_naming_sh_is_refused if {
-	denies([configured([step({"interpreter": {"constant_value": ["/bin/sh", "-c"]}})])], "do not name bash as what runs them")
+	denies(plan_scripted_steps.deny, "do not name bash as what runs them") with input as [configured([step({"interpreter": {"constant_value": ["/bin/sh", "-c"]}})])]
 }
 
 test_no_step_is_refused if {
-	denies([configured([])], "checked nothing")
+	denies(plan_scripted_steps.deny, "checked nothing") with input as [configured([])]
 }

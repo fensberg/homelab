@@ -15,7 +15,7 @@ unsaid(annotations) := alerts.unsaid("f.yaml", "A", annotations)
 
 test_the_alerts_of_a_rule_and_of_nothing_else_are_read if {
 	i := [rule([{"record": "a:recorded", "expr": "vector(1)"}, {"alert": "Whole", "annotations": whole}]), {"path": "g.yaml", "contents": {"kind": "ConfigMap", "spec": {"groups": [{"rules": [{"alert": "NotARule"}]}]}}}, shown]
-	count(alerts.alerts) == 1 with input as i
+	count(alerts.declared) == 1 with input as i
 	count(alerts.deny) == 0 with input as i
 }
 

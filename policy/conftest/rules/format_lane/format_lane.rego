@@ -58,10 +58,10 @@ reads_the_pin(job) if {
 }
 
 reads_the_pin(job) if {
-	some step in job.steps
-	lib.same_repo_action(object.get(step, "uses", "")) == ".github/workflows/setup-go"
 	shared := lib.actions[".github/workflows/setup-go"]
 	not "go-version" in object.keys(object.get(shared, "inputs", {}))
+	some step in job.steps
+	lib.same_repo_action(object.get(step, "uses", "")) == ".github/workflows/setup-go"
 	walk(shared, [_, v])
 	v == "${{ env.GO_VERSION }}"
 }

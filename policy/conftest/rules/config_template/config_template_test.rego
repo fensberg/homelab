@@ -3,7 +3,9 @@ package rules.config_template_test
 import data.rules.config_template
 import rego.v1
 
-refs := {sprintf("k%d", [i]): sprintf("{{ op://estate/item/field%d }}", [i]) | some i in numbers.range(1, 10)}
+refs[sprintf("k%d", [i])] := sprintf("{{ op://estate/item/field%d }}", [i]) if {
+	some i in numbers.range(1, 10)
+}
 
 template(extra) := [{"path": "config/management.tpl.json", "contents": object.union(refs, extra)}]
 

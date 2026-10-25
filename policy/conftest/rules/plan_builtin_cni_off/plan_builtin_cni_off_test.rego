@@ -9,8 +9,8 @@ machine(address, patches) := {"address": address, "type": "talos_machine_configu
 
 off := "cluster:\n  network:\n    cni:\n      name: none\n  proxy:\n    disabled: true\n"
 
-denies(i, words) if {
-	some msg in plan_builtin_cni_off.deny with input as i
+denies(msgs, words) if {
+	some msg in msgs
 	contains(msg, words)
 }
 
@@ -19,21 +19,21 @@ test_a_machine_with_both_off_passes if {
 }
 
 test_flannel_is_refused if {
-	denies([plan([machine("m[\"100\"]", ["cluster:\n  network:\n    cni:\n      name: flannel\n  proxy:\n    disabled: true\n"])])], "m[\"100\"]: the machine's configuration does not set cluster.network.cni.name")
+	denies(plan_builtin_cni_off.deny, "m[\"100\"]: the machine's configuration does not set cluster.network.cni.name") with input as [plan([machine("m[\"100\"]", ["cluster:\n  network:\n    cni:\n      name: flannel\n  proxy:\n    disabled: true\n"])])]
 }
 
 test_kube_proxy_left_on_is_refused if {
-	denies([plan([machine("m[\"100\"]", ["cluster:\n  network:\n    cni:\n      name: none\n"])])], "cluster.proxy.disabled = true")
+	denies(plan_builtin_cni_off.deny, "cluster.proxy.disabled = true") with input as [plan([machine("m[\"100\"]", ["cluster:\n  network:\n    cni:\n      name: none\n"])])]
 }
 
 test_a_later_patch_turning_it_back_on_is_refused if {
-	denies([plan([machine("m[\"100\"]", [off, "cluster:\n  proxy:\n    disabled: false\n"])])], "cluster.proxy.disabled = true")
+	denies(plan_builtin_cni_off.deny, "cluster.proxy.disabled = true") with input as [plan([machine("m[\"100\"]", [off, "cluster:\n  proxy:\n    disabled: false\n"])])]
 }
 
 test_a_setting_only_in_a_patch_not_yet_known_is_refused if {
-	denies([plan([machine("m[\"200\"]", [null])])], "cluster.network.cni.name")
+	denies(plan_builtin_cni_off.deny, "cluster.network.cni.name") with input as [plan([machine("m[\"200\"]", [null])])]
 }
 
 test_no_machine_configuration_is_refused if {
-	denies([plan([])], "checked nothing")
+	denies(plan_builtin_cni_off.deny, "checked nothing") with input as [plan([])]
 }

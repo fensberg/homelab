@@ -30,7 +30,6 @@ import rego.v1
 
 pins := [f.contents | some f in lib.at("scripts/versions.env")][0]
 
-
 exporter := [f | some f in lib.at(".github/actions/versions/action.yml")]
 
 deny contains msg if {
@@ -85,7 +84,7 @@ restricts(f) if {
 }
 
 deny contains msg if {
+	msg := ".github/actions/versions no longer restricts what it writes to $GITHUB_ENV. On a fork's pull request versions.env is attacker-controlled, and an unconstrained write to the environment file is code execution in every later step - including the TruffleHog lane, which is the one lane deliberately not egress-blocked."
 	some f in exporter
 	not restricts(f)
-	msg := ".github/actions/versions no longer restricts what it writes to $GITHUB_ENV. On a fork's pull request versions.env is attacker-controlled, and an unconstrained write to the environment file is code execution in every later step - including the TruffleHog lane, which is the one lane deliberately not egress-blocked."
 }

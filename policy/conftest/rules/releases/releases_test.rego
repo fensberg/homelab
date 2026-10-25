@@ -10,35 +10,31 @@ source(r) := [
 	{"path": "clusters/x.yaml", "contents": {"kind": "OCIRepository", "metadata": {"name": "thing"}, "spec": {"ref": r}}},
 ]
 
-problems(r) := found if {
-	found := releases.deny with input as source(r)
-}
-
-says(r, words) if {
-	some msg in problems(r)
+says(msgs, words) if {
+	some msg in msgs
 	contains(msg, words)
 }
 
 test_a_tag_and_a_digest_pass if {
-	count(problems({"tag": "1.0.0-1", "digest": digest})) == 0
+	count(releases.deny) == 0 with input as source({"tag": "1.0.0-1", "digest": digest})
 }
 
 test_a_tag_alone_is_not_pinned if {
-	count(problems({"tag": "1.0.0-1"})) == 1
-	says({"tag": "1.0.0-1"}, "is not pinned by digest")
+	count(releases.deny) == 1 with input as source({"tag": "1.0.0-1"})
+	says(releases.deny, "is not pinned by digest") with input as source({"tag": "1.0.0-1"})
 }
 
 test_a_digest_alone_has_no_tag if {
-	count(problems({"digest": digest})) == 1
-	says({"digest": digest}, "has no tag")
+	count(releases.deny) == 1 with input as source({"digest": digest})
+	says(releases.deny, "has no tag") with input as source({"digest": digest})
 }
 
 test_a_digest_cut_short_is_not_pinned if {
-	says({"tag": "1.0.0-1", "digest": "sha256:abc"}, "is not pinned by digest")
+	says(releases.deny, "is not pinned by digest") with input as source({"tag": "1.0.0-1", "digest": "sha256:abc"})
 }
 
 test_nothing_pinned_is_both if {
-	count(problems({"semver": "*"})) == 2
+	count(releases.deny) == 2 with input as source({"semver": "*"})
 }
 
 test_flux_own_definitions_are_not_a_release if {

@@ -7,8 +7,8 @@ configured(resources) := {"path": "site-cluster.plan.json", "contents": {"config
 
 pool(name, pool_id) := {"address": sprintf("proxmox_virtual_environment_pool.%s", [name]), "mode": "managed", "type": "proxmox_virtual_environment_pool", "expressions": {"pool_id": pool_id}}
 
-denies(i, words) if {
-	some msg in plan_pool_ids.deny with input as i
+denies(msgs, words) if {
+	some msg in msgs
 	contains(msg, words)
 }
 
@@ -17,13 +17,13 @@ test_a_pool_named_for_the_site_passes if {
 }
 
 test_a_bare_pool_id_is_refused if {
-	denies([configured([pool("workers", {"constant_value": "workers"})])], "module.cluster.proxmox_virtual_environment_pool.workers has a pool id that does not include the site")
+	denies(plan_pool_ids.deny, "module.cluster.proxmox_virtual_environment_pool.workers has a pool id that does not include the site") with input as [configured([pool("workers", {"constant_value": "workers"})])]
 }
 
 test_a_pool_named_from_something_else_is_refused if {
-	denies([configured([pool("workers", {"references": ["local.other"]})])], "does not include the site")
+	denies(plan_pool_ids.deny, "does not include the site") with input as [configured([pool("workers", {"references": ["local.other"]})])]
 }
 
 test_no_pool_at_all_is_refused if {
-	denies([configured([])], "checked nothing")
+	denies(plan_pool_ids.deny, "checked nothing") with input as [configured([])]
 }

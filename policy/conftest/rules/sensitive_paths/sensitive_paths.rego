@@ -54,9 +54,9 @@ deny contains msg if {
 }
 
 deny contains msg if {
+	msg := "the attestation is not keyed to a digest of the sensitive diff, so an acknowledgement would outlive the change it acknowledged - which is the exact defect the label had"
 	some step in sensitive
 	not contains(run(step), "-digest")
-	msg := "the attestation is not keyed to a digest of the sensitive diff, so an acknowledgement would outlive the change it acknowledged - which is the exact defect the label had"
 }
 
 deny contains msg if {
@@ -78,9 +78,9 @@ deny contains msg if {
 }
 
 deny contains msg if {
+	msg := "the digest does not read the sensor's file list, so it is not scoped to the sensitive files"
 	some step in digest
 	not reads_the_file_list(step)
-	msg := "the digest does not read the sensor's file list, so it is not scoped to the sensitive files"
 }
 
 reads_the_file_list(step) if contains(run(step), "outputs.files")
@@ -93,15 +93,15 @@ reads_the_file_list(step) if {
 # The tripwire can refuse.
 
 deny contains msg if {
+	msg := "a step is allowed to fail without failing the job, so the gate cannot refuse"
 	walk(doc, [path, true])
 	path[count(path) - 1] == "continue-on-error"
-	msg := "a step is allowed to fail without failing the job, so the gate cannot refuse"
 }
 
 deny contains msg if {
+	msg := "the acknowledgement step is not conditioned on the tripwire firing, so it either runs on every pull request or on none"
 	some step in sensitive
 	not contains(object.get(step, "if", ""), "steps.sensor.outputs.tripped == 'true'")
-	msg := "the acknowledgement step is not conditioned on the tripwire firing, so it either runs on every pull request or on none"
 }
 
 # A widened key is asked about in its own conversation.
@@ -119,9 +119,9 @@ deny contains msg if {
 }
 
 deny contains msg if {
+	msg := "the step that works out which keys were handed out has no id, so nothing can read what it found"
 	some step in challenge
 	object.get(step, "id", "") == ""
-	msg := "the step that works out which keys were handed out has no id, so nothing can read what it found"
 }
 
 deny contains msg if {
@@ -153,9 +153,9 @@ deny contains msg if {
 }
 
 deny contains msg if {
+	msg := "the conversation about keys is opened under the same topic as the sensitive-path one, so each would withdraw the other as superseded"
 	some step in ask
 	not own_topic(run(step))
-	msg := "the conversation about keys is opened under the same topic as the sensitive-path one, so each would withdraw the other as superseded"
 }
 
 own_topic(script) if {

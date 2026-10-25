@@ -13,7 +13,10 @@ import rego.v1
 
 steps := object.get(lib.workflows, [".github/workflows/fabricator.yml", "jobs", "package", "steps"], [])
 
-ids := {s.name: object.get(s, "id", "") | some s in steps; s.name}
+ids[s.name] := object.get(s, "id", "") if {
+	some s in steps
+	s.name
+}
 
 describing := [s | some s in steps; s.name == "Describe the version"]
 

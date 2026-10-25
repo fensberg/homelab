@@ -150,15 +150,15 @@ alerts contains r if {
 	some f in object_of("PrometheusRule")
 	some g in f.contents.spec.groups
 	some r in g.rules
-	object.get(r, "alert", "") == alert
+	r.alert == alert
 }
 
 named := `instance=~"([^"]+)"`
 
 deny contains msg if {
+	msg := sprintf("an alert %s in %s names no workflow, so it is about every one of them at one deadline", [alert, where(object_of("PrometheusRule"))])
 	some r in alerts
 	count(regex.find_all_string_submatch_n(named, r.expr, -1)) == 0
-	msg := sprintf("an alert %s in %s names no workflow, so it is about every one of them at one deadline", [alert, where(object_of("PrometheusRule"))])
 }
 
 deadlines contains [file, object.get(r.labels, "asked_for", "")] if {

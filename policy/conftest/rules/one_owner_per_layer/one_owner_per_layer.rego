@@ -26,7 +26,7 @@ routes_the_web(settings) := {key |
 
 as_text(v) := v if is_string(v)
 
-as_text(v) := "true" if v == true
+as_text(true) := "true"
 
 as_text(v) := "" if {
 	not is_string(v)
@@ -54,15 +54,11 @@ deny contains msg if {
 
 # The front door gets no certificates.
 
-gets_certificates(values) := ways if {
-	ways := (({"certificatesResolvers names one" | count(object.get(values, "certificatesResolvers", {})) > 0} |
-		{"persistence gives it a disk, which it has only certificates of its own to keep on" | object.get(values, ["persistence", "enabled"], false) == true}) |
-		{sprintf("%s speaks of %s", [where, word]) |
-			some where in ["additionalArguments", "env", "envFrom", "ports", "volumes", "additionalVolumeMounts"]
-			v := values[where]
-			some word in ["certificatesresolvers", "certresolver", "acme", "dns_api_token", "dns-token"]
-			speaks_of(v, word)
-		})
+gets_certificates(values) := ({"certificatesResolvers names one" | count(object.get(values, "certificatesResolvers", {})) > 0} | {"persistence gives it a disk, which it has only certificates of its own to keep on" | values.persistence.enabled == true}) | {sprintf("%s speaks of %s", [where, word]) |
+	some where in ["additionalArguments", "env", "envFrom", "ports", "volumes", "additionalVolumeMounts"]
+	v := values[where]
+	some word in ["certificatesresolvers", "certresolver", "acme", "dns_api_token", "dns-token"]
+	speaks_of(v, word)
 }
 
 # speaks_of is whether a word is anywhere in a setting, as a key or a value.

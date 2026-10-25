@@ -113,7 +113,10 @@ inside(parent) := {[parent[0], parent[1], sprintf("%s (inside %s)", [parent[2], 
 
 reached := ((level0 | level1) | level2) | level3
 
-checkouts := {entry | some entry in reached; contains(object.get(entry[3], "uses", ""), "actions/checkout@")}
+checkouts contains entry if {
+	some entry in reached
+	contains(object.get(entry[3], "uses", ""), "actions/checkout@")
+}
 
 deny contains msg if {
 	count(checkouts) == 0

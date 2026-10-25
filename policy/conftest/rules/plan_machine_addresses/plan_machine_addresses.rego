@@ -33,7 +33,7 @@ machines contains [path, r] if {
 addressed(r) if {
 	some init in object.get(r.values, "initialization", [])
 	some config in object.get(init, "ip_config", [])
-	some _, families in config
+	some families in config
 	some family in families
 	is_string(family.address)
 }

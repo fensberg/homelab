@@ -15,7 +15,7 @@ checkouts contains [file, step] if {
 }
 
 all_steps(doc) := array.concat(
-	[s | some _, job in object.get(doc, "jobs", {}); some s in object.get(job, "steps", [])],
+	[s | some job in object.get(doc, "jobs", {}); some s in object.get(job, "steps", [])],
 	object.get(object.get(doc, "runs", {}), "steps", []),
 )
 
@@ -75,7 +75,7 @@ dispatched(doc) := d if {
 	d.inputs
 }
 
-writes(perms) := {"declares no permissions, so it has whatever the repository's default is"} if perms == null
+writes(null) := {"declares no permissions, so it has whatever the repository's default is"}
 
 writes(perms) := set() if perms in {"read-all", {}}
 

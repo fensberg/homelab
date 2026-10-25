@@ -7,8 +7,8 @@ configured(resources) := {"path": "site-cluster.plan.json", "contents": {"config
 
 resource(address, refs) := {"address": address, "mode": "managed", "type": "t", "expressions": {}, "for_each_expression": {"references": refs}}
 
-denies(i, words) if {
-	some msg in plan_zone_off_switch.deny with input as i
+denies(msgs, words) if {
+	some msg in msgs
 	contains(msg, words)
 }
 
@@ -17,13 +17,13 @@ test_zone_resources_keyed_off_the_zone_pass if {
 }
 
 test_a_zone_resource_keyed_off_every_hypervisor_is_refused if {
-	denies([configured([resource("t.dmz_image", ["local.all_vm_hypervisors"])])], "module.cluster.t.dmz_image is a zone resource keyed off")
+	denies(plan_zone_off_switch.deny, "module.cluster.t.dmz_image is a zone resource keyed off") with input as [configured([resource("t.dmz_image", ["local.all_vm_hypervisors"])])]
 }
 
 test_a_zone_data_source_is_held_too if {
-	denies([configured([{"address": "data.t.dmz", "mode": "data", "type": "t", "expressions": {}, "for_each_expression": {"references": ["local.workers"]}}])], "data.t.dmz is a zone resource keyed off")
+	denies(plan_zone_off_switch.deny, "data.t.dmz is a zone resource keyed off") with input as [configured([{"address": "data.t.dmz", "mode": "data", "type": "t", "expressions": {}, "for_each_expression": {"references": ["local.workers"]}}])]
 }
 
 test_no_zone_resource_is_refused if {
-	denies([configured([resource("t.workers", ["local.workers"])])], "checked nothing")
+	denies(plan_zone_off_switch.deny, "checked nothing") with input as [configured([resource("t.workers", ["local.workers"])])]
 }

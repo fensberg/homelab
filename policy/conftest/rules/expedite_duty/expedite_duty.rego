@@ -45,7 +45,7 @@ deny contains msg if {
 	msg := sprintf("%s runs `procurement order`. Ordering writes scripts/deliveries.lock, which decides what every lane and workstation installs. It is run by a person and committed through review; no workflow orders, and above all not one that could hold the expedite credential.", [file])
 }
 
-delivers(verb) if verb == "deliver"
+delivers("deliver")
 
 delivers(verb) if startswith(verb, "deliver-")
 

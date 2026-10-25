@@ -7,8 +7,8 @@ configured(resources) := {"path": "site-cluster.plan.json", "contents": {"config
 
 member(name) := {"address": sprintf("proxmox_pool_membership.%s", [name]), "name": name, "mode": "managed", "type": "proxmox_pool_membership", "expressions": {}}
 
-denies(i, words) if {
-	some msg in plan_pool_names.deny with input as i
+denies(msgs, words) if {
+	some msg in msgs
 	contains(msg, words)
 }
 
@@ -17,9 +17,9 @@ test_a_membership_per_function_passes if {
 }
 
 test_one_membership_over_every_function_is_refused if {
-	denies([configured([member("workers")])], "there are 1 proxmox_pool_membership resources")
+	denies(plan_pool_names.deny, "there are 1 proxmox_pool_membership resources") with input as [configured([member("workers")])]
 }
 
 test_a_membership_named_for_the_grouping_is_refused if {
-	denies([configured([member("workers"), member("by_function")])], "module.cluster.proxmox_pool_membership.by_function is named for the grouping")
+	denies(plan_pool_names.deny, "module.cluster.proxmox_pool_membership.by_function is named for the grouping") with input as [configured([member("workers"), member("by_function")])]
 }

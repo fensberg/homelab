@@ -7,8 +7,8 @@ configured(resources) := {"path": "site-cluster.plan.json", "contents": {"config
 
 vm(expressions) := {"address": "proxmox_virtual_environment_vm.m", "mode": "managed", "type": "proxmox_virtual_environment_vm", "expressions": expressions}
 
-denies(i, words) if {
-	some msg in plan_placements_not_written.deny with input as i
+denies(msgs, words) if {
+	some msg in msgs
 	contains(msg, words)
 }
 
@@ -17,13 +17,13 @@ test_placements_read_from_the_declarations_pass if {
 }
 
 test_a_datastore_written_out_is_refused if {
-	denies([configured([vm({"disk": [{"datastore_id": {"constant_value": "tank"}}]})])], "module.cluster.proxmox_virtual_environment_vm.m writes its datastore_id as a string")
+	denies(plan_placements_not_written.deny, "module.cluster.proxmox_virtual_environment_vm.m writes its datastore_id as a string") with input as [configured([vm({"disk": [{"datastore_id": {"constant_value": "tank"}}]})])]
 }
 
 test_a_bridge_written_out_is_refused if {
-	denies([configured([vm({"network_device": [{"bridge": {"constant_value": "vmbr0"}}]})])], "writes its bridge as a string")
+	denies(plan_placements_not_written.deny, "writes its bridge as a string") with input as [configured([vm({"network_device": [{"bridge": {"constant_value": "vmbr0"}}]})])]
 }
 
 test_nothing_placed_is_refused if {
-	denies([configured([vm({"name": {"constant_value": "x"}})])], "checked nothing")
+	denies(plan_placements_not_written.deny, "checked nothing") with input as [configured([vm({"name": {"constant_value": "x"}})])]
 }

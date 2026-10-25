@@ -30,7 +30,7 @@ import rego.v1
 
 releases(name) := [f | some f in lib.objects; f.contents.kind == "HelmRelease"; f.contents.metadata.name == name]
 
-sets := [f | some f in lib.objects; f.contents.kind == "HelmRelease"; object.get(f.contents, ["spec", "chart", "spec", "chart"], "") == "gha-runner-scale-set"]
+sets := [f | some f in lib.objects; f.contents.kind == "HelmRelease"; f.contents.spec.chart.spec.chart == "gha-runner-scale-set"]
 
 local(name) := {[f.path, v] |
 	some f in lib.opentofu
@@ -94,7 +94,10 @@ per_site(name) if {
 	name != "${SITE}"
 }
 
-prefixes := {trim_suffix(set_name(f), "${SITE}") | some f in sets; per_site(set_name(f))}
+prefixes contains trim_suffix(set_name(f), "${SITE}") if {
+	some f in sets
+	per_site(set_name(f))
+}
 
 # The set a runs-on asks for is the longest prefix it starts with, so
 # homelab-batch- is not read as homelab- with a site of batch-.

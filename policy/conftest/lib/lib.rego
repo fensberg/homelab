@@ -177,7 +177,7 @@ trigger_names(on) := {on} if is_string(on)
 
 trigger_names(on) := {e | some e in on} if is_array(on)
 
-trigger_names(on) := {e | some e, _ in on} if is_object(on)
+trigger_names(on) := object.keys(on) if is_object(on)
 
 trigger_names(null) := set()
 

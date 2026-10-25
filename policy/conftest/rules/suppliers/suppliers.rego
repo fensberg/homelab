@@ -117,9 +117,14 @@ overlay_pins(at, name) if {
 	startswith(object.get(image, "digest", ""), "sha256:")
 }
 
-approved_registries := {r.host | some r in object.get(list, "registries", [])}
+approved_registries contains r.host if {
+	some r in object.get(list, "registries", [])
+}
 
-exempt := {e.path | some e in object.get(list, "exemptions", []); e.rule == "digest-pinned-images"}
+exempt contains e.path if {
+	some e in object.get(list, "exemptions", [])
+	e.rule == "digest-pinned-images"
+}
 
 unpinned contains [path, ref] if {
 	some [path, ref] in remote
@@ -236,7 +241,9 @@ deny contains msg if {
 
 hook_repos := [r | some f in lib.at(".pre-commit-config.yaml"); some r in object.get(f.contents, "repos", []); r.repo != "local"]
 
-declared_hooks := {h.repo: object.get(h, "reason", "") | some h in object.get(list, "hooks", [])}
+declared_hooks[h.repo] := object.get(h, "reason", "") if {
+	some h in object.get(list, "hooks", [])
+}
 
 deny contains msg if {
 	count(declared_hooks) == 0
@@ -304,7 +311,9 @@ required contains [path, short] if {
 	short := concat("/", array.slice(parts, 1, count(parts)))
 }
 
-approved_providers := {p.source | some p in object.get(list, "providers", [])}
+approved_providers contains p.source if {
+	some p in object.get(list, "providers", [])
+}
 
 deny contains msg if {
 	some p in object.get(list, "providers", [])

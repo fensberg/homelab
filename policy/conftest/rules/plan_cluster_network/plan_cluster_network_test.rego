@@ -9,8 +9,8 @@ machine(address, patches) := {"address": address, "type": "talos_machine_configu
 
 network(pods, services) := sprintf("cluster:\n  network:\n    podSubnets: [%s]\n    serviceSubnets: [%s]\n", [pods, services])
 
-denies(i, words) if {
-	some msg in plan_cluster_network.deny with input as i
+denies(msgs, words) if {
+	some msg in msgs
 	contains(msg, words)
 }
 
@@ -19,17 +19,17 @@ test_every_machine_told_the_same_passes if {
 }
 
 test_a_machine_told_nothing_is_refused if {
-	denies([plan([machine("cp[\"100\"]", [network("10.110.0.0/16", "10.196.40.0/22")]), machine("w[\"200\"]", ["machine:\n  install:\n    disk: /dev/sda\n"])])], "w[\"200\"] is not told the cluster's network: its configuration sets no cluster.network.podSubnets")
+	denies(plan_cluster_network.deny, "w[\"200\"] is not told the cluster's network: its configuration sets no cluster.network.podSubnets") with input as [plan([machine("cp[\"100\"]", [network("10.110.0.0/16", "10.196.40.0/22")]), machine("w[\"200\"]", ["machine:\n  install:\n    disk: /dev/sda\n"])])]
 }
 
 test_a_machine_without_services_is_refused if {
-	denies([plan([machine("w[\"200\"]", ["cluster:\n  network:\n    podSubnets: [10.110.0.0/16]\n"])])], "sets no cluster.network.serviceSubnets")
+	denies(plan_cluster_network.deny, "sets no cluster.network.serviceSubnets") with input as [plan([machine("w[\"200\"]", ["cluster:\n  network:\n    podSubnets: [10.110.0.0/16]\n"])])]
 }
 
 test_machines_told_different_ranges_are_refused if {
-	denies([plan([machine("cp[\"100\"]", [network("10.110.0.0/16", "10.196.40.0/22")]), machine("w[\"200\"]", [network("10.110.0.0/16", "10.96.0.0/12")])])], "cp[\"100\"] and w[\"200\"] are told different cluster.network.serviceSubnets")
+	denies(plan_cluster_network.deny, "cp[\"100\"] and w[\"200\"] are told different cluster.network.serviceSubnets") with input as [plan([machine("cp[\"100\"]", [network("10.110.0.0/16", "10.196.40.0/22")]), machine("w[\"200\"]", [network("10.110.0.0/16", "10.96.0.0/12")])])]
 }
 
 test_no_machine_configuration_is_refused if {
-	denies([plan([])], "checked nothing")
+	denies(plan_cluster_network.deny, "checked nothing") with input as [plan([])]
 }

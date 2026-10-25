@@ -22,12 +22,12 @@ declared(key) := {[f.path, v] |
 	is_string(v)
 }
 
-semver(v) := [to_number(m[1]), to_number(m[2]), m[3]] if {
+version_parts(v) := [to_number(m[1]), to_number(m[2]), m[3]] if {
 	some m in regex.find_all_string_submatch_n(`^v?(\d+)\.(\d+)\.(\d+)$`, v, 1)
 }
 
 deny contains msg if {
-	not semver(object.get(pins, "TALOSCTL_VERSION", ""))
+	not version_parts(object.get(pins, "TALOSCTL_VERSION", ""))
 	msg := "could not find TALOSCTL_VERSION=vX.Y.Z in scripts/versions.env. If the pin was restructured, this contract needs re-examining rather than re-pointing: something still has to keep the client in step with the cluster."
 }
 
@@ -37,11 +37,11 @@ deny contains msg if {
 }
 
 deny contains msg if {
-	cli := semver(pins.TALOSCTL_VERSION)
+	cli := version_parts(pins.TALOSCTL_VERSION)
 	some [path, v] in declared("talos_version")
-	cluster := semver(v)
+	cluster := version_parts(v)
 	not within_a_minor(cli, cluster)
-	msg := sprintf("talosctl is pinned to v%d.%d.%s but the cluster runs v%d.%d.%s (%s). Sidero supports a client within one minor of the cluster. Two apart is where commands start behaving differently from their documentation - which is a bad thing to discover while running `talosctl rotate-ca` during an incident.", array.concat(array.concat(cli, cluster), [path]))
+	msg := sprintf("talosctl is pinned to v%d.%d.%s but the cluster runs v%d.%d.%s (%s). Sidero supports a client within one minor of the cluster. Two apart is where commands start behaving differently from their documentation - which is a bad thing to discover while running `talosctl rotate-ca` during an incident.", array.flatten([cli, cluster, [path]]))
 }
 
 within_a_minor(a, b) if {
@@ -60,7 +60,7 @@ within_a_minor(a, b) if {
 # called stable - three numbers, no two of them within a minor of each other.
 
 deny contains msg if {
-	not semver(object.get(pins, "KUBECTL_VERSION", ""))
+	not version_parts(object.get(pins, "KUBECTL_VERSION", ""))
 	msg := "could not find KUBECTL_VERSION=vX.Y.Z in scripts/versions.env. If the pin was restructured, this contract needs re-examining rather than re-pointing: something still has to keep the client in step with the cluster."
 }
 
@@ -70,11 +70,11 @@ deny contains msg if {
 }
 
 deny contains msg if {
-	cli := semver(pins.KUBECTL_VERSION)
+	cli := version_parts(pins.KUBECTL_VERSION)
 	some [path, v] in declared("kubernetes_version")
-	cluster := semver(v)
+	cluster := version_parts(v)
 	not within_a_minor(cli, cluster)
-	msg := sprintf("kubectl is pinned to v%d.%d.%s but the cluster runs %d.%d.%s (%s). Kubernetes supports a client within one minor of the API server. Further apart and commands start failing or behaving differently from their documentation, which is a bad thing to discover while draining a node during an incident.", array.concat(array.concat(cli, cluster), [path]))
+	msg := sprintf("kubectl is pinned to v%d.%d.%s but the cluster runs %d.%d.%s (%s). Kubernetes supports a client within one minor of the API server. Further apart and commands start failing or behaving differently from their documentation, which is a bad thing to discover while draining a node during an incident.", array.flatten([cli, cluster, [path]]))
 }
 
 # No workflow restates a version that scripts/versions.env pins.

@@ -17,10 +17,10 @@ good := [sensor, digest, acknowledge, challenge, ask]
 
 workflow(steps) := [{"path": ".github/workflows/sensitive-paths.yml", "contents": {"on": {"pull_request": null}, "jobs": {"tripwire": {"steps": steps}}}}]
 
-replaced(i, step) := array.concat(array.concat(array.slice(good, 0, i), [step]), array.slice(good, i + 1, count(good)))
+replaced(i, step) := array.flatten([array.slice(good, 0, i), [step], array.slice(good, i + 1, count(good))])
 
-denies(steps, words) if {
-	some msg in sensitive_paths.deny with input as workflow(steps)
+denies(msgs, words) if {
+	some msg in msgs
 	contains(msg, words)
 }
 
@@ -34,11 +34,11 @@ test_no_workflow_is_refused if {
 }
 
 test_no_attestation_is_refused if {
-	denies([sensor, digest, challenge], "does not run scripts/attestation")
+	denies(sensitive_paths.deny, "does not run scripts/attestation") with input as workflow([sensor, digest, challenge])
 }
 
 test_an_attestation_with_no_digest_is_refused if {
-	denies(replaced(2, object.union(acknowledge, {"run": "go run -C scripts/attestation . -report r.md"})), "not keyed to a digest")
+	denies(sensitive_paths.deny, "not keyed to a digest") with input as workflow(replaced(2, object.union(acknowledge, {"run": "go run -C scripts/attestation . -report r.md"})))
 }
 
 test_the_review_thread_trigger_is_refused if {
@@ -48,48 +48,48 @@ test_the_review_thread_trigger_is_refused if {
 }
 
 test_no_digest_is_refused if {
-	denies([sensor, acknowledge, challenge, ask], "nothing digests the sensitive part")
+	denies(sensitive_paths.deny, "nothing digests the sensitive part") with input as workflow([sensor, acknowledge, challenge, ask])
 }
 
 test_a_digest_of_the_whole_diff_is_refused if {
-	denies(replaced(1, object.remove(digest, ["env"])), "does not read the sensor's file list")
+	denies(sensitive_paths.deny, "does not read the sensor's file list") with input as workflow(replaced(1, object.remove(digest, ["env"])))
 }
 
 test_a_step_that_may_fail_is_refused if {
-	denies(replaced(0, object.union(sensor, {"continue-on-error": true})), "the gate cannot refuse")
+	denies(sensitive_paths.deny, "the gate cannot refuse") with input as workflow(replaced(0, object.union(sensor, {"continue-on-error": true})))
 }
 
 test_an_unconditioned_acknowledgement_is_refused if {
-	denies(replaced(2, object.remove(acknowledge, ["if"])), "not conditioned on the tripwire firing")
+	denies(sensitive_paths.deny, "not conditioned on the tripwire firing") with input as workflow(replaced(2, object.remove(acknowledge, ["if"])))
 }
 
 test_no_key_challenge_is_refused if {
-	denies([sensor, digest, acknowledge, ask], "no step runs security challenge-keys")
+	denies(sensitive_paths.deny, "no step runs security challenge-keys") with input as workflow([sensor, digest, acknowledge, ask])
 }
 
 test_a_conditioned_key_challenge_is_refused if {
-	denies(replaced(3, object.union(challenge, {"if": "always()"})), `runs only if "always()"`)
+	denies(sensitive_paths.deny, `runs only if "always()"`) with input as workflow(replaced(3, object.union(challenge, {"if": "always()"})))
 }
 
 test_a_key_challenge_with_no_id_is_refused if {
-	denies(replaced(3, object.remove(challenge, ["id"])), "has no id")
+	denies(sensitive_paths.deny, "has no id") with input as workflow(replaced(3, object.remove(challenge, ["id"])))
 }
 
 test_one_conversation_for_both_is_refused if {
-	denies([sensor, digest, acknowledge, challenge], "does not open two conversations")
+	denies(sensitive_paths.deny, "does not open two conversations") with input as workflow([sensor, digest, acknowledge, challenge])
 }
 
 test_an_ask_not_keyed_to_what_was_found_is_refused if {
-	denies(replaced(4, object.union(ask, {"if": "always()"})), "not exactly when a key was handed out")
-	denies(replaced(4, object.union(ask, {"env": {"DIGEST": "${{ steps.digest.outputs.digest }}", "ANCHOR": "${{ steps.keys.outputs.anchor }}", "REPORT": "${{ steps.keys.outputs.report }}"}})), "takes its DIGEST from")
+	denies(sensitive_paths.deny, "not exactly when a key was handed out") with input as workflow(replaced(4, object.union(ask, {"if": "always()"})))
+	denies(sensitive_paths.deny, "takes its DIGEST from") with input as workflow(replaced(4, object.union(ask, {"env": {"DIGEST": "${{ steps.digest.outputs.digest }}", "ANCHOR": "${{ steps.keys.outputs.anchor }}", "REPORT": "${{ steps.keys.outputs.report }}"}})))
 }
 
 test_the_same_topic_is_refused if {
-	denies(replaced(4, object.union(ask, {"run": "go run -C scripts/attestation . \\\n  -topic sensitive \\\n  -digest \"$DIGEST\"\n"})), "under the same topic")
+	denies(sensitive_paths.deny, "under the same topic") with input as workflow(replaced(4, object.union(ask, {"run": "go run -C scripts/attestation . \\\n  -topic sensitive \\\n  -digest \"$DIGEST\"\n"})))
 }
 
 test_a_label_read_or_written_is_refused if {
-	denies(array.concat(good, [{"run": "gh pr view \"$PR\" --json labels"}]), `reads labels ("--json labels")`)
+	denies(sensitive_paths.deny, `reads labels ("--json labels")`) with input as workflow(array.concat(good, [{"run": "gh pr view \"$PR\" --json labels"}]))
 }
 
 test_a_labelled_trigger_is_refused if {

@@ -13,7 +13,7 @@ import rego.v1
 sets contains f if {
 	some f in lib.objects
 	f.contents.kind == "HelmRelease"
-	object.get(f.contents, ["spec", "chart", "spec", "chart"], "") == "gha-runner-scale-set"
+	f.contents.spec.chart.spec.chart == "gha-runner-scale-set"
 }
 
 images(f) := {v |

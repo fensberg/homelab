@@ -17,7 +17,7 @@ with_workflow(doc) := array.concat(fixed, [{"path": ".github/workflows/synthetic
 
 on_pr(job) := with_workflow({"on": {"pull_request": null}, "jobs": {"plan": job}})
 
-refusals(i) := {msg | some msg in pull_request_runners.deny with input as i; contains(msg, "runs pull-request code")}
+refusals(msgs) := {msg | some msg in msgs; contains(msg, "runs pull-request code")}
 
 test_a_hosted_runner_is_where_pull_request_code_runs if {
 	count(pull_request_runners.deny) == 0 with input as on_pr({"runs-on": "ubuntu-latest"})
@@ -28,11 +28,11 @@ test_a_declared_pull_request_pool_is_accepted if {
 }
 
 test_an_undeclared_pool_of_the_same_shape_is_refused if {
-	count(refusals(on_pr({"runs-on": "pr-source-${{ vars.pull_request_runners_site }}"}))) == 1
+	count(refusals(pull_request_runners.deny)) == 1 with input as on_pr({"runs-on": "pr-source-${{ vars.pull_request_runners_site }}"})
 }
 
 test_guarded_and_gated_on_the_management_pool_is_still_refused if {
-	some msg in refusals(on_pr({"runs-on": pool, "environment": "management", "if": "github.event.pull_request.head.repo.full_name == github.repository"}))
+	some msg in refusals(pull_request_runners.deny) with input as on_pr({"runs-on": pool, "environment": "management", "if": "github.event.pull_request.head.repo.full_name == github.repository"})
 	contains(msg, "runs pull-request code on homelab-alpha")
 	contains(msg, "management pool (homelab-${SITE})")
 }
@@ -43,38 +43,38 @@ test_a_push_pinned_job_in_a_pull_request_workflow_is_not_reachable if {
 }
 
 test_pull_request_target_is_held_to_the_same_rule if {
-	count(refusals(with_workflow({"on": {"pull_request_target": null}, "jobs": {"plan": {"runs-on": pool}}}))) == 1
+	count(refusals(pull_request_runners.deny)) == 1 with input as with_workflow({"on": {"pull_request_target": null}, "jobs": {"plan": {"runs-on": pool}}})
 }
 
 test_the_bare_on_key_read_as_true_is_still_read if {
-	count(refusals(with_workflow({"true": {"pull_request": null}, "jobs": {"plan": {"runs-on": pool}}}))) == 1
+	count(refusals(pull_request_runners.deny)) == 1 with input as with_workflow({"true": {"pull_request": null}, "jobs": {"plan": {"runs-on": pool}}})
 }
 
 test_the_management_pool_hidden_in_a_label_list if {
-	some msg in refusals(on_pr({"runs-on": [pool, "linux"]}))
+	some msg in refusals(pull_request_runners.deny) with input as on_pr({"runs-on": [pool, "linux"]})
 	contains(msg, "a list, a group or an expression")
 }
 
 test_a_runner_group_cannot_be_identified_so_it_is_refused if {
-	count(refusals(on_pr({"runs-on": {"group": "estate"}}))) == 1
+	count(refusals(pull_request_runners.deny)) == 1 with input as on_pr({"runs-on": {"group": "estate"}})
 }
 
 test_a_label_nobody_declared_is_a_runner_nobody_vetted if {
-	count(refusals(on_pr({"runs-on": "some-new-pool"}))) == 1
+	count(refusals(pull_request_runners.deny)) == 1 with input as on_pr({"runs-on": "some-new-pool"})
 }
 
 test_an_expression_cannot_be_read_so_it_is_refused if {
-	count(refusals(on_pr({"runs-on": "${{ inputs.runner }}"}))) == 1
+	count(refusals(pull_request_runners.deny)) == 1 with input as on_pr({"runs-on": "${{ inputs.runner }}"})
 }
 
 test_a_pool_by_night_and_githubs_by_day_is_an_expression_and_refused if {
 	i := with_workflow({"on": {"pull_request": null, "schedule": [{"cron": "0 3 * * *"}]}, "jobs": {"test": {"runs-on": "${{ github.event_name == 'schedule' && format('pr-builds-{0}', vars.pull_request_runners_site) || 'ubuntu-latest' }}"}}})
-	count(refusals(i)) == 1
+	count(refusals(pull_request_runners.deny)) == 1 with input as i
 }
 
 test_a_workflow_no_pull_request_can_trigger_is_out_of_scope if {
 	i := with_workflow({"on": {"schedule": [{"cron": "0 4 * * *"}]}, "jobs": {"test": {"runs-on": pool}}})
-	count(refusals(i)) == 0 with input as i
+	count(refusals(pull_request_runners.deny)) == 0 with input as i with input as i
 	some msg in pull_request_runners.deny with input as i
 	contains(msg, "no pull-request job was found")
 }

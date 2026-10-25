@@ -57,9 +57,9 @@ deny contains msg if {
 }
 
 deny contains msg if {
+	msg := sprintf("%s is not fail_fast, so a refused push still runs validate and test before printing the refusal", [guard])
 	some hook in the_guard
 	object.get(hook, "fail_fast", false) != true
-	msg := sprintf("%s is not fail_fast, so a refused push still runs validate and test before printing the refusal", [guard])
 }
 
 deny contains msg if {

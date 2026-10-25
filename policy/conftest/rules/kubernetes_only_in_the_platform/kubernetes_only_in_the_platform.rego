@@ -51,6 +51,6 @@ deny contains msg if {
 }
 
 deny contains msg if {
-	some path in builds_machines & talks_to_kubernetes
+	some path in (builds_machines & talks_to_kubernetes)
 	msg := sprintf("%s locks both the hypervisor's provider and Kubernetes's. Everything that talks to the cluster's API belongs to the platform: it is applied only after every node is Ready, and it is never destroyed. Beside the machines it would be planned before the cluster exists, and a teardown would wait on the cluster to delete it.", [path])
 }

@@ -13,8 +13,8 @@ validate := {"id": "validate", "entry": "task validate", "stages": ["pre-push"]}
 
 tasks := taskfile({"push-guard": {"cmds": ["x"]}, "validate": {"cmds": ["y"]}})
 
-denies(hooks, t, words) if {
-	some msg in push_hooks.deny with input as [config(hooks), t]
+denies(msgs, words) if {
+	some msg in msgs
 	contains(msg, words)
 }
 
@@ -23,29 +23,29 @@ test_the_guard_first_and_every_task_callable_passes if {
 }
 
 test_no_guard_is_refused if {
-	denies([validate], tasks, `no "enforce-push" hook`)
+	denies(push_hooks.deny, `no "enforce-push" hook`) with input as [config([validate]), tasks]
 }
 
 test_a_guard_at_another_stage_is_refused if {
-	denies([object.union(guard, {"stages": ["pre-commit"]}), validate], tasks, "it only guards anything at pre-push")
+	denies(push_hooks.deny, "it only guards anything at pre-push") with input as [config([object.union(guard, {"stages": ["pre-commit"]}), validate]), tasks]
 }
 
 test_a_guard_that_is_not_fail_fast_is_refused if {
-	denies([object.union(guard, {"fail_fast": false}), validate], tasks, "is not fail_fast")
+	denies(push_hooks.deny, "is not fail_fast") with input as [config([object.union(guard, {"fail_fast": false}), validate]), tasks]
 }
 
 test_a_guard_after_another_pre_push_hook_is_refused if {
-	denies([validate, guard], tasks, "should be first")
+	denies(push_hooks.deny, "should be first") with input as [config([validate, guard]), tasks]
 }
 
 test_a_task_that_does_not_exist_is_refused if {
-	denies([guard, validate], taskfile({"push-guard": {}}), "runs `task validate`, and taskfile.yml has no such task")
+	denies(push_hooks.deny, "runs `task validate`, and taskfile.yml has no such task") with input as [config([guard, validate]), taskfile({"push-guard": {}})]
 }
 
 test_an_internal_task_is_refused if {
-	denies([guard, validate], taskfile({"push-guard": {}, "validate": {"internal": true}}), "which is marked internal")
+	denies(push_hooks.deny, "which is marked internal") with input as [config([guard, validate]), taskfile({"push-guard": {}, "validate": {"internal": true}})]
 }
 
 test_no_task_invoked_is_refused if {
-	denies([object.union(guard, {"entry": "./guard.sh"})], tasks, "no hook invokes a task")
+	denies(push_hooks.deny, "no hook invokes a task") with input as [config([object.union(guard, {"entry": "./guard.sh"})]), tasks]
 }

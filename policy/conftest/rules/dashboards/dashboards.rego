@@ -22,7 +22,7 @@ substituted := `\$(\{|[A-Za-z_])\w*`
 
 # A dashboard is a JSON file Flux applies that has panels and a schema
 # version.
-dashboards contains f if {
+declared contains f if {
 	some f in lib.under("clusters/")
 	endswith(f.path, ".json")
 	is_object(f.contents)
@@ -42,12 +42,12 @@ text(of, key) := trim_space(s) if {
 text(of, key) := "" if not is_string(object.get(of, key, ""))
 
 deny contains msg if {
-	count(dashboards) == 0
+	count(declared) == 0
 	msg := "no dashboard was found in what Flux applies, so this checked nothing. Criterion 19 of epoch 04 asks for one for each question the epoch asks."
 }
 
 deny contains msg if {
-	some f in dashboards
+	some f in declared
 	walk(f.contents, [path, v])
 	some s in array.concat([v | is_string(v)], [k | some k in path; is_string(k)])
 	found := regex.find_n(substituted, s, 1)
@@ -56,14 +56,14 @@ deny contains msg if {
 }
 
 deny contains msg if {
-	some f in dashboards
+	some f in declared
 	uid := text(f.contents, "uid")
 	uid != trim_suffix(base(f.path), ".json")
 	msg := sprintf("%s has the uid %q. A dashboard is linked to by its uid, so it is the file's own name and does not change when the title does.", [f.path, uid])
 }
 
 deny contains msg if {
-	some f in dashboards
+	some f in declared
 	count(f.contents.panels) == 0
 	msg := sprintf("%s has no panel", [f.path])
 }
@@ -74,14 +74,14 @@ asks(p) if {
 }
 
 deny contains msg if {
-	some f in dashboards
+	some f in declared
 	some p in f.contents.panels
 	text(p, "title") == ""
 	msg := sprintf("%s has a panel with no title", [f.path])
 }
 
 deny contains msg if {
-	some f in dashboards
+	some f in declared
 	some p in f.contents.panels
 	text(p, "title") != ""
 	text(p, "description") == ""
@@ -89,7 +89,7 @@ deny contains msg if {
 }
 
 deny contains msg if {
-	some f in dashboards
+	some f in declared
 	some p in f.contents.panels
 	text(p, "title") != ""
 	text(p, "description") != ""
@@ -105,13 +105,13 @@ listing(f) := k if {
 }
 
 deny contains msg if {
-	some f in dashboards
+	some f in declared
 	not listing(f)
 	msg := sprintf("%s is not handed to Grafana: no kustomization is beside its directory to list it", [f.path])
 }
 
 deny contains msg if {
-	some f in dashboards
+	some f in declared
 	k := listing(f)
 	want := sprintf("%s/%s", [base(dir(f.path)), base(f.path)])
 	not want in {file | some g in object.get(k.contents, "configMapGenerator", []); some file in object.get(g, "files", [])}
@@ -119,7 +119,7 @@ deny contains msg if {
 }
 
 deny contains msg if {
-	some f in dashboards
+	some f in declared
 	k := listing(f)
 	object.get(k.contents, ["generatorOptions", "labels", "grafana_dashboard"], "") == ""
 	msg := sprintf("%s is listed and not labelled grafana_dashboard, so the sidecar that hands dashboards to Grafana does not see it.", [f.path])

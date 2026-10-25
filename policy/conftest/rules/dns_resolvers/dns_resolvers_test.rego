@@ -9,8 +9,8 @@ declared := {"path": "modules/c/variables.tf", "contents": {"locals": [{"dns_res
 
 with_file(contents) := array.concat(filler, [declared, {"path": "modules/c/compute.tf", "contents": contents}])
 
-denies(i, words) if {
-	some msg in dns_resolvers.deny with input as i
+denies(msgs, words) if {
+	some msg in msgs
 	contains(msg, words)
 }
 
@@ -19,16 +19,16 @@ test_resolvers_read_from_the_declaration_pass if {
 }
 
 test_a_resolver_written_as_a_value_is_refused if {
-	denies(with_file({"locals": [{"dns_servers": ["9.9.9.9"]}]}), "names the resolver 9.9.9.9 directly")
+	denies(dns_resolvers.deny, "names the resolver 9.9.9.9 directly") with input as with_file({"locals": [{"dns_servers": ["9.9.9.9"]}]})
 }
 
 test_a_resolver_written_beside_the_declaration_is_refused if {
 	i := array.concat(filler, [{"path": "modules/c/variables.tf", "contents": {"locals": [{"dns_resolvers": ["1.1.1.1"], "fallback_dns_servers": ["9.9.9.9"]}]}}])
-	denies(i, "names the resolver 9.9.9.9")
+	denies(dns_resolvers.deny, "names the resolver 9.9.9.9") with input as i
 }
 
 test_a_resolver_inside_a_rendered_configuration_is_refused if {
-	denies(with_file({"data": {"cfg": {"a": [{"patch": "${yamlencode({\n  nameservers = [\"8.8.8.8\"]\n})}"}]}}}), "names the resolver 8.8.8.8")
+	denies(dns_resolvers.deny, "names the resolver 8.8.8.8") with input as with_file({"data": {"cfg": {"a": [{"patch": "${yamlencode({\n  nameservers = [\"8.8.8.8\"]\n})}"}]}}})
 }
 
 test_a_comment_inside_an_expression_is_not_the_decision if {
@@ -40,5 +40,5 @@ test_an_address_with_nothing_to_do_with_resolving_passes if {
 }
 
 test_two_declarations_are_refused if {
-	denies(array.concat(with_file({}), [{"path": "modules/d/v.tf", "contents": {"locals": [{"dns_resolvers": ["1.1.1.1"]}]}}]), "declared 2 time(s)")
+	denies(dns_resolvers.deny, "declared 2 time(s)") with input as array.concat(with_file({}), [{"path": "modules/d/v.tf", "contents": {"locals": [{"dns_resolvers": ["1.1.1.1"]}]}}])
 }

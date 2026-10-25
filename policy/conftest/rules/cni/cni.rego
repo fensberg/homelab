@@ -123,9 +123,9 @@ deny contains msg if {
 # not, and the manifest would still render, still install, and still come up.
 
 deny contains msg if {
+	msg := "the rendered Cilium manifest declares no ipam mode, so this cannot tell which range pods are allocated from"
 	some f in config
 	not f.contents.data.ipam
-	msg := "the rendered Cilium manifest declares no ipam mode, so this cannot tell which range pods are allocated from"
 }
 
 deny contains msg if {

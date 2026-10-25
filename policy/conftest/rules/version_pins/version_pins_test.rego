@@ -11,8 +11,8 @@ wf(contents) := {"path": ".github/workflows/w.yml", "contents": contents}
 
 pins := env({"TOFU_VERSION": "1.12.6", "GO_VERSION": "1.26.7"})
 
-denies(i, words) if {
-	some msg in version_pins.deny with input as i
+denies(msgs, words) if {
+	some msg in msgs
 	contains(msg, words)
 }
 
@@ -22,31 +22,31 @@ test_references_to_a_pin_pass if {
 }
 
 test_a_literal_in_yaml_is_refused if {
-	denies([pins, exporter, wf({"env": {"TOFU_VERSION": "1.10.6"}})], "declares TOFU_VERSION itself")
+	denies(version_pins.deny, "declares TOFU_VERSION itself") with input as [pins, exporter, wf({"env": {"TOFU_VERSION": "1.10.6"}})]
 }
 
 test_a_literal_number_in_yaml_is_refused if {
-	denies([pins, exporter, wf({"jobs": {"j": {"env": {"GO_VERSION": 1.26}}}})], "declares GO_VERSION itself")
+	denies(version_pins.deny, "declares GO_VERSION itself") with input as [pins, exporter, wf({"jobs": {"j": {"env": {"GO_VERSION": 1.26}}}})]
 }
 
 test_a_literal_in_a_script_is_refused if {
-	denies([pins, exporter, wf({"jobs": {"j": {"steps": [{"run": "set -e\nGO_VERSION=1.25\ngo version"}]}}})], "declares GO_VERSION itself")
+	denies(version_pins.deny, "declares GO_VERSION itself") with input as [pins, exporter, wf({"jobs": {"j": {"steps": [{"run": "set -e\nGO_VERSION=1.25\ngo version"}]}}})]
 }
 
 test_a_pin_the_action_will_not_export_is_refused if {
-	denies([env({"TOFU_VERSION": "1.12.6", "TOFU_SHA256": "abc"}), exporter], `declares "TOFU_SHA256"`)
-	denies([env({"TOFU_VERSION": "-rc1"}), exporter], `declares "TOFU_VERSION"`)
+	denies(version_pins.deny, `declares "TOFU_SHA256"`) with input as [env({"TOFU_VERSION": "1.12.6", "TOFU_SHA256": "abc"}), exporter]
+	denies(version_pins.deny, `declares "TOFU_VERSION"`) with input as [env({"TOFU_VERSION": "-rc1"}), exporter]
 }
 
 test_an_exporter_that_writes_anything_is_refused if {
 	loose := {"path": ".github/actions/versions/action.yml", "contents": {"runs": {"steps": [{"run": "cat scripts/versions.env >> \"$GITHUB_ENV\""}]}}}
-	denies([pins, loose], "no longer restricts what it writes")
+	denies(version_pins.deny, "no longer restricts what it writes") with input as [pins, loose]
 }
 
 test_no_exporter_is_refused if {
-	denies([pins], "is missing")
+	denies(version_pins.deny, "is missing") with input as [pins]
 }
 
 test_no_pins_is_refused if {
-	denies([env({}), exporter], "declares nothing")
+	denies(version_pins.deny, "declares nothing") with input as [env({}), exporter]
 }

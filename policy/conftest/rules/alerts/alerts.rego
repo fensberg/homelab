@@ -21,7 +21,7 @@ package rules.alerts
 import data.lib
 import rego.v1
 
-alerts contains [f.path, r.alert, object.get(r, "annotations", {})] if {
+declared contains [f.path, r.alert, object.get(r, "annotations", {})] if {
 	some f in lib.objects
 	f.contents.kind == "PrometheusRule"
 	some g in object.get(f.contents.spec, "groups", [])
@@ -45,13 +45,13 @@ unsaid(path, name, annotations) := {msg |
 }
 
 deny contains msg if {
-	some [path, name, annotations] in alerts
+	some [path, name, annotations] in declared
 	some problem in unsaid(path, name, annotations)
 	msg := concat(" ", [problem, "Whoever reads an alert is owed what it is, what it means and what to try first, each in an annotation of its own. The channel shows the first step on a line by itself."])
 }
 
 deny contains msg if {
-	count(alerts) == 0
+	count(declared) == 0
 	msg := "no alert was found in what Flux applies, so this checked nothing"
 }
 

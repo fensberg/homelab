@@ -113,9 +113,11 @@ needs(triggers) := {[ref, why] |
 
 prs := {"pull_request", "pull_request_target"}
 
-pr(triggers) := count(triggers & prs) > 0
+default pr(_) := false
 
-pr_and_other(triggers) := true if {
+pr(triggers) if count(triggers & prs) > 0
+
+pr_and_other(triggers) if {
 	pr(triggers)
 	count(triggers - prs) > 0
 }

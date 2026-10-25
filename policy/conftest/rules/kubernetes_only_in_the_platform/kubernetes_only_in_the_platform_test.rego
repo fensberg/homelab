@@ -9,8 +9,8 @@ proxmox := "registry.opentofu.org/bpg/proxmox"
 
 k8s := "registry.opentofu.org/hashicorp/kubernetes"
 
-denies(i, words) if {
-	some msg in kubernetes_only_in_the_platform.deny with input as i
+denies(msgs, words) if {
+	some msg in msgs
 	contains(msg, words)
 }
 
@@ -19,13 +19,13 @@ test_each_on_its_own_side_passes if {
 }
 
 test_kubernetes_beside_the_machines_is_refused if {
-	denies([lock("roots/cluster/.terraform.lock.hcl", [proxmox, k8s]), lock("roots/platform/.terraform.lock.hcl", [k8s])], "roots/cluster/.terraform.lock.hcl locks both the hypervisor's provider and Kubernetes's")
+	denies(kubernetes_only_in_the_platform.deny, "roots/cluster/.terraform.lock.hcl locks both the hypervisor's provider and Kubernetes's") with input as [lock("roots/cluster/.terraform.lock.hcl", [proxmox, k8s]), lock("roots/platform/.terraform.lock.hcl", [k8s])]
 }
 
 test_a_file_without_hashes_is_not_a_lock if {
-	denies([{"path": "x.hcl", "contents": {"provider": {proxmox: [{"version": "1"}]}}}, lock("p.hcl", [k8s])], "so nothing here knows what builds the machines")
+	denies(kubernetes_only_in_the_platform.deny, "so nothing here knows what builds the machines") with input as [{"path": "x.hcl", "contents": {"provider": {proxmox: [{"version": "1"}]}}}, lock("p.hcl", [k8s])]
 }
 
 test_nothing_talking_to_kubernetes_is_refused if {
-	denies([lock("c.hcl", [proxmox])], "nothing talks to the cluster's API")
+	denies(kubernetes_only_in_the_platform.deny, "nothing talks to the cluster's API") with input as [lock("c.hcl", [proxmox])]
 }

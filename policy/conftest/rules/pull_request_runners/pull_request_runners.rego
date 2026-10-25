@@ -26,7 +26,7 @@ package rules.pull_request_runners
 import data.lib
 import rego.v1
 
-pools := {sprintf("pr-%s-${{ vars.pull_request_runners_site }}", [name]) |
+pools contains sprintf("pr-%s-${{ vars.pull_request_runners_site }}", [name]) if {
 	some f in lib.at("scripts/approved-suppliers.yml")
 	some name in f.contents.pull_request_pools.names
 }
