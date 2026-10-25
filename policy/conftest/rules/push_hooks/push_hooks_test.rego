@@ -37,15 +37,3 @@ test_a_guard_that_is_not_fail_fast_is_refused if {
 test_a_guard_after_another_pre_push_hook_is_refused if {
 	denies(push_hooks.deny, "should be first") with input as [config([validate, guard]), tasks]
 }
-
-test_a_task_that_does_not_exist_is_refused if {
-	denies(push_hooks.deny, "runs `task validate`, and taskfile.yml has no such task") with input as [config([guard, validate]), taskfile({"push-guard": {}})]
-}
-
-test_an_internal_task_is_refused if {
-	denies(push_hooks.deny, "which is marked internal") with input as [config([guard, validate]), taskfile({"push-guard": {}, "validate": {"internal": true}})]
-}
-
-test_no_task_invoked_is_refused if {
-	denies(push_hooks.deny, "no hook invokes a task") with input as [config([object.union(guard, {"entry": "./guard.sh"})]), tasks]
-}

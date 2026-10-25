@@ -26,6 +26,12 @@ targets contains m[1] if {
 	m[1] != "/dev/null"
 }
 
+ignored contains entry.Value if {
+	some f in lib.at(".gitignore")
+	some entry in f.contents
+	entry.Kind == "Path"
+}
+
 deny contains msg if {
 	some target in targets
 	not contains(target, "toolshed/")
@@ -35,12 +41,6 @@ deny contains msg if {
 deny contains msg if {
 	count(targets) == 0
 	msg := "no builds found in taskfile.yml, so this guards nothing - and passing on an empty set is how a check stops mattering"
-}
-
-ignored contains entry.Value if {
-	some f in lib.at(".gitignore")
-	some entry in f.contents
-	entry.Kind == "Path"
 }
 
 deny contains msg if {

@@ -58,6 +58,8 @@ opened(path) if {
 
 setting(path) := concat(".", path)
 
+enabled(component) if stack[0].contents.spec.values[component].enabled == true
+
 deny contains msg if {
 	count(control_planes) == 0
 	msg := "no control plane's machine configuration is in any plan, so whether the control plane is opened to the chart cannot be read"
@@ -74,8 +76,6 @@ deny contains msg if {
 	not f.contents.spec.values[component]
 	msg := $"the monitoring HelmRelease says nothing about {component} at all, so this rule is reading the wrong shape and proves nothing"
 }
-
-enabled(component) if stack[0].contents.spec.values[component].enabled == true
 
 deny contains msg if {
 	some component, [path, what] in components

@@ -38,6 +38,12 @@ allows(s, action) if {
 
 allows(s, action) if $"{action}@*" in patterns(s)
 
+one_action(p) if {
+	[repo, "*"] = split(p, "@")
+	count(split(repo, "/")) == 2
+	not contains(repo, "*")
+}
+
 deny contains msg if {
 	count(used) < 5
 	msg := $"only {count(used)} action(s) were found in the workflows, so the allowed-actions rule checked almost nothing"
@@ -71,12 +77,6 @@ deny contains msg if {
 	some p in patterns(s)
 	not one_action(p)
 	msg := $"{where}: it allows {p}, which is wider than one action: write owner/repository@*"
-}
-
-one_action(p) if {
-	[repo, "*"] = split(p, "@")
-	count(split(repo, "/")) == 2
-	not contains(repo, "*")
 }
 
 deny contains msg if {

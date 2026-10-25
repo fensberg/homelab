@@ -28,6 +28,11 @@ ipv4 := `^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$`
 
 about_resolving(key) if regex.match(`dns|nameserver|servers`, key)
 
+declared_at(path) if {
+	path[0] == "locals"
+	path[2] == "dns_resolvers"
+}
+
 # A resolver written as a value, under a key that says what it is for.
 written contains [f.path, key, v] if {
 	some f in tf
@@ -38,11 +43,6 @@ written contains [f.path, key, v] if {
 	is_string(key)
 	about_resolving(key)
 	not declared_at(path)
-}
-
-declared_at(path) if {
-	path[0] == "locals"
-	path[2] == "dns_resolvers"
 }
 
 # Or written inside an expression OpenTofu renders - a cloud-init or a machine

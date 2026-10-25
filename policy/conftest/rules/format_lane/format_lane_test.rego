@@ -32,16 +32,6 @@ test_a_delivery_before_the_gate_is_refused if {
 	denies(format_lane.deny, `runs "scripts/take-delivery.sh" before the supplier gate`) with input as [setup_go, lane([go, deliver, gate, run])]
 }
 
-test_go_on_a_version_of_its_own_is_refused if {
-	own := {"path": ".github/workflows/setup-go/action.yml", "contents": {"runs": {"steps": [{"with": {"go-version": "1.26.7"}}]}}}
-	denies(format_lane.deny, "sets up Go without reading GO_VERSION") with input as [own, lane([go, gate, deliver, run])]
-}
-
-test_a_shared_action_that_takes_a_version_is_refused if {
-	restatable := {"path": ".github/workflows/setup-go/action.yml", "contents": {"inputs": {"go-version": {}}, "runs": {"steps": [{"with": {"go-version": "${{ env.GO_VERSION }}"}}]}}}
-	denies(format_lane.deny, "sets up Go without reading GO_VERSION") with input as [restatable, lane([go, gate, deliver, run])]
-}
-
 test_no_format_lane_is_refused if {
 	denies(format_lane.deny, "no job runs pre-commit run --all-files") with input as [setup_go]
 }

@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: one_owner_per_layer
+rule: network_routes_no_web
 file: clusters/bootstrap/cilium.yaml
 find: "  enable-l7-proxy: \"true\"\n"
 replace: "  enable-l7-proxy: \"true\"\n  enable-gateway-api: \"true\"\n"

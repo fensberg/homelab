@@ -40,14 +40,14 @@ verbs contains [file, m[1]] if {
 	some m in regex.find_all_string_submatch_n(procurement_verb, v, -1)
 }
 
+delivers("deliver")
+
+delivers(verb) if startswith(verb, "deliver-")
+
 deny contains msg if {
 	some [file, "order"] in verbs
 	msg := $"{file} runs `procurement order`. Ordering writes scripts/deliveries.lock, which decides what every lane and workstation installs. It is run by a person and committed through review; no workflow orders, and above all not one that could hold the expedite credential."
 }
-
-delivers("deliver")
-
-delivers(verb) if startswith(verb, "deliver-")
 
 deny contains msg if {
 	some [file, verb] in verbs
