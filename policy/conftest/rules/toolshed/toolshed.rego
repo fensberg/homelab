@@ -29,7 +29,7 @@ targets contains m[1] if {
 deny contains msg if {
 	some target in targets
 	not contains(target, "toolshed/")
-	msg := sprintf("taskfile.yml builds a binary to %q, outside the toolshed. Then it needs its own ignore rule, which is the arrangement that let a binary reach main. Build into toolshed/ instead.", [target])
+	msg := $"taskfile.yml builds a binary to \"{target}\", outside the toolshed. Then it needs its own ignore rule, which is the arrangement that let a binary reach main. Build into toolshed/ instead."
 }
 
 deny contains msg if {

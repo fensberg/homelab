@@ -36,7 +36,7 @@ deny contains msg if {
 deny contains msg if {
 	some [file, name, job] in lanes
 	not first(job, gate)
-	msg := sprintf("%s: the Format lane (%s) does not run the supplier gate before installing. Without it, `pre-commit run` clones and installs every third-party hook repository on the runner before anything can refuse one - so an unapproved supplier added in a pull request executes its setup code before any check says no.", [file, name])
+	msg := $"{file}: the Format lane ({name}) does not run the supplier gate before installing. Without it, `pre-commit run` clones and installs every third-party hook repository on the runner before anything can refuse one - so an unapproved supplier added in a pull request executes its setup code before any check says no."
 }
 
 deny contains msg if {
@@ -44,7 +44,7 @@ deny contains msg if {
 	at := first(job, gate)
 	some later in ["scripts/take-delivery.sh", "pre-commit run --all-files"]
 	first(job, later) < at
-	msg := sprintf("%s: the Format lane runs %q before the supplier gate. The gate then reports on code that has already been downloaded and had its setup executed, which is a receipt rather than a refusal.", [file, later])
+	msg := $"{file}: the Format lane runs \"{later}\" before the supplier gate. The gate then reports on code that has already been downloaded and had its setup executed, which is a receipt rather than a refusal."
 }
 
 # And it sets up Go on the toolchain the estate pins: by reading GO_VERSION
@@ -69,5 +69,5 @@ reads_the_pin(job) if {
 deny contains msg if {
 	some [file, name, job] in lanes
 	not reads_the_pin(job)
-	msg := sprintf("%s: the Format lane sets up Go without reading GO_VERSION from scripts/versions.env, so it can validate on a different toolchain than the one the estate pins", [file])
+	msg := $"{file}: the Format lane sets up Go without reading GO_VERSION from scripts/versions.env, so it can validate on a different toolchain than the one the estate pins"
 }

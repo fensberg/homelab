@@ -12,6 +12,12 @@ package rules.versions
 import data.lib
 import rego.v1
 
+# A brace of a template a message quotes, which a template string cannot
+# hold as it is.
+open := "{"
+
+close := "}"
+
 pins := [f.contents | some f in lib.at("scripts/versions.env")][0]
 
 # What the cluster's module says a site runs, as a local.
@@ -33,7 +39,7 @@ deny contains msg if {
 
 deny contains msg if {
 	count(declared("talos_version")) != 1
-	msg := sprintf("talos_version is declared as a version %d time(s) where the cluster's module says what a site runs, and it is one fact", [count(declared("talos_version"))])
+	msg := $"talos_version is declared as a version {count(declared("talos_version"))} time(s) where the cluster's module says what a site runs, and it is one fact"
 }
 
 deny contains msg if {
@@ -66,7 +72,7 @@ deny contains msg if {
 
 deny contains msg if {
 	count(declared("kubernetes_version")) != 1
-	msg := sprintf("kubernetes_version is declared as a version %d time(s) where the cluster's module says what a site runs. It was inline in talos.tf once, which is how it went five minors stale without anything noticing. It belongs in the locals beside talos_version, because Talos decides which Kubernetes versions are installable at all.", [count(declared("kubernetes_version"))])
+	msg := $"kubernetes_version is declared as a version {count(declared("kubernetes_version"))} time(s) where the cluster's module says what a site runs. It was inline in talos.tf once, which is how it went five minors stale without anything noticing. It belongs in the locals beside talos_version, because Talos decides which Kubernetes versions are installable at all."
 }
 
 deny contains msg if {
@@ -106,13 +112,13 @@ inputs contains [file, key, v] if {
 
 deny contains msg if {
 	some [file, key, v] in inputs
-	not startswith(sprintf("%v", [v]), "${{")
-	msg := sprintf("%s restates a pinned version: %s: %v. Read it from scripts/versions.env instead: add the step `uses: ./.github/actions/versions` after the checkout, and write %s: ${{ env.<KEY> }}. A literal agrees with the pin only until the pin moves, and nothing says when it stops agreeing.", [file, key, v, key])
+	not startswith($"{v}", "${{")
+	msg := $"{file} restates a pinned version: {key}: {v}. Read it from scripts/versions.env instead: add the step `uses: ./.github/actions/versions` after the checkout, and write {key}: ${open}{open} env.<KEY> {close}{close}. A literal agrees with the pin only until the pin moves, and nothing says when it stops agreeing."
 }
 
 deny contains msg if {
 	count(inputs) < 2
-	msg := sprintf("found only %d version input(s) - the pattern has stopped matching, so this rule proves nothing", [count(inputs)])
+	msg := $"found only {count(inputs)} version input(s) - the pattern has stopped matching, so this rule proves nothing"
 }
 
 # A pin must not be readable as configuration by the tool it pins.
@@ -151,7 +157,7 @@ inert := "RCLONE_DEB_VERSION"
 
 deny contains msg if {
 	not pins[inert]
-	msg := sprintf("scripts/versions.env no longer declares %s. That is the rclone pin. install-dependencies.sh and the runner image both read it, and without it the workstation and the runner install whatever Debian has. If it was renamed, rename it to something outside the RCLONE_ namespace and update this rule - do not put it back as RCLONE_VERSION.", [inert])
+	msg := $"scripts/versions.env no longer declares {inert}. That is the rclone pin. install-dependencies.sh and the runner image both read it, and without it the workstation and the runner install whatever Debian has. If it was renamed, rename it to something outside the RCLONE_ namespace and update this rule - do not put it back as RCLONE_VERSION."
 }
 
 deny contains msg if {
@@ -159,7 +165,7 @@ deny contains msg if {
 	startswith(key, "RCLONE_")
 	key != inert
 	flag := concat("", ["--", lower(replace(trim_prefix(key, "RCLONE_"), "_", "-"))])
-	msg := sprintf("scripts/versions.env declares %s, which is in rclone's own configuration namespace. .github/actions/versions exports every pin into the job environment, and rclone reads RCLONE_<FLAG> as %s. If rclone has that flag, every rclone call in every job that reads the pins fails before doing any work - which is what RCLONE_VERSION did to five nights of backups and integration runs (#487). Name the pin outside the namespace. %s is the one spelling checked to be inert.", [key, flag, inert])
+	msg := $"scripts/versions.env declares {key}, which is in rclone's own configuration namespace. .github/actions/versions exports every pin into the job environment, and rclone reads RCLONE_<FLAG> as {flag}. If rclone has that flag, every rclone call in every job that reads the pins fails before doing any work - which is what RCLONE_VERSION did to five nights of backups and integration runs (#487). Name the pin outside the namespace. {inert} is the one spelling checked to be inert."
 }
 
 # The scheduler a change is tried with is the scheduler a site runs.
@@ -180,5 +186,5 @@ deny contains msg if {
 	tried := pins.KUBERNETES_VERSION
 	some [path, site] in declared("kubernetes_version")
 	tried != site
-	msg := sprintf("a change is tried with Kubernetes %s and a site runs %s (%s). The engineer stamps a change on the word of a scheduler, and it has to be the site's. Move KUBERNETES_VERSION in scripts/versions.env to %s and run task order-deliveries, in the change that moves the site.", [tried, site, path, site])
+	msg := $"a change is tried with Kubernetes {tried} and a site runs {site} ({path}). The engineer stamps a change on the word of a scheduler, and it has to be the site's. Move KUBERNETES_VERSION in scripts/versions.env to {site} and run task order-deliveries, in the change that moves the site."
 }

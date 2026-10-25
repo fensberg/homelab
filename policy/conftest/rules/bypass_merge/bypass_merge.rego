@@ -28,10 +28,10 @@ deny contains msg if {
 deny contains msg if {
 	some [file, name, line, _] in merges
 	not contains(line, "--match-head-commit")
-	msg := sprintf("%s job %s merges under a bypass without --match-head-commit:\n  %s\nA bypass skips review and required checks alike, so the commit judged must be the commit merged.", [file, name, line])
+	msg := $"{file} job {name} merges under a bypass without --match-head-commit:\n  {line}\nA bypass skips review and required checks alike, so the commit judged must be the commit merged."
 }
 
 deny contains msg if {
 	some [file, name, _, false] in merges
-	msg := sprintf("%s job %s merges under a bypass and never runs enforce-standing-order. The Sensitive Paths check cannot bound this merge: the bypass skips it. The job that merges must judge the standing order itself, against the head it merges.", [file, name])
+	msg := $"{file} job {name} merges under a bypass and never runs enforce-standing-order. The Sensitive Paths check cannot bound this merge: the bypass skips it. The job that merges must judge the standing order itself, against the head it merges."
 }

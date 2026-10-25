@@ -28,6 +28,12 @@ package rules.runners
 import data.lib
 import rego.v1
 
+# A brace of a template a message quotes, which a template string cannot
+# hold as it is.
+open := "{"
+
+close := "}"
+
 releases(name) := [f | some f in lib.objects; f.contents.kind == "HelmRelease"; f.contents.metadata.name == name]
 
 sets := [f | some f in lib.objects; f.contents.kind == "HelmRelease"; f.contents.spec.chart.spec.chart == "gha-runner-scale-set"]
@@ -53,13 +59,13 @@ namespaces := {"runner_system_namespace": "gha-runner-scale-set-controller", "ru
 deny contains msg if {
 	some name, release in namespaces
 	count(local(name)) != 1
-	msg := sprintf("local.%s is declared %d time(s) beside the runner's other names, and it is one fact", [name, count(local(name))])
+	msg := $"local.{name} is declared {count(local(name))} time(s) beside the runner's other names, and it is one fact"
 }
 
 deny contains msg if {
 	some name, release in namespaces
 	count(releases(release)) != 1
-	msg := sprintf("%d HelmRelease named %s were found, so its namespace cannot be read", [count(releases(release)), release])
+	msg := $"{count(releases(release))} HelmRelease named {release} were found, so its namespace cannot be read"
 }
 
 deny contains msg if {
@@ -67,7 +73,7 @@ deny contains msg if {
 	some [tf, want] in local(name)
 	some f in releases(release)
 	not says(f.path, want)
-	msg := sprintf("%s declares local.%s = %q, but %s never mentions it. The manifest and the OpenTofu have drifted; one of them is now describing a resource the other does not create.", [tf, name, want, f.path])
+	msg := $"{tf} declares local.{name} = \"{want}\", but {f.path} never mentions it. The manifest and the OpenTofu have drifted; one of them is now describing a resource the other does not create."
 }
 
 # runs-on is the contract between a workflow and the scale set, and with
@@ -77,7 +83,7 @@ deny contains msg if {
 
 deny contains msg if {
 	not "self-hosted" in {f.contents.metadata.name | some f in sets}
-	msg := sprintf("the runner scale sets found are %v, and the one every site's converge runs on (self-hosted) is not among them", [sort({f.contents.metadata.name | some f in sets})])
+	msg := $"the runner scale sets found are {sort({f.contents.metadata.name | some f in sets})}, and the one every site's converge runs on (self-hosted) is not among them"
 }
 
 set_name(f) := object.get(f.contents, ["spec", "values", "runnerScaleSetName"], "")
@@ -116,7 +122,7 @@ deny contains msg if {
 	some [file, label, prefix] in asks
 	site := trim_prefix(label, prefix)
 	not names_a_site(site)
-	msg := sprintf("%s declares `runs-on: %s`. The estate's runners are registered per site, as %s<site>, so a job names the site it runs for with an expression: %s${{ matrix.site }} for a job that runs once per site.", [file, label, prefix, prefix])
+	msg := $"{file} declares `runs-on: {label}`. The estate's runners are registered per site, as {prefix}<site>, so a job names the site it runs for with an expression: {prefix}${open}{open} matrix.site {close}{close} for a job that runs once per site."
 }
 
 names_a_site(site) if {
@@ -133,7 +139,7 @@ deny contains msg if {
 deny contains msg if {
 	some p in prefixes
 	not p in {prefix | some [_, _, prefix] in asks}
-	msg := sprintf("no workflow asks for a runner named %s<site>, so that set of runners serves nothing. Point the job it was made for at it, or take the set out.", [p])
+	msg := $"no workflow asks for a runner named {p}<site>, so that set of runners serves nothing. Point the job it was made for at it, or take the set out."
 }
 
 # CI must never be schedulable onto a control plane, and must be schedulable
@@ -189,7 +195,7 @@ required(f) := object.get(f.contents, ["spec", "values", "template", "spec", "af
 deny contains msg if {
 	some f in sets
 	required(f) == null
-	msg := sprintf("%s: the runner pod has no required node affinity. A preferred one is not enough: it puts CI back onto the control plane exactly when the workers are busy, which is when a build is heaviest and when etcd can least afford to share four cores with it.", [f.contents.metadata.name])
+	msg := $"{f.contents.metadata.name}: the runner pod has no required node affinity. A preferred one is not enough: it puts CI back onto the control plane exactly when the workers are busy, which is when a build is heaviest and when etcd can least afford to share four cores with it."
 }
 
 deny contains msg if {
@@ -197,13 +203,13 @@ deny contains msg if {
 	some term in required(f)
 	some e in object.get(term, "matchExpressions", [])
 	not e.operator in modelled
-	msg := sprintf("%s: this rule does not model the %q operator; teach it before using one", [f.contents.metadata.name, e.operator])
+	msg := $"{f.contents.metadata.name}: this rule does not model the \"{e.operator}\" operator; teach it before using one"
 }
 
 deny contains msg if {
 	some f in sets
 	admits(required(f), control_plane)
-	msg := sprintf("%s: a CI runner would schedule onto a control-plane node, which is the thing the worker pool was built to stop.", [f.contents.metadata.name])
+	msg := $"{f.contents.metadata.name}: a CI runner would schedule onto a control-plane node, which is the thing the worker pool was built to stop."
 }
 
 deny contains msg if {
@@ -211,7 +217,7 @@ deny contains msg if {
 	terms := required(f)
 	terms != null
 	not admits(terms, worker)
-	msg := sprintf("%s: a CI runner would not schedule onto a worker either, so this affinity takes CI off the estate rather than moving it.", [f.contents.metadata.name])
+	msg := $"{f.contents.metadata.name}: a CI runner would not schedule onto a worker either, so this affinity takes CI off the estate rather than moving it."
 }
 
 # A runner with no requests is BestEffort, which is the first cgroup the OOM
@@ -230,7 +236,7 @@ containers(f) := object.get(f.contents, ["spec", "values", "template", "spec", "
 deny contains msg if {
 	some f in sets
 	count(containers(f)) == 0
-	msg := sprintf("the runner scale set %s declares no containers, so this rule is asserting nothing", [f.contents.metadata.name])
+	msg := $"the runner scale set {f.contents.metadata.name} declares no containers, so this rule is asserting nothing"
 }
 
 deny contains msg if {
@@ -238,5 +244,5 @@ deny contains msg if {
 	some c in containers(f)
 	some want in ["cpu", "memory"]
 	object.get(c, ["resources", "requests", want], "") == ""
-	msg := sprintf("%s: container %q requests no %s, so it is BestEffort and the OOM controller will choose it first (#234)", [f.contents.metadata.name, c.name, want])
+	msg := $"{f.contents.metadata.name}: container \"{c.name}\" requests no {want}, so it is BestEffort and the OOM controller will choose it first (#234)"
 }

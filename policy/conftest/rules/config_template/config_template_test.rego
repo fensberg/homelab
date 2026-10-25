@@ -3,7 +3,13 @@ package rules.config_template_test
 import data.rules.config_template
 import rego.v1
 
-refs[sprintf("k%d", [i])] := sprintf("{{ op://estate/item/field%d }}", [i]) if {
+# A brace of a template a message quotes, which a template string cannot
+# hold as it is.
+open := "{"
+
+close := "}"
+
+refs[$"k{i}"] := $"{open}{open} op://estate/item/field{i} {close}{close}" if {
 	some i in numbers.range(1, 10)
 }
 

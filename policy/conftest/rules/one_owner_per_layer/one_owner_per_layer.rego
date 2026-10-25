@@ -37,24 +37,24 @@ network := object_named("ConfigMap", "cilium-config")
 
 deny contains msg if {
 	count(network) != 1
-	msg := sprintf("%d ConfigMap named cilium-config were found, so the network's settings could not be read", [count(network)])
+	msg := $"{count(network)} ConfigMap named cilium-config were found, so the network's settings could not be read"
 }
 
 deny contains msg if {
 	some f in network
 	count(object.get(f.contents, "data", {})) == 0
-	msg := sprintf("%s declares the network's settings and none could be read, so this checked nothing", [f.path])
+	msg := $"{f.path} declares the network's settings and none could be read, so this checked nothing"
 }
 
 deny contains msg if {
 	some f in network
 	some key in routes_the_web(object.get(f.contents, "data", {}))
-	msg := sprintf("%s sets %s. The network connects pods and says which may speak to which; taking a hostname to an application is the front door's, and two things routing the web is two places a name can be answered from. If the network is to take the job over, that is a decision for the epoch record and the front door goes.", [f.path, key])
+	msg := $"{f.path} sets {key}. The network connects pods and says which may speak to which; taking a hostname to an application is the front door's, and two things routing the web is two places a name can be answered from. If the network is to take the job over, that is a decision for the epoch record and the front door goes."
 }
 
 # The front door gets no certificates.
 
-gets_certificates(values) := ({"certificatesResolvers names one" | count(object.get(values, "certificatesResolvers", {})) > 0} | {"persistence gives it a disk, which it has only certificates of its own to keep on" | values.persistence.enabled == true}) | {sprintf("%s speaks of %s", [where, word]) |
+gets_certificates(values) := ({"certificatesResolvers names one" | count(object.get(values, "certificatesResolvers", {})) > 0} | {"persistence gives it a disk, which it has only certificates of its own to keep on" | values.persistence.enabled == true}) | {$"{where} speaks of {word}" |
 	some where in ["additionalArguments", "env", "envFrom", "ports", "volumes", "additionalVolumeMounts"]
 	v := values[where]
 	some word in ["certificatesresolvers", "certresolver", "acme", "dns_api_token", "dns-token"]
@@ -72,17 +72,17 @@ front_door := object_named("HelmRelease", "traefik")
 
 deny contains msg if {
 	count(front_door) != 1
-	msg := sprintf("%d HelmRelease named traefik were found, so the front door's settings could not be read", [count(front_door)])
+	msg := $"{count(front_door)} HelmRelease named traefik were found, so the front door's settings could not be read"
 }
 
 deny contains msg if {
 	some f in front_door
 	count(object.get(f.contents.spec, "values", {})) == 0
-	msg := sprintf("%s declares the front door and its settings could not be read, so this checked nothing", [f.path])
+	msg := $"{f.path} declares the front door and its settings could not be read, so this checked nothing"
 }
 
 deny contains msg if {
 	some f in front_door
 	some way in gets_certificates(object.get(f.contents.spec, "values", {}))
-	msg := sprintf("%s: %s. The front door serves certificates and gets none: getting them is cert-manager's, which holds the credential for the domain and is the one place a certificate is renewed. A proxy that gets its own keeps them on one disk in one pod, and is a second owner of every name it serves.", [f.path, way])
+	msg := $"{f.path}: {way}. The front door serves certificates and gets none: getting them is cert-manager's, which holds the credential for the domain and is the one place a certificate is renewed. A proxy that gets its own keeps them on one disk in one pod, and is a second owner of every name it serves."
 }

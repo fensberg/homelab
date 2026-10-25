@@ -28,6 +28,12 @@ package rules.version_pins
 import data.lib
 import rego.v1
 
+# A brace of a template a message quotes, which a template string cannot
+# hold as it is.
+open := "{"
+
+close := "}"
+
 pins := [f.contents | some f in lib.at("scripts/versions.env")][0]
 
 exporter := [f | some f in lib.at(".github/actions/versions/action.yml")]
@@ -53,7 +59,7 @@ declares contains [file, key] if {
 	pins[key]
 	not is_object(v)
 	not is_array(v)
-	regex.match(literal, sprintf("%v", [v]))
+	regex.match(literal, $"{v}")
 }
 
 declares contains [file, key] if {
@@ -61,20 +67,20 @@ declares contains [file, key] if {
 	walk(doc, [_, v])
 	is_string(v)
 	some key, _ in pins
-	regex.match(sprintf(`(?m)^\s*%s\s*[:=]\s*["']?[^$\s"']`, [key]), v)
+	regex.match($`(?m)^\s*{key}\s*[:=]\s*["']?[^$\s"']`, v)
 }
 
 deny contains msg if {
 	some [file, key] in declares
-	msg := sprintf("%s declares %s itself. versions.env owns that pin. Read it with `uses: ./.github/actions/versions` and refer to ${{ env.%s }} instead - a second declaration is a version that drifts silently.", [file, key, key])
+	msg := $"{file} declares {key} itself. versions.env owns that pin. Read it with `uses: ./.github/actions/versions` and refer to ${open}{open} env.{key} {close}{close} instead - a second declaration is a version that drifts silently."
 }
 
 exportable := `^[A-Z][A-Z0-9_]*_VERSION=[A-Za-z0-9][A-Za-z0-9._+-]*$`
 
 deny contains msg if {
 	some key, value in pins
-	not regex.match(exportable, sprintf("%s=%v", [key, value]))
-	msg := sprintf("versions.env declares %q, which .github/actions/versions will not export. A key must end in _VERSION, and a value must begin with a letter or digit and contain only letters, digits, dot, underscore, plus or dash. Anything else is skipped silently and the job runs with an empty value - see the action for why the pattern is deliberately this narrow. A checksum does not belong here at all: versions.env holds decisions, and a hash is what a supplier served for one. Declare the tool with fetch: or pypi: in scripts/approved-suppliers.yml and run task order-deliveries, which writes it to scripts/deliveries.lock (#416).", [key])
+	not regex.match(exportable, $"{key}={value}")
+	msg := $"versions.env declares \"{key}\", which .github/actions/versions will not export. A key must end in _VERSION, and a value must begin with a letter or digit and contain only letters, digits, dot, underscore, plus or dash. Anything else is skipped silently and the job runs with an empty value - see the action for why the pattern is deliberately this narrow. A checksum does not belong here at all: versions.env holds decisions, and a hash is what a supplier served for one. Declare the tool with fetch: or pypi: in scripts/approved-suppliers.yml and run task order-deliveries, which writes it to scripts/deliveries.lock (#416)."
 }
 
 restricts(f) if {

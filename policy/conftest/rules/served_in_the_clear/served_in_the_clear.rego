@@ -32,18 +32,18 @@ deny contains msg if {
 	some p in ports
 	object.get(p, "protocol", "") != "UDP"
 	object.get(p, "name", "") != "https"
-	msg := sprintf("%s: the Service %s is reached by a device and its port %q is not served over HTTPS. Nothing a device reaches is served in the clear. Serve the port with the certificate the site is handed and name it https, which is how a Service says so.", [path, service, object.get(p, "name", "")])
+	msg := $"{path}: the Service {service} is reached by a device and its port \"{object.get(p, "name", "")}\" is not served over HTTPS. Nothing a device reaches is served in the clear. Serve the port with the certificate the site is handed and name it https, which is how a Service says so."
 }
 
 deny contains msg if {
 	some [path, service, ports] in served
 	count(ports) == 0
-	msg := sprintf("%s: the Service %s is reached by a device and its port \"\" is not served over HTTPS. Nothing a device reaches is served in the clear. Name its ports, and serve each with the certificate the site is handed.", [path, service])
+	msg := $"{path}: the Service {service} is reached by a device and its port \"\" is not served over HTTPS. Nothing a device reaches is served in the clear. Name its ports, and serve each with the certificate the site is handed."
 }
 
 warn contains msg if {
 	some [path, service, ports] in served
 	some p in ports
 	p.protocol == "UDP"
-	msg := sprintf("outside this rule - %s: the Service %s serves %q over UDP, a protocol of its own that no certificate is served on.", [path, service, object.get(p, "name", "")])
+	msg := $"outside this rule - {path}: the Service {service} serves \"{object.get(p, "name", "")}\" over UDP, a protocol of its own that no certificate is served on."
 }

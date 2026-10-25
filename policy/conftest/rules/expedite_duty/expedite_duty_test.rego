@@ -3,7 +3,7 @@ package rules.expedite_duty_test
 import data.rules.expedite_duty
 import rego.v1
 
-wf(name, key, runs) := {"path": sprintf(".github/workflows/%s.yml", [name]), "contents": {"jobs": {"j": {"steps": array.concat([{"env": {"KEY": key}}], [{"run": r} | some r in runs])}}}}
+wf(name, key, runs) := {"path": $".github/workflows/{name}.yml", "contents": {"jobs": {"j": {"steps": array.concat([{"env": {"KEY": key}}], [{"run": r} | some r in runs])}}}}
 
 expedite := wf("expedite", "${{ secrets.PROCUREMENT_BOT_PRIVATE_KEY }}", ["go run -C scripts/procurement . expedite-renewal", "./toolshed/procurement deliver-pin -x"])
 

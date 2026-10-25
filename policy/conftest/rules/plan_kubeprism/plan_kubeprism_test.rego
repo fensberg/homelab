@@ -9,7 +9,7 @@ values(port) := {"path": "clusters/bootstrap/cilium-values.yaml", "contents": {"
 
 machine(address, patches) := {"address": address, "type": "talos_machine_configuration", "mode": "data", "values": {"config_patches": patches}}
 
-prism(port) := sprintf("machine:\n  features:\n    kubePrism:\n      enabled: true\n      port: %d\n", [port])
+prism(port) := $"machine:\n  features:\n    kubePrism:\n      enabled: true\n      port: {port}\n"
 
 denies(msgs, words) if {
 	some msg in msgs

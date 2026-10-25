@@ -9,7 +9,7 @@ checkout(settings) := {"uses": "actions/checkout@0123456789abcdef0123456789abcde
 
 workflow(jobs) := {"path": ".github/workflows/w.yml", "contents": {"jobs": jobs}}
 
-action(dir, steps) := {"path": concat("/", [dir, "action.yml"]), "contents": {"runs": {"using": "composite", "steps": steps}}}
+action(dir, steps) := {"path": $"{dir}/action.yml", "contents": {"runs": {"using": "composite", "steps": steps}}}
 
 job(steps) := {"runs-on": "ubuntu-latest", "timeout-minutes": 5, "steps": steps}
 

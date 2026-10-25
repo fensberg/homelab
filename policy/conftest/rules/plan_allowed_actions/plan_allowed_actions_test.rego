@@ -13,7 +13,7 @@ wall := {
 
 tf(setting) := {"path": "estate.plan.json", "contents": {"planned_values": {"root_module": {"child_modules": [{"resources": [{"address": "module.repository[\"r\"].github_actions_repository_permissions.this", "type": "github_actions_repository_permissions", "values": setting}, {"address": "something_else.ignored", "type": "something_else", "values": {"allowed_actions": "all"}}]}]}}}}
 
-uses := [sprintf("actions/fetch@%s", [sha]), sprintf("github/scan/start@%s", [sha]), sprintf("someone/builds@%s", [sha]), sprintf("actions/two@%s", [sha]), sprintf("github/three@%s", [sha]), "./.github/workflows/local", "$/.github/workflows/shared", "docker://example.test/image:1"]
+uses := [$"actions/fetch@{sha}", $"github/scan/start@{sha}", $"someone/builds@{sha}", $"actions/two@{sha}", $"github/three@{sha}", "./.github/workflows/local", "$/.github/workflows/shared", "docker://example.test/image:1"]
 
 workflow(refs) := {"path": ".github/workflows/w.yml", "contents": {"jobs": {"a": {"steps": [{"uses": r} | some r in refs]}}}}
 
@@ -50,7 +50,7 @@ test_a_whole_organisation_is_refused if {
 	says(plan_allowed_actions.deny, "wider than one action") with input as [tf(object.union(wall, {"allowed_actions_config": [{"github_owned_allowed": true, "verified_allowed": false, "patterns_allowed": ["someone/*"]}]})), workflow(uses)]
 }
 
-test_an_action_it_would_refuse_is_named if says(plan_allowed_actions.deny, "uses another/thing, which it would refuse") with input as [tf(wall), workflow(array.concat(uses, [sprintf("another/thing@%s", [sha])]))]
+test_an_action_it_would_refuse_is_named if says(plan_allowed_actions.deny, "uses another/thing, which it would refuse") with input as [tf(wall), workflow(array.concat(uses, [$"another/thing@{sha}"]))]
 
 test_the_platforms_own_unwanted_is_refused if {
 	says(plan_allowed_actions.deny, "uses actions/fetch, which it would refuse") with input as [tf(object.union(wall, {"allowed_actions_config": [{"github_owned_allowed": false, "verified_allowed": false, "patterns_allowed": ["someone/builds@*"]}]})), workflow(uses)]

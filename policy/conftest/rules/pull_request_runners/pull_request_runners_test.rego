@@ -10,7 +10,7 @@ fixed := array.concat(
 		{"path": "scripts/approved-suppliers.yml", "contents": {"pull_request_pools": {"names": ["builds"]}}},
 		{"path": "clusters/core/x.yaml", "contents": {"kind": "HelmRelease", "metadata": {"name": "self-hosted"}, "spec": {"values": {"runnerScaleSetName": "homelab-${SITE}"}}}},
 	],
-	[{"path": sprintf(".github/workflows/filler%d.yml", [i]), "contents": {"on": {"push": null}, "jobs": {"j": {"runs-on": "ubuntu-latest"}}}} | some i in numbers.range(1, 4)],
+	[{"path": $".github/workflows/filler{i}.yml", "contents": {"on": {"push": null}, "jobs": {"j": {"runs-on": "ubuntu-latest"}}}} | some i in numbers.range(1, 4)],
 )
 
 with_workflow(doc) := array.concat(fixed, [{"path": ".github/workflows/synthetic.yml", "contents": doc}])

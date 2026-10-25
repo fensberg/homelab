@@ -5,7 +5,7 @@ import rego.v1
 
 configured(resources) := {"path": "site-cluster.plan.json", "contents": {"configuration": {"root_module": {"module_calls": {"cluster": {"module": {"resources": resources}}}}}}}
 
-member(name, refs) := {"address": sprintf("proxmox_pool_membership.%s", [name]), "mode": "managed", "type": "proxmox_pool_membership", "expressions": {"vm_id": {"references": refs}}}
+member(name, refs) := {"address": $"proxmox_pool_membership.{name}", "mode": "managed", "type": "proxmox_pool_membership", "expressions": {"vm_id": {"references": refs}}}
 
 denies(msgs, words) if {
 	some msg in msgs

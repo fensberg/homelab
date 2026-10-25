@@ -55,17 +55,17 @@ deny contains msg if {
 deny contains msg if {
 	some [path, address, _] in gates
 	not path in builds_machines
-	msg := sprintf("%s is read by a root that builds no machines, so it is applied after the root that builds them has returned and nothing waits for the nodes before the platform is put on them", [address])
+	msg := $"{address} is read by a root that builds no machines, so it is applied after the root that builds them has returned and nothing waits for the nodes before the platform is put on them"
 }
 
 deny contains msg if {
 	some [_, address, r] in gates
 	not machines in object.get(r, "depends_on", [])
-	msg := sprintf("%s does not depend on %s. Without it the read happens at plan time against nodes the config asks for but that do not exist, so a plan that changes the machine count times out after ten minutes and a destroy does the same. See #117.", [address, machines])
+	msg := $"{address} does not depend on {machines}. Without it the read happens at plan time against nodes the config asks for but that do not exist, so a plan that changes the machine count times out after ten minutes and a destroy does the same. See #117."
 }
 
 deny contains msg if {
 	some [_, address, r] in gates
 	not cni in object.get(r, "depends_on", [])
-	msg := sprintf("%s does not depend on %s. Talos is configured with no built-in CNI, so no node reaches Ready until Cilium is applied: without this edge the gate starts first and waits its full ten-minute timeout before failing, blaming the cluster rather than the missing dependency.", [address, cni])
+	msg := $"{address} does not depend on {cni}. Talos is configured with no built-in CNI, so no node reaches Ready until Cilium is applied: without this edge the gate starts first and waits its full ten-minute timeout before failing, blaming the cluster rather than the missing dependency."
 }

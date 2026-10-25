@@ -32,7 +32,7 @@ deny contains msg if {
 	some f in releases
 	some phase in ["install", "upgrade"]
 	strategy(f, phase) != "RetryOnFailure"
-	msg := sprintf("%s: HelmRelease %s declares spec.%s.strategy.name = %q, not RetryOnFailure. Any other setting gives up after a finite number of attempts and waits for a person to force a reconcile, while every Flux layer behind it waits too (#459). Unlimited remediation retries are not the answer either: install remediation uninstalls between attempts, so a permanently broken release would tear itself down and rebuild forever.", [f.path, f.contents.metadata.name, phase, strategy(f, phase)])
+	msg := $"{f.path}: HelmRelease {f.contents.metadata.name} declares spec.{phase}.strategy.name = \"{strategy(f, phase)}\", not RetryOnFailure. Any other setting gives up after a finite number of attempts and waits for a person to force a reconcile, while every Flux layer behind it waits too (#459). Unlimited remediation retries are not the answer either: install remediation uninstalls between attempts, so a permanently broken release would tear itself down and rebuild forever."
 }
 
 deny contains msg if {

@@ -60,15 +60,15 @@ written contains [f.path, trim_space(line), m[1]] if {
 
 deny contains msg if {
 	count(declarations) != 1
-	msg := sprintf("local.dns_resolvers is declared %d time(s); it has to be exactly one, or it is not a single source", [count(declarations)])
+	msg := $"local.dns_resolvers is declared {count(declarations)} time(s); it has to be exactly one, or it is not a single source"
 }
 
 deny contains msg if {
 	some [path, where, address] in written
-	msg := sprintf("%s names the resolver %s directly (%s). The resolvers are declared once, as local.dns_resolvers, because this value was restated four times and a fork changing it had to find all four. Read it from there.", [path, address, where])
+	msg := $"{path} names the resolver {address} directly ({where}). The resolvers are declared once, as local.dns_resolvers, because this value was restated four times and a fork changing it had to find all four. Read it from there."
 }
 
 deny contains msg if {
 	count(tf) < 10
-	msg := sprintf("only %d OpenTofu file(s) were read, so the enumeration has stopped matching", [count(tf)])
+	msg := $"only {count(tf)} OpenTofu file(s) were read, so the enumeration has stopped matching"
 }

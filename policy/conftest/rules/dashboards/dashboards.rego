@@ -52,20 +52,20 @@ deny contains msg if {
 	some s in array.concat([v | is_string(v)], [k | some k in path; is_string(k)])
 	found := regex.find_n(substituted, s, 1)
 	count(found) > 0
-	msg := sprintf("%s holds %q. What Flux applies is substituted into on its way in, so a dashboard's own variable arrives blank. Write the panel with no variable.", [f.path, found[0]])
+	msg := $"{f.path} holds \"{found[0]}\". What Flux applies is substituted into on its way in, so a dashboard's own variable arrives blank. Write the panel with no variable."
 }
 
 deny contains msg if {
 	some f in declared
 	uid := text(f.contents, "uid")
 	uid != trim_suffix(base(f.path), ".json")
-	msg := sprintf("%s has the uid %q. A dashboard is linked to by its uid, so it is the file's own name and does not change when the title does.", [f.path, uid])
+	msg := $"{f.path} has the uid \"{uid}\". A dashboard is linked to by its uid, so it is the file's own name and does not change when the title does."
 }
 
 deny contains msg if {
 	some f in declared
 	count(f.contents.panels) == 0
-	msg := sprintf("%s has no panel", [f.path])
+	msg := $"{f.path} has no panel"
 }
 
 asks(p) if {
@@ -77,7 +77,7 @@ deny contains msg if {
 	some f in declared
 	some p in f.contents.panels
 	text(p, "title") == ""
-	msg := sprintf("%s has a panel with no title", [f.path])
+	msg := $"{f.path} has a panel with no title"
 }
 
 deny contains msg if {
@@ -85,7 +85,7 @@ deny contains msg if {
 	some p in f.contents.panels
 	text(p, "title") != ""
 	text(p, "description") == ""
-	msg := sprintf("%s: the panel %q does not say what it is for. A picture with no account of what reading means what is one nobody acts on.", [f.path, text(p, "title")])
+	msg := $"{f.path}: the panel \"{text(p, "title")}\" does not say what it is for. A picture with no account of what reading means what is one nobody acts on."
 }
 
 deny contains msg if {
@@ -94,33 +94,33 @@ deny contains msg if {
 	text(p, "title") != ""
 	text(p, "description") != ""
 	not asks(p)
-	msg := sprintf("%s: the panel %q asks Prometheus nothing", [f.path, text(p, "title")])
+	msg := $"{f.path}: the panel \"{text(p, "title")}\" asks Prometheus nothing"
 }
 
 # The kustomization beside a dashboard's directory lists it, and labels what
 # it generates for the sidecar that hands dashboards to Grafana.
 listing(f) := k if {
 	some k in lib.named("kustomization.yaml")
-	k.path == sprintf("%s/kustomization.yaml", [dir(dir(f.path))])
+	k.path == $"{dir(dir(f.path))}/kustomization.yaml"
 }
 
 deny contains msg if {
 	some f in declared
 	not listing(f)
-	msg := sprintf("%s is not handed to Grafana: no kustomization is beside its directory to list it", [f.path])
+	msg := $"{f.path} is not handed to Grafana: no kustomization is beside its directory to list it"
 }
 
 deny contains msg if {
 	some f in declared
 	k := listing(f)
-	want := sprintf("%s/%s", [base(dir(f.path)), base(f.path)])
+	want := $"{base(dir(f.path))}/{base(f.path)}"
 	not want in {file | some g in object.get(k.contents, "configMapGenerator", []); some file in object.get(g, "files", [])}
-	msg := sprintf("%s is not handed to Grafana: the kustomization beside its directory does not list it, so it is a file and not a dashboard.", [f.path])
+	msg := $"{f.path} is not handed to Grafana: the kustomization beside its directory does not list it, so it is a file and not a dashboard."
 }
 
 deny contains msg if {
 	some f in declared
 	k := listing(f)
 	object.get(k.contents, ["generatorOptions", "labels", "grafana_dashboard"], "") == ""
-	msg := sprintf("%s is listed and not labelled grafana_dashboard, so the sidecar that hands dashboards to Grafana does not see it.", [f.path])
+	msg := $"{f.path} is listed and not labelled grafana_dashboard, so the sidecar that hands dashboards to Grafana does not see it."
 }

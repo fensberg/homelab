@@ -34,5 +34,5 @@ deny contains msg if {
 deny contains msg if {
 	some [address, step] in steps
 	object.get(object.get(step.expressions, "interpreter", {}), "constant_value", []) != bash
-	msg := sprintf("%s: scripted steps do not name bash as what runs them. Left to the default the script runs under the machine's /bin/sh, and not every sh has pipefail: such a step runs from one machine and stops at its first line on another. Give the step interpreter = [\"/bin/bash\", \"-c\"].", [address])
+	msg := $"{address}: scripted steps do not name bash as what runs them. Left to the default the script runs under the machine's /bin/sh, and not every sh has pipefail: such a step runs from one machine and stops at its first line on another. Give the step interpreter = [\"/bin/bash\", \"-c\"]."
 }

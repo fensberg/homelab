@@ -30,19 +30,19 @@ shipped contains [dir(f.path), m[1]] if {
 
 pinned(at, name) if {
 	some f in lib.named("kustomization.yaml")
-	f.path == sprintf("%s/kustomization.yaml", [at])
+	f.path == $"{at}/kustomization.yaml"
 	some image in object.get(f.contents, "images", [])
-	image.name == sprintf("ghcr.io/fluxcd/%s", [name])
+	image.name == $"ghcr.io/fluxcd/{name}"
 	contains(object.get(image, "digest", ""), "sha256:")
 }
 
 deny contains msg if {
 	count({name | some [_, name] in shipped}) < 4
-	msg := sprintf("found %d controller image(s) in %s, and Flux ships at least four. The parse has stopped matching, so a controller running unpinned would be invisible to this - which is the same green as everything being pinned.", [count({name | some [_, name] in shipped}), components])
+	msg := $"found {count({name | some [_, name] in shipped})} controller image(s) in {components}, and Flux ships at least four. The parse has stopped matching, so a controller running unpinned would be invisible to this - which is the same green as everything being pinned."
 }
 
 deny contains msg if {
 	some [at, name] in shipped
 	not pinned(at, name)
-	msg := sprintf("%s ships ghcr.io/fluxcd/%s and the kustomization beside it does not pin it. kustomize's image transformer matches on NAME, so a controller it does not name keeps the mutable tag the generated manifest carries - on the component that applies everything else in the cluster. The overlay still builds and nothing else objects. Run: task render-flux-digests", [components, name])
+	msg := $"{components} ships ghcr.io/fluxcd/{name} and the kustomization beside it does not pin it. kustomize's image transformer matches on NAME, so a controller it does not name keeps the mutable tag the generated manifest carries - on the component that applies everything else in the cluster. The overlay still builds and nothing else objects. Run: task render-flux-digests"
 }

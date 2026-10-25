@@ -31,42 +31,42 @@ deny contains msg if {
 # widening the estate's supply chain without saying why, which is the review
 # this file exists to force.
 
-blank(entry, key) if trim_space(sprintf("%v", [object.get(entry, key, "")])) == ""
+blank(entry, key) if trim_space($"{object.get(entry, key, "")}") == ""
 
 deny contains msg if {
 	some r in object.get(list, "registries", [])
 	blank(r, "reason")
-	msg := sprintf("registry %q is approved with no reason given", [r.host])
+	msg := $"registry \"{r.host}\" is approved with no reason given"
 }
 
 deny contains msg if {
 	some ch in object.get(list, "charts", [])
 	blank(ch, "reason")
-	msg := sprintf("chart source %q is approved with no reason given", [ch.url])
+	msg := $"chart source \"{ch.url}\" is approved with no reason given"
 }
 
 deny contains msg if {
 	some g in object.get(list, "endpoints", [])
 	blank(g, "reason")
-	msg := sprintf("endpoint group %q is approved with no reason given", [g.group])
+	msg := $"endpoint group \"{g.group}\" is approved with no reason given"
 }
 
 deny contains msg if {
 	some e in object.get(list, "exemptions", [])
 	blank(e, "reason")
-	msg := sprintf("exemption for %q gives no reason", [e.path])
+	msg := $"exemption for \"{e.path}\" gives no reason"
 }
 
 deny contains msg if {
 	some e in object.get(list, "exemptions", [])
 	blank(e, "trigger")
-	msg := sprintf("exemption for %q gives no trigger, so nothing says when it ends", [e.path])
+	msg := $"exemption for \"{e.path}\" gives no trigger, so nothing says when it ends"
 }
 
 deny contains msg if {
 	some e in object.get(list, "exemptions", [])
 	not object.get(e, "issue", 0) > 0
-	msg := sprintf("exemption for %q names no issue. File the work it defers and put the number in issue:, or fix the thing instead - a red check is not on its own a reason to write an excuse.", [e.path])
+	msg := $"exemption for \"{e.path}\" names no issue. File the work it defers and put the number in issue:, or fix the thing instead - a red check is not on its own a reason to write an excuse."
 }
 
 # An image must come from an approved registry and be pinned by digest.
@@ -111,7 +111,7 @@ remote contains [path, ref] if {
 
 overlay_pins(at, name) if {
 	some k in lib.named("kustomization.yaml")
-	k.path == sprintf("%s/kustomization.yaml", [at])
+	k.path == $"{at}/kustomization.yaml"
 	some image in object.get(k.contents, "images", [])
 	image.name == name
 	startswith(object.get(image, "digest", ""), "sha256:")
@@ -142,26 +142,26 @@ deny contains msg if {
 	some [path, ref] in remote
 	host := split(ref, "/")[0]
 	not host in approved_registries
-	msg := sprintf("%s: image %q comes from %q, which is not an approved supplier. Add it to scripts/approved-suppliers.yml with a reason, or use a registry already approved.", [path, ref, host])
+	msg := $"{path}: image \"{ref}\" comes from \"{host}\", which is not an approved supplier. Add it to scripts/approved-suppliers.yml with a reason, or use a registry already approved."
 }
 
 deny contains msg if {
 	some [path, ref] in unpinned
 	not path in exempt
-	msg := sprintf("%s: image %q is not pinned by digest. A tag is a mutable pointer - the same name is different software later, and git records nothing when it moves. If this genuinely cannot be pinned, declare it under exemptions: in scripts/approved-suppliers.yml with a reason and a trigger.", [path, ref])
+	msg := $"{path}: image \"{ref}\" is not pinned by digest. A tag is a mutable pointer - the same name is different software later, and git records nothing when it moves. If this genuinely cannot be pinned, declare it under exemptions: in scripts/approved-suppliers.yml with a reason and a trigger."
 }
 
 deny contains msg if {
 	some path in exempt
 	not path in {p | some [p, _] in unpinned}
-	msg := sprintf("%s is exempted from digest pinning but no longer needs to be. Remove the exemption from scripts/approved-suppliers.yml - a stale excuse reads as a live gap.", [path])
+	msg := $"{path} is exempted from digest pinning but no longer needs to be. Remove the exemption from scripts/approved-suppliers.yml - a stale excuse reads as a live gap."
 }
 
 # Charts decide what images get deployed, so an unapproved chart repository is
 # an unapproved registry one level up.
 
 # The repository's own address, from the source its Flux reads it from.
-own := sprintf("%s/%s", [m[1], m[2]]) if {
+own := $"{m[1]}/{m[2]}" if {
 	some f in lib.objects
 	f.contents.kind == "GitRepository"
 	f.contents.metadata.name == "flux-system"
@@ -196,7 +196,7 @@ deny contains msg if {
 deny contains msg if {
 	some [path, u] in charted
 	not u in {ch.url | some ch in object.get(list, "charts", [])}
-	msg := sprintf("%s: chart source %q is not an approved supplier. Add it to scripts/approved-suppliers.yml with a reason.", [path, u])
+	msg := $"{path}: chart source \"{u}\" is not an approved supplier. Add it to scripts/approved-suppliers.yml with a reason."
 }
 
 # A workflow may not invent its own egress endpoint.
@@ -223,7 +223,7 @@ deny contains msg if {
 deny contains msg if {
 	some [file, host] in reaches
 	not host in {h | some g in object.get(list, "endpoints", []); some h in object.get(g, "hosts", [])}
-	msg := sprintf("%s reaches %q, which is not in the approved suppliers list. Declare it in scripts/approved-suppliers.yml with a reason rather than only in the workflow, so one place answers what this repository calls out to.", [file, host])
+	msg := $"{file} reaches \"{host}\", which is not in the approved suppliers list. Declare it in scripts/approved-suppliers.yml with a reason rather than only in the workflow, so one place answers what this repository calls out to."
 }
 
 # Every repository pre-commit clones is a supplier, and must be declared.
@@ -258,20 +258,20 @@ deny contains msg if {
 deny contains msg if {
 	some r in hook_repos
 	not declared_hooks[r.repo]
-	msg := sprintf(".pre-commit-config.yaml runs %s and scripts/approved-suppliers.yml does not declare it. That repository executes on every commit with the developer's own privileges. Add it under `hooks:` with a reason, or remove the hook.", [r.repo])
+	msg := $".pre-commit-config.yaml runs {r.repo} and scripts/approved-suppliers.yml does not declare it. That repository executes on every commit with the developer's own privileges. Add it under `hooks:` with a reason, or remove the hook."
 }
 
 deny contains msg if {
 	some r in hook_repos
 	reason := declared_hooks[r.repo]
 	trim_space(reason) == ""
-	msg := sprintf("%s is declared with no reason. The reason is what a reviewer reads when deciding whether this supplier still belongs.", [r.repo])
+	msg := $"{r.repo} is declared with no reason. The reason is what a reviewer reads when deciding whether this supplier still belongs."
 }
 
 deny contains msg if {
 	some repo, _ in declared_hooks
 	not repo in {r.repo | some r in hook_repos}
-	msg := sprintf("scripts/approved-suppliers.yml declares %s and .pre-commit-config.yaml does not use it. A supplier nobody takes delivery from makes the list look longer than the exposure is.", [repo])
+	msg := $"scripts/approved-suppliers.yml declares {repo} and .pre-commit-config.yaml does not use it. A supplier nobody takes delivery from makes the list look longer than the exposure is."
 }
 
 # Every hook must be pinned. `rev:` is the whole supply-chain control here:
@@ -280,9 +280,9 @@ deny contains msg if {
 
 deny contains msg if {
 	some r in hook_repos
-	rev := trim_space(sprintf("%v", [object.get(r, "rev", "")]))
+	rev := trim_space($"{object.get(r, "rev", "")}")
 	rev in {"", "main", "master", "HEAD"}
-	msg := sprintf("%s is pinned to %q, which moves. The code that runs on the next commit would not be the code anybody reviewed.", [r.repo, rev])
+	msg := $"{r.repo} is pinned to \"{rev}\", which moves. The code that runs on the next commit would not be the code anybody reviewed."
 }
 
 # Every OpenTofu provider is a declared supplier, and every declared supplier
@@ -318,7 +318,7 @@ approved_providers contains p.source if {
 deny contains msg if {
 	some p in object.get(list, "providers", [])
 	blank(p, "reason")
-	msg := sprintf("provider %q is approved with no reason given", [p.source])
+	msg := $"provider \"{p.source}\" is approved with no reason given"
 }
 
 deny contains msg if {
@@ -335,11 +335,11 @@ deny contains msg if {
 	some source in {s | some [_, s] in required}
 	not source in approved_providers
 	first := min({p | some [p, s] in required; s == source})
-	msg := sprintf("%s locks the provider %q, which is not an approved supplier. A provider runs with this estate's credentials, so taking delivery from a new party is a decision rather than a line of HCL. Declare it in scripts/approved-suppliers.yml with a reason, in its own pull request.", [first, source])
+	msg := $"{first} locks the provider \"{source}\", which is not an approved supplier. A provider runs with this estate's credentials, so taking delivery from a new party is a decision rather than a line of HCL. Declare it in scripts/approved-suppliers.yml with a reason, in its own pull request."
 }
 
 deny contains msg if {
 	some source in approved_providers
 	not source in {s | some [_, s] in required}
-	msg := sprintf("scripts/approved-suppliers.yml approves the provider %q and no provider lock locks it. Remove the entry - an approval that outlives the thing it approved is how a supplier list stops describing what the estate actually takes.", [source])
+	msg := $"scripts/approved-suppliers.yml approves the provider \"{source}\" and no provider lock locks it. Remove the entry - an approval that outlives the thing it approved is how a supplier list stops describing what the estate actually takes."
 }

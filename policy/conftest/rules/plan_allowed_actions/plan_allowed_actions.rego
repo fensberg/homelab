@@ -36,11 +36,11 @@ allows(s, action) if {
 	split(action, "/")[0] in {"actions", "github"}
 }
 
-allows(s, action) if concat("", [action, "@*"]) in patterns(s)
+allows(s, action) if $"{action}@*" in patterns(s)
 
 deny contains msg if {
 	count(used) < 5
-	msg := sprintf("only %d action(s) were found in the workflows, so the allowed-actions rule checked almost nothing", [count(used)])
+	msg := $"only {count(used)} action(s) were found in the workflows, so the allowed-actions rule checked almost nothing"
 }
 
 deny contains msg if {
@@ -51,26 +51,26 @@ deny contains msg if {
 deny contains msg if {
 	some [where, s] in settings
 	s.allowed_actions != "selected"
-	msg := sprintf("%s: it does not hold workflows to a list: allowed_actions is not \"selected\"", [where])
+	msg := $"{where}: it does not hold workflows to a list: allowed_actions is not \"selected\""
 }
 
 deny contains msg if {
 	some [where, s] in settings
 	object.get(s, "sha_pinning_required", false) != true
-	msg := sprintf("%s: it lets an action run from a tag or a branch: sha_pinning_required is not true", [where])
+	msg := $"{where}: it lets an action run from a tag or a branch: sha_pinning_required is not true"
 }
 
 deny contains msg if {
 	some [where, s] in settings
 	object.get(config(s), "verified_allowed", true) != false
-	msg := sprintf("%s: it lets in every publisher the platform has verified: verified_allowed is not false", [where])
+	msg := $"{where}: it lets in every publisher the platform has verified: verified_allowed is not false"
 }
 
 deny contains msg if {
 	some [where, s] in settings
 	some p in patterns(s)
 	not one_action(p)
-	msg := sprintf("%s: it allows %s, which is wider than one action: write owner/repository@*", [where, p])
+	msg := $"{where}: it allows {p}, which is wider than one action: write owner/repository@*"
 }
 
 one_action(p) if {
@@ -83,5 +83,5 @@ deny contains msg if {
 	some [where, s] in settings
 	some action in used
 	not allows(s, action)
-	msg := sprintf("%s: a workflow uses %s, which it would refuse: add \"%s@*\" to patterns_allowed", [where, action, action])
+	msg := $"{where}: a workflow uses {action}, which it would refuse: add \"{action}@*\" to patterns_allowed"
 }

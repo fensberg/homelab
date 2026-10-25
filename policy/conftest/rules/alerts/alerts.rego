@@ -36,18 +36,18 @@ said(annotations, key) := trim_space(object.get(annotations, key, ""))
 unsaid(path, name, annotations) := {msg |
 	some key, what in owed
 	said(annotations, key) == ""
-	msg := sprintf("%s: the alert %s does not say %s (%s).", [path, name, what, key])
+	msg := $"{path}: the alert {name} does not say {what} ({key})."
 } | {msg |
 	step := said(annotations, "first_step")
 	step != ""
 	step in {said(annotations, "summary"), said(annotations, "description")}
-	msg := sprintf("%s: the alert %s gives as its first step what it has already said. Say what to do.", [path, name])
+	msg := $"{path}: the alert {name} gives as its first step what it has already said. Say what to do."
 }
 
 deny contains msg if {
 	some [path, name, annotations] in declared
 	some problem in unsaid(path, name, annotations)
-	msg := concat(" ", [problem, "Whoever reads an alert is owed what it is, what it means and what to try first, each in an annotation of its own. The channel shows the first step on a line by itself."])
+	msg := $"{problem} Whoever reads an alert is owed what it is, what it means and what to try first, each in an annotation of its own. The channel shows the first step on a line by itself."
 }
 
 deny contains msg if {
@@ -65,11 +65,11 @@ shows_the_first_step(f) if {
 
 deny contains msg if {
 	count(stack) != 1
-	msg := sprintf("%d HelmRelease named kube-prometheus-stack were found, so what the channel is shown cannot be read", [count(stack)])
+	msg := $"{count(stack)} HelmRelease named kube-prometheus-stack were found, so what the channel is shown cannot be read"
 }
 
 deny contains msg if {
 	some f in stack
 	not shows_the_first_step(f)
-	msg := sprintf("%s: what Alertmanager sends the channel does not print an alert's first step, so every alert's is written and none is read.", [f.path])
+	msg := $"{f.path}: what Alertmanager sends the channel does not print an alert's first step, so every alert's is written and none is read."
 }

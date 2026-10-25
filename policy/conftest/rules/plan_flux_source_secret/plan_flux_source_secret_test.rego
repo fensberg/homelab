@@ -5,7 +5,7 @@ import rego.v1
 
 secret(name) := {"path": "site-platform.plan.json", "contents": {"planned_values": {"root_module": {"child_modules": [{"resources": [{"address": "module.platform.kubernetes_secret.s", "type": "kubernetes_secret", "values": {"metadata": [{"name": name, "namespace": "flux-system"}]}}]}]}}}}
 
-filler := [{"path": sprintf("clusters/core/f%d.yaml", [i]), "contents": {"kind": "ConfigMap"}} | some i in numbers.range(1, 10)]
+filler := [{"path": $"clusters/core/f{i}.yaml", "contents": {"kind": "ConfigMap"}} | some i in numbers.range(1, 10)]
 
 source(ref) := {"path": "clusters/core/s.yaml", "contents": {"kind": "OCIRepository", "spec": {"secretRef": ref}}}
 

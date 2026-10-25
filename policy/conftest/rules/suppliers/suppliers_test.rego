@@ -29,7 +29,11 @@ hooks(repos) := {"path": ".pre-commit-config.yaml", "contents": {"repos": repos}
 
 hook := {"repo": "https://github.com/pre-commit/pre-commit-hooks", "rev": "v6.0.0"}
 
-tf(source) := {"path": "management/p/.terraform.lock.hcl", "contents": {"provider": {sprintf("registry.opentofu.org/%s", [source]): [{"version": "2.38.0", "hashes": ["h1:x"]}]}}}
+# The key is made first: OPA 1.20.2 cannot take a template string written as
+# an object's key, and stops.
+tf(source) := {"path": "management/p/.terraform.lock.hcl", "contents": {"provider": {key: [{"version": "2.38.0", "hashes": ["h1:x"]}]}}} if {
+	key := $"registry.opentofu.org/{source}"
+}
 
 good := [list({}), own, deployment(pinned), source("https://charts.example.org"), workflow("github.com:443\n"), hooks([hook, {"repo": "local"}]), tf("hashicorp/kubernetes")]
 

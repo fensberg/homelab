@@ -32,27 +32,27 @@ held contains [key, file] if {
 
 deny contains msg if {
 	not lib.workflows[patrol].jobs.keys
-	msg := sprintf("%s has no \"keys\" job, so no App key is proved to still work", [patrol])
+	msg := $"{patrol} has no \"keys\" job, so no App key is proved to still work"
 }
 
 deny contains msg if {
 	lib.workflows[patrol].jobs.keys
 	count(proved) == 0
-	msg := sprintf("the keys job of %s is handed no App key, so it proves nothing", [patrol])
+	msg := $"the keys job of {patrol} is handed no App key, so it proves nothing"
 }
 
 deny contains msg if {
 	some key in {k | some [k, _] in held}
 	not key in proved
 	where := concat(", ", sort({basename(f) | some [k, f] in held; k == key}))
-	msg := sprintf("%s is handed to %s and the patrol's keys job does not prove it still mints a token, so it can stop working unseen until the day it is needed. Add a step there that signs in with it the way its own consumer does.", [key, where])
+	msg := $"{key} is handed to {where} and the patrol's keys job does not prove it still mints a token, so it can stop working unseen until the day it is needed. Add a step there that signs in with it the way its own consumer does."
 }
 
 deny contains msg if {
 	some name, job in lib.workflows[patrol].jobs
 	some scope, level in object.get(job, "permissions", {})
 	level == "write"
-	msg := sprintf("the patrol's %s job can write %s. It watches, and proves keys by minting tokens it throws away; it changes nothing.", [name, scope])
+	msg := $"the patrol's {name} job can write {scope}. It watches, and proves keys by minting tokens it throws away; it changes nothing."
 }
 
 basename(path) := parts[count(parts) - 1] if parts := split(path, "/")

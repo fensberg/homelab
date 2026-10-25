@@ -28,7 +28,7 @@ deny contains msg if {
 deny contains msg if {
 	some s in describing
 	s["if"]
-	msg := sprintf("the describing step runs only if %q, so a version an earlier run published and could not describe is never described", [s["if"]])
+	msg := $"the describing step runs only if \"{s["if"]}\", so a version an earlier run published and could not describe is never described"
 }
 
 deny contains msg if {
@@ -36,10 +36,10 @@ deny contains msg if {
 	some from in ["Number the version", "Reuse a package of the same contents"]
 	given := object.get(s, ["env", "VERSION"], "")
 	not hands(given, object.get(ids, from, ""))
-	msg := sprintf("the describing step is handed the version only by %q, and not by the step %q", [given, from])
+	msg := $"the describing step is handed the version only by \"{given}\", and not by the step \"{from}\""
 }
 
 hands(given, id) if {
 	id != ""
-	contains(given, sprintf("steps.%s.outputs.version", [id]))
+	contains(given, $"steps.{id}.outputs.version")
 }

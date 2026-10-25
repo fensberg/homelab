@@ -3,9 +3,9 @@ package rules.scheduled_workflows_test
 import data.rules.scheduled_workflows
 import rego.v1
 
-target(file) := sprintf("https://api.github.com/repos/o/r/actions/workflows/%s/runs?event=schedule&status=completed&per_page=1", [file])
+target(file) := $"https://api.github.com/repos/o/r/actions/workflows/{file}/runs?event=schedule&status=completed&per_page=1"
 
-wf(file, crons) := {"path": sprintf(".github/workflows/%s", [file]), "contents": {"true": {"schedule": [{"cron": c} | some c in crons], "push": null}, "jobs": {}}}
+wf(file, crons) := {"path": $".github/workflows/{file}", "contents": {"true": {"schedule": [{"cron": c} | some c in crons], "push": null}, "jobs": {}}}
 
 scrape(files, interval) := {"path": "clusters/core/w.yaml", "contents": {"kind": "ScrapeConfig", "metadata": {"name": "scheduled-workflows"}, "spec": {"scrapeInterval": interval, "staticConfigs": [{"targets": [target(f) | some f in files]}]}}}
 

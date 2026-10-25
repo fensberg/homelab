@@ -25,50 +25,50 @@ bindings := [f | some f in lib.objects; f.contents.kind == "ValidatingAdmissionP
 
 deny contains msg if {
 	count(policies) != 1
-	msg := sprintf("%d ValidatingAdmissionPolicy named %s were found, and the refusal of uncounted work is one", [count(policies), policy_name])
+	msg := $"{count(policies)} ValidatingAdmissionPolicy named {policy_name} were found, and the refusal of uncounted work is one"
 }
 
 deny contains msg if {
 	count(bindings) != 1
-	msg := sprintf("%d bindings of %s were found. A policy nothing binds refuses nothing, and two bindings may apply it differently.", [count(bindings), policy_name])
+	msg := $"{count(bindings)} bindings of {policy_name} were found. A policy nothing binds refuses nothing, and two bindings may apply it differently."
 }
 
 deny contains msg if {
 	some b in bindings
 	object.get(b.contents.spec, "validationActions", []) != ["Deny"]
-	msg := sprintf("%s: the binding's validationActions are %v, not [Deny]: a pod that breaks the rule is told so and let in", [b.path, object.get(b.contents.spec, "validationActions", [])])
+	msg := $"{b.path}: the binding's validationActions are {object.get(b.contents.spec, "validationActions", [])}, not [Deny]: a pod that breaks the rule is told so and let in"
 }
 
 deny contains msg if {
 	some b in bindings
 	some key, _ in b.contents.spec
 	not key in {"policyName", "validationActions"}
-	msg := sprintf("%s: the binding sets %s, which chooses which pods the rule applies to", [b.path, key])
+	msg := $"{b.path}: the binding sets {key}, which chooses which pods the rule applies to"
 }
 
 deny contains msg if {
 	some p in policies
 	object.get(p.contents.spec, "failurePolicy", "") != "Fail"
-	msg := sprintf("%s: the policy's failurePolicy is %v, not Fail: a rule that cannot be evaluated lets the pod in", [p.path, object.get(p.contents.spec, "failurePolicy", "")])
+	msg := $"{p.path}: the policy's failurePolicy is {object.get(p.contents.spec, "failurePolicy", "")}, not Fail: a rule that cannot be evaluated lets the pod in"
 }
 
 deny contains msg if {
 	some p in policies
 	p.contents.spec.matchConditions
-	msg := sprintf("%s: the policy sets matchConditions, which excuse a pod from being judged at all", [p.path])
+	msg := $"{p.path}: the policy sets matchConditions, which excuse a pod from being judged at all"
 }
 
 deny contains msg if {
 	some p in policies
 	some key, _ in object.get(p.contents.spec, "matchConstraints", {})
 	key != "resourceRules"
-	msg := sprintf("%s: the policy's matchConstraints set %s, which leaves some pods out", [p.path, key])
+	msg := $"{p.path}: the policy's matchConstraints set {key}, which leaves some pods out"
 }
 
 deny contains msg if {
 	some p in policies
 	not judges_pods(p)
-	msg := sprintf("%s: the policy's resourceRules do not name pods, so it judges nothing", [p.path])
+	msg := $"{p.path}: the policy's resourceRules do not name pods, so it judges nothing"
 }
 
 judges_pods(p) if {

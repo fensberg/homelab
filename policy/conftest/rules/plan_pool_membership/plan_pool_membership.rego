@@ -42,5 +42,5 @@ deny contains msg if {
 deny contains msg if {
 	some r in machines
 	not r.values.vm_id in placed
-	msg := sprintf("%s is built but never placed in a pool. Add a proxmox_pool_membership iterating the collection it is made from, in the pool for the function it serves: the hypervisor groups machines by what they are for, and a machine that is missing does not break that visibly - it just quietly stops being true of everything.", [r.address])
+	msg := $"{r.address} is built but never placed in a pool. Add a proxmox_pool_membership iterating the collection it is made from, in the pool for the function it serves: the hypervisor groups machines by what they are for, and a machine that is missing does not break that visibly - it just quietly stops being true of everything."
 }

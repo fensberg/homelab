@@ -12,7 +12,7 @@ holders := [
 	wf(".github/workflows/b.yml", {"KEY": "${{ secrets.BETA_BOT_PRIVATE_KEY }}", "OTHER": "${{ secrets.ALPHA_BOT_PRIVATE_KEY }}", "NOT_ONE": "${{ secrets.SOME_TOKEN }}"}),
 ]
 
-proving(keys) := patrol([{"with": {"private-key": sprintf("${{ secrets.%s }}", [k])}} | some k in keys])
+proving(keys) := patrol([{"with": {"private-key": $"$\{\{ secrets.{k} }}"}} | some k in keys])
 
 test_every_key_proved_passes if {
 	count(app_keys.deny) == 0 with input as array.concat(holders, [proving(["ALPHA_BOT_PRIVATE_KEY", "BETA_BOT_PRIVATE_KEY"])])

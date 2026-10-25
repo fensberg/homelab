@@ -47,14 +47,14 @@ minutes(written) := to_number(trim_suffix(written, "m")) if regex.match(`^\d+m$`
 
 deny contains msg if {
 	count(routes) == 0
-	msg := sprintf("the monitoring stack sends nothing to the %s, so no site rings it and it will never notice one stop", [receiver])
+	msg := $"the monitoring stack sends nothing to the {receiver}, so no site rings it and it will never notice one stop"
 }
 
 deny contains msg if {
 	some [path, r] in routes
 	some what in ["group_interval", "repeat_interval"]
 	not minutes(object.get(r, what, ""))
-	msg := sprintf("%s: the route to the %s has a %s of %q, which is not a number of minutes, so how often it rings cannot be worked out", [path, receiver, what, object.get(r, what, "")])
+	msg := $"{path}: the route to the {receiver} has a {what} of \"{object.get(r, what, "")}\", which is not a number of minutes, so how often it rings cannot be worked out"
 }
 
 deny contains msg if {
@@ -62,18 +62,18 @@ deny contains msg if {
 	looks := minutes(r.group_interval)
 	repeat := minutes(r.repeat_interval)
 	repeat % looks == 0
-	msg := sprintf("%s: the route to the %s repeats every %dm and is looked at every %dm, which is exactly %d looks. A look that lands a moment early finds the repeat not yet passed and waits a whole look more, so the site rings late about as often as not. Make the repeat a little less than the looks it should take.", [path, receiver, repeat, looks, repeat / looks])
+	msg := $"{path}: the route to the {receiver} repeats every {repeat}m and is looked at every {looks}m, which is exactly {repeat / looks} looks. A look that lands a moment early finds the repeat not yet passed and waits a whole look more, so the site rings late about as often as not. Make the repeat a little less than the looks it should take."
 }
 
 deny contains msg if {
 	count(schedules) != 1
-	msg := sprintf("the %s is looked round on %d schedules in the estate's plan, and how often it looks is one fact", [receiver, count(schedules)])
+	msg := $"the {receiver} is looked round on {count(schedules)} schedules in the estate's plan, and how often it looks is one fact"
 }
 
 deny contains msg if {
 	some [address, cron] in schedules
 	not address in {a | some [a, _] in declared}
-	msg := sprintf("%s looks the %s round on %q, which is not looked round every so many minutes, so how often it looks cannot be read", [address, receiver, cron])
+	msg := $"{address} looks the {receiver} round on \"{cron}\", which is not looked round every so many minutes, so how often it looks cannot be read"
 }
 
 deny contains msg if {
@@ -84,5 +84,5 @@ deny contains msg if {
 	some [declared_in, expected] in declared
 	is_number(expected)
 	rings != expected
-	msg := sprintf("a site rings the %s every %d minutes (%s: looked at every %dm, repeated after %dm), and the %s looks round every %d (%s). How long a silence is before it is said, and what a site costs on the vendor's free plan, are both worked out from the second figure.", [receiver, rings, path, looks, repeat, receiver, expected, declared_in])
+	msg := $"a site rings the {receiver} every {rings} minutes ({path}: looked at every {looks}m, repeated after {repeat}m), and the {receiver} looks round every {expected} ({declared_in}). How long a silence is before it is said, and what a site costs on the vendor's free plan, are both worked out from the second figure."
 }

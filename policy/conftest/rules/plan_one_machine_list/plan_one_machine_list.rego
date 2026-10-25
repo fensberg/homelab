@@ -32,5 +32,5 @@ deny contains msg if {
 deny contains msg if {
 	some [address, r] in kinds
 	not the_list in object.get(object.get(r.expressions, "config_patches", {}), "references", [])
-	msg := sprintf("%s is not configured from %s. A kind of machine with a list of its own is given whatever that list had the day it was written, and none of what every machine has been given since.", [address, the_list])
+	msg := $"{address} is not configured from {the_list}. A kind of machine with a list of its own is given whatever that list had the day it was written, and none of what every machine has been given since."
 }

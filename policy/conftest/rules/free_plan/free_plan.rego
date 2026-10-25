@@ -34,7 +34,7 @@ counted contains name if {
 deny contains msg if {
 	some [path, name] in workers
 	not name in counted
-	msg := sprintf("%s declares the Worker %q, and it is not counted against the free plan. Say what it uses in a day - timers, requests, reads and writes - and name it in workers_use. Uncounted, it uses its share all the same, and what goes over is refused at the vendor for everything on the account.", [path, name])
+	msg := $"{path} declares the Worker \"{name}\", and it is not counted against the free plan. Say what it uses in a day - timers, requests, reads and writes - and name it in workers_use. Uncounted, it uses its share all the same, and what goes over is refused at the vendor for everything on the account."
 }
 
 deny contains msg if {

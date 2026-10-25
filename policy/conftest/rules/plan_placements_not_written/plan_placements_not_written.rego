@@ -43,5 +43,5 @@ deny contains msg if {
 
 deny contains msg if {
 	some [address, name] in written
-	msg := sprintf("%s writes its %s as a string. Read it from the hypervisor node's datastores or the address plan: a name written here was declared nowhere, and a second kind of host means editing code.", [address, name])
+	msg := $"{address} writes its {name} as a string. Read it from the hypervisor node's datastores or the address plan: a name written here was declared nowhere, and a second kind of host means editing code."
 }

@@ -31,5 +31,5 @@ climbs contains [f.path, m[0], count(split(m[1], "/..")) - 1] if {
 deny contains msg if {
 	some [path, how, levels] in climbs
 	levels != dir_depth(path)
-	msg := sprintf("%s reaches outside its directory by %q, and the top of the repository is %d level(s) up. A copy of a root planned against the as-built record sits at the same depth elsewhere, so only the way to the top leads to the same file from there. Write the path from the repository's top.", [path, how, dir_depth(path)])
+	msg := $"{path} reaches outside its directory by \"{how}\", and the top of the repository is {dir_depth(path)} level(s) up. A copy of a root planned against the as-built record sits at the same depth elsewhere, so only the way to the top leads to the same file from there. Write the path from the repository's top."
 }

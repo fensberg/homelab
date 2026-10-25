@@ -41,20 +41,20 @@ deny contains msg if {
 
 deny contains msg if {
 	count(ports) != 1
-	msg := sprintf("the CNI's values name %d k8sServicePort(s), and the port KubePrism must serve is one", [count(ports)])
+	msg := $"the CNI's values name {count(ports)} k8sServicePort(s), and the port KubePrism must serve is one"
 }
 
 deny contains msg if {
 	some r in configurations
 	count(prisms(r)) == 0
-	msg := sprintf("%s never declares KubePrism. With kube-proxy gone there is no ClusterIP for its agent to reach the API through, and the alternative address is one control plane (#316). It is enabled by default, which is exactly why it is written down: a default is not a declaration.", [r.address])
+	msg := $"{r.address} never declares KubePrism. With kube-proxy gone there is no ClusterIP for its agent to reach the API through, and the alternative address is one control plane (#316). It is enabled by default, which is exactly why it is written down: a default is not a declaration."
 }
 
 deny contains msg if {
 	some r in configurations
 	some p in prisms(r)
 	object.get(p, "enabled", false) != true
-	msg := sprintf("%s declares KubePrism and does not enable it, so its agent has no local way to the API.", [r.address])
+	msg := $"{r.address} declares KubePrism and does not enable it, so its agent has no local way to the API."
 }
 
 deny contains msg if {
@@ -62,5 +62,5 @@ deny contains msg if {
 	some p in prisms(r)
 	some port in ports
 	object.get(p, "port", null) != port
-	msg := sprintf("%s declares KubePrism on port %v, and the CNI's values point k8sServicePort at %v. The two are one fact: if the port moves, every half has to move with it.", [r.address, object.get(p, "port", null), port])
+	msg := $"{r.address} declares KubePrism on port {object.get(p, "port", null)}, and the CNI's values point k8sServicePort at {port}. The two are one fact: if the port moves, every half has to move with it."
 }

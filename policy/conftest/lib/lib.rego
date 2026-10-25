@@ -61,7 +61,7 @@ plan_configuration contains [f.path, address, r] if {
 	is_string(r.address)
 	is_string(r.mode)
 	is_string(r.type)
-	calls := [sprintf("module.%s", [p[i + 1]]) | some i, k in p; k == "module_calls"]
+	calls := [$"module.{p[i + 1]}" | some i, k in p; k == "module_calls"]
 	address := concat(".", array.concat(calls, [r.address]))
 }
 
@@ -99,7 +99,7 @@ at(path) := [f | some f in input; f.path == path]
 under(prefix) := [f | some f in input; startswith(f.path, prefix)]
 
 # named is every document of every file of one name, in whatever directory.
-named(name) := [f | some f in input; endswith(f.path, sprintf("/%s", [name]))]
+named(name) := [f | some f in input; endswith(f.path, $"/{name}")]
 
 # workflows is every workflow, by its path: a YAML file directly under
 # .github/workflows.
@@ -183,7 +183,7 @@ trigger_names(null) := set()
 
 # steps_with_env is every step of a runnable file with the environment it
 # runs in: [file, where, step, environments], the step's own last.
-steps_with_env contains [file, sprintf(", job %s", [name]), step, [object.get(doc, "env", {}), object.get(job, "env", {}), object.get(step, "env", {})]] if {
+steps_with_env contains [file, $", job {name}", step, [object.get(doc, "env", {}), object.get(job, "env", {}), object.get(step, "env", {})]] if {
 	some file, doc in runnable
 	some name, job in object.get(doc, "jobs", {})
 	some step in object.get(job, "steps", [])

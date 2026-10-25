@@ -35,23 +35,23 @@ declared := [d | some f in lib.at(declarations); some d in object.get(f.contents
 
 deny contains msg if {
 	count(roots) < 3
-	msg := sprintf("found %d plan(s) of a root, so the enumeration has stopped matching", [count(roots)])
+	msg := $"found {count(roots)} plan(s) of a root, so the enumeration has stopped matching"
 }
 
 deny contains msg if {
 	some d in declared
 	trim_space(object.get(d, "reason", "")) == ""
-	msg := sprintf("%s declares %q with no reason; the reason is the whole price of a custom block", [declarations, d.resource])
+	msg := $"{declarations} declares \"{d.resource}\" with no reason; the reason is the whole price of a custom block"
 }
 
 deny contains msg if {
 	some r in found
 	not r in {d.resource | some d in declared}
-	msg := sprintf("OpenTofu resource %q is declared in a root rather than in a module. A root holds providers, credentials and state; what it builds goes in a module under modules/infrastructure/, so the next site calls the same block. Move it, or declare it in %s with the reason it can have only one caller.", [r, declarations])
+	msg := $"OpenTofu resource \"{r}\" is declared in a root rather than in a module. A root holds providers, credentials and state; what it builds goes in a module under modules/infrastructure/, so the next site calls the same block. Move it, or declare it in {declarations} with the reason it can have only one caller."
 }
 
 deny contains msg if {
 	some d in declared
 	not d.resource in found
-	msg := sprintf("%s declares %q, and no such OpenTofu resource exists any more. Remove the declaration, so the list holds only exceptions that are real.", [declarations, d.resource])
+	msg := $"{declarations} declares \"{d.resource}\", and no such OpenTofu resource exists any more. Remove the declaration, so the list holds only exceptions that are real."
 }

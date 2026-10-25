@@ -37,13 +37,13 @@ deny contains msg if {
 deny contains msg if {
 	some f in sources
 	f.contents.spec.secretRef
-	msg := sprintf("%s gives the GitRepository a secretRef. This repository is public. An https:// clone of it needs no credential, so the secret this points at would be an access token living in OpenTofu state to authenticate a request that succeeds unauthenticated. If the repository has been made private, this rule is the wrong thing to change first - re-read the invariant above and decide deliberately, because the credential comes back with a state-exposure cost attached.", [f.path])
+	msg := $"{f.path} gives the GitRepository a secretRef. This repository is public. An https:// clone of it needs no credential, so the secret this points at would be an access token living in OpenTofu state to authenticate a request that succeeds unauthenticated. If the repository has been made private, this rule is the wrong thing to change first - re-read the invariant above and decide deliberately, because the credential comes back with a state-exposure cost attached."
 }
 
 deny contains msg if {
 	some f in sources
 	not startswith(object.get(f.contents.spec, "url", ""), "https://")
-	msg := sprintf("%s clones from %q, which is not an anonymous https:// URL. Anonymous sync is what makes the missing secretRef correct. An ssh remote needs a deploy key, which is the same credential this rule exists to keep out of state.", [f.path, object.get(f.contents.spec, "url", "")])
+	msg := $"{f.path} clones from \"{object.get(f.contents.spec, "url", "")}\", which is not an anonymous https:// URL. Anonymous sync is what makes the missing secretRef correct. An ssh remote needs a deploy key, which is the same credential this rule exists to keep out of state."
 }
 
 # And the config template, which is where the token would have to be
@@ -64,7 +64,7 @@ deny contains msg if {
 deny contains msg if {
 	some field in ["token", "password", "pat", "ssh_key", "deploy_key"]
 	field in object.keys(template[0].contents.source_control)
-	msg := sprintf("config/management.tpl.json declares source_control.%s. Declaring it renders it into config/management.rendered.json on every run, whether or not anything reads it - one more secret on disk for a clone that needs none.", [field])
+	msg := $"config/management.tpl.json declares source_control.{field}. Declaring it renders it into config/management.rendered.json on every run, whether or not anything reads it - one more secret on disk for a clone that needs none."
 }
 
 # The break-glass identity is not in the config template. The rendered config
@@ -82,7 +82,7 @@ template_says(word) if {
 deny contains msg if {
 	some word in ["state_backup/identity", "state_backup.identity", "backup_identity"]
 	template_says(word)
-	msg := sprintf("config/management.tpl.json references %q. Adding it there would render the private half into config/management.rendered.json on every run, next to every other secret. The recipient belongs in the template because encryption needs it; the identity is only ever needed by a human performing a restore.", [word])
+	msg := $"config/management.tpl.json references \"{word}\". Adding it there would render the private half into config/management.rendered.json on every run, next to every other secret. The recipient belongs in the template because encryption needs it; the identity is only ever needed by a human performing a restore."
 }
 
 deny contains msg if {

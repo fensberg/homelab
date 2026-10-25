@@ -42,7 +42,7 @@ verbs contains [file, m[1]] if {
 
 deny contains msg if {
 	some [file, "order"] in verbs
-	msg := sprintf("%s runs `procurement order`. Ordering writes scripts/deliveries.lock, which decides what every lane and workstation installs. It is run by a person and committed through review; no workflow orders, and above all not one that could hold the expedite credential.", [file])
+	msg := $"{file} runs `procurement order`. Ordering writes scripts/deliveries.lock, which decides what every lane and workstation installs. It is run by a person and committed through review; no workflow orders, and above all not one that could hold the expedite credential."
 }
 
 delivers("deliver")
@@ -53,7 +53,7 @@ deny contains msg if {
 	some [file, verb] in verbs
 	delivers(verb)
 	not file in holders
-	msg := sprintf("%s runs `procurement deliver` and holds no procurement credential, so the pull request it would open has nothing to open it with", [file])
+	msg := $"{file} runs `procurement deliver` and holds no procurement credential, so the pull request it would open has nothing to open it with"
 }
 
 deny contains msg if {
@@ -62,14 +62,14 @@ deny contains msg if {
 	not delivers(verb)
 	not startswith(verb, "expedite-")
 	file in holders
-	msg := sprintf("%s holds the expedite credential and runs `procurement %s`, which is not an expedite-* verb. The bypass belongs to the expediting duty, not to procurement. Run it somewhere that holds no such credential.", [file, verb])
+	msg := $"{file} holds the expedite credential and runs `procurement {verb}`, which is not an expedite-* verb. The bypass belongs to the expediting duty, not to procurement. Run it somewhere that holds no such credential."
 }
 
 deny contains msg if {
 	some [file, verb] in verbs
 	startswith(verb, "expedite-")
 	not file in holders
-	msg := sprintf("%s runs `procurement %s` and holds no expedite credential; expediting runs in the workflow that does, so the duty and its bounds stay in one place", [file, verb])
+	msg := $"{file} runs `procurement {verb}` and holds no expedite credential; expediting runs in the workflow that does, so the duty and its bounds stay in one place"
 }
 
 deny contains msg if {

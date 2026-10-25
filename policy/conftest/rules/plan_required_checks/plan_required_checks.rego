@@ -43,5 +43,5 @@ deny contains msg if {
 deny contains msg if {
 	some c in checks
 	not c in reported
-	msg := sprintf("a merge is held to a check named %q, and no job in any workflow reports under that name. Every pull request would wait on it for ever. Name the job as it is, or take the check out.", [c])
+	msg := $"a merge is held to a check named \"{c}\", and no job in any workflow reports under that name. Every pull request would wait on it for ever. Name the job as it is, or take the check out."
 }

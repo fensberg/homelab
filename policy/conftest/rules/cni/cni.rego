@@ -36,7 +36,7 @@ deny contains msg if {
 	some f in agents
 	tolerations := object.get(f.contents, ["spec", "template", "spec", "tolerations"], [])
 	not blanket(tolerations)
-	msg := sprintf("%s: the cilium DaemonSet does not tolerate every taint. A tainted node would get no agent, and a node with no CNI never reaches Ready - so it would never join the cluster. The untrusted zone in docs/epochs/03-workload.md is a NoSchedule-tainted worker, so this is the line that lets it exist at all.", [f.path])
+	msg := $"{f.path}: the cilium DaemonSet does not tolerate every taint. A tainted node would get no agent, and a node with no CNI never reaches Ready - so it would never join the cluster. The untrusted zone in docs/epochs/03-workload.md is a NoSchedule-tainted worker, so this is the line that lets it exist at all."
 }
 
 blanket(tolerations) if {
@@ -70,7 +70,7 @@ config := [f | some f in lib.objects; f.contents.kind == "ConfigMap"; f.contents
 values := [f |
 	some agent in agents
 	some f in lib.named("cilium-values.yaml")
-	f.path == sprintf("%s/cilium-values.yaml", [dir(agent.path)])
+	f.path == $"{dir(agent.path)}/cilium-values.yaml"
 ]
 
 deny contains msg if {
@@ -82,32 +82,32 @@ deny contains msg if {
 deny contains msg if {
 	some f in values
 	not is_number(object.get(f.contents, "MTU", null))
-	msg := sprintf("%s pins no MTU. Cilium then detects one, and on these nodes it detects tailscale0's 1280 and gives it to every pod. That is below what quic-go will start a connection with once Cilium's tunnel overhead comes off it, so the tunnel connector cannot use QUIC, and without QUIC it carries no UDP at all (#455, cilium/cilium#37529). Pin MTU to the MTU of the interface pods actually leave by, and re-render.", [f.path])
+	msg := $"{f.path} pins no MTU. Cilium then detects one, and on these nodes it detects tailscale0's 1280 and gives it to every pod. That is below what quic-go will start a connection with once Cilium's tunnel overhead comes off it, so the tunnel connector cannot use QUIC, and without QUIC it carries no UDP at all (#455, cilium/cilium#37529). Pin MTU to the MTU of the interface pods actually leave by, and re-render."
 }
 
 deny contains msg if {
 	some f in values
 	f.contents.MTU <= 1280
-	msg := sprintf("the pinned MTU is %d, which leaves less than quic-go's 1252-byte initial packet once Cilium's tunnel overhead comes off it. The tunnel connector would fall back to HTTP/2 and carry no UDP (#455).", [f.contents.MTU])
+	msg := $"the pinned MTU is {f.contents.MTU}, which leaves less than quic-go's 1252-byte initial packet once Cilium's tunnel overhead comes off it. The tunnel connector would fall back to HTTP/2 and carry no UDP (#455)."
 }
 
 deny contains msg if {
 	count(config) != 1
-	msg := sprintf("%d ConfigMap named cilium-config were found, so what the committed render runs cannot be read", [count(config)])
+	msg := $"{count(config)} ConfigMap named cilium-config were found, so what the committed render runs cannot be read"
 }
 
 deny contains msg if {
 	some f in config
 	not f.contents.data.mtu
-	msg := sprintf("%s carries no mtu in its config, so the pinned value never reached the manifest. Re-render with `task render-cni`.", [f.path])
+	msg := $"{f.path} carries no mtu in its config, so the pinned value never reached the manifest. Re-render with `task render-cni`."
 }
 
 deny contains msg if {
 	some v in values
 	some f in config
 	rendered := f.contents.data.mtu
-	rendered != sprintf("%v", [v.contents.MTU])
-	msg := sprintf("cilium-values.yaml pins MTU %v and the committed manifest says %s. The cluster runs the manifest, so the pin is not in effect. Re-render with `task render-cni`.", [v.contents.MTU, rendered])
+	rendered != $"{v.contents.MTU}"
+	msg := $"cilium-values.yaml pins MTU {v.contents.MTU} and the committed manifest says {rendered}. The cluster runs the manifest, so the pin is not in effect. Re-render with `task render-cni`."
 }
 
 # Cilium takes its pod addresses from Kubernetes, and that is load-bearing.
@@ -132,5 +132,5 @@ deny contains msg if {
 	some f in config
 	mode := f.contents.data.ipam
 	mode != "kubernetes"
-	msg := sprintf("Cilium's ipam mode is %q, not \"kubernetes\". In every other mode Cilium allocates pod addresses from a pool of its own, and its default pool is 10.0.0.0/8 - which contains every site subnet this estate can define, because site octets run 1-95. The podSubnets declared in talos.tf would then describe nothing. If the mode is being changed deliberately, the pool has to be declared with it and checked against the site scheme the same way, or this estate has gone back to an undeclared default.", [mode])
+	msg := $"Cilium's ipam mode is \"{mode}\", not \"kubernetes\". In every other mode Cilium allocates pod addresses from a pool of its own, and its default pool is 10.0.0.0/8 - which contains every site subnet this estate can define, because site octets run 1-95. The podSubnets declared in talos.tf would then describe nothing. If the mode is being changed deliberately, the pool has to be declared with it and checked against the site scheme the same way, or this estate has gone back to an undeclared default."
 }

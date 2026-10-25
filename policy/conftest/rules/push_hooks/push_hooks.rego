@@ -47,17 +47,17 @@ deny contains msg if {
 deny contains msg if {
 	count(hooks) > 0
 	count(the_guard) == 0
-	msg := sprintf("no %q hook in .pre-commit-config.yaml. A plain `git push` produces unsigned commits that nobody can rewrite afterwards, because non_fast_forward applies to feature branches here. Publish with `task push`; do not remove the hook that enforces it.", [guard])
+	msg := $"no \"{guard}\" hook in .pre-commit-config.yaml. A plain `git push` produces unsigned commits that nobody can rewrite afterwards, because non_fast_forward applies to feature branches here. Publish with `task push`; do not remove the hook that enforces it."
 }
 
 deny contains msg if {
 	some hook in the_guard
 	object.get(hook, "stages", []) != ["pre-push"]
-	msg := sprintf("%s runs at stages %v; it only guards anything at pre-push", [guard, object.get(hook, "stages", [])])
+	msg := $"{guard} runs at stages {object.get(hook, "stages", [])}; it only guards anything at pre-push"
 }
 
 deny contains msg if {
-	msg := sprintf("%s is not fail_fast, so a refused push still runs validate and test before printing the refusal", [guard])
+	msg := $"{guard} is not fail_fast, so a refused push still runs validate and test before printing the refusal"
 	some hook in the_guard
 	object.get(hook, "fail_fast", false) != true
 }
@@ -65,7 +65,7 @@ deny contains msg if {
 deny contains msg if {
 	count(pre_push) > 0
 	pre_push[0] != guard
-	msg := sprintf("pre-push hooks run in order %v; %s should be first so a doomed push fails fast instead of after validate and test", [pre_push, guard])
+	msg := $"pre-push hooks run in order {pre_push}; {guard} should be first so a doomed push fails fast instead of after validate and test"
 }
 
 tasks := object.get([f | some f in lib.at("taskfile.yml")][0].contents, "tasks", {})
@@ -80,13 +80,13 @@ invoked contains [hook.id, fields[1]] if {
 deny contains msg if {
 	some [id, name] in invoked
 	not tasks[name]
-	msg := sprintf("hook %q runs `task %s`, and taskfile.yml has no such task", [id, name])
+	msg := $"hook \"{id}\" runs `task {name}`, and taskfile.yml has no such task"
 }
 
 deny contains msg if {
 	some [id, name] in invoked
 	tasks[name].internal == true
-	msg := sprintf("hook %q runs `task %s`, which is marked internal - task refuses to run an internal task from the CLI, so the hook fails with a task error instead of a verdict", [id, name])
+	msg := $"hook \"{id}\" runs `task {name}`, which is marked internal - task refuses to run an internal task from the CLI, so the hook fails with a task error instead of a verdict"
 }
 
 deny contains msg if {

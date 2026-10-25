@@ -26,7 +26,13 @@ package rules.pull_request_runners
 import data.lib
 import rego.v1
 
-pools contains sprintf("pr-%s-${{ vars.pull_request_runners_site }}", [name]) if {
+# A brace of a template a message quotes, which a template string cannot
+# hold as it is.
+open := "{"
+
+close := "}"
+
+pools contains $"pr-{name}-${open}{open} vars.pull_request_runners_site {close}{close}" if {
 	some f in lib.at("scripts/approved-suppliers.yml")
 	some name in f.contents.pull_request_pools.names
 }
@@ -106,12 +112,12 @@ deny contains msg if {
 	some [file, name, job] in examined
 	runs_on := object.get(job, "runs-on", null)
 	not pull_request_safe(runs_on)
-	msg := sprintf("%s: job %q runs pull-request code on %s. A pull request's code runs on a GitHub-hosted runner, or in a pool the suppliers list declares under pull_request_pools: one with no secret and no route to the estate. The management pool (%s) converges real infrastructure and is reached from main only. A fork guard or an environment does not change that: a branch pushed to this repository passes the first, and an environment is only a gate if somebody remembers to give it a reviewer.", [file, name, shown(runs_on), object.get({"m": management_pool}, "m", "unread")])
+	msg := $"{file}: job \"{name}\" runs pull-request code on {shown(runs_on)}. A pull request's code runs on a GitHub-hosted runner, or in a pool the suppliers list declares under pull_request_pools: one with no secret and no route to the estate. The management pool ({object.get({"m": management_pool}, "m", "unread")}) converges real infrastructure and is reached from main only. A fork guard or an environment does not change that: a branch pushed to this repository passes the first, and an environment is only a gate if somebody remembers to give it a reviewer."
 }
 
 deny contains msg if {
 	count(lib.workflows) < 5
-	msg := sprintf("only %d workflows were read; this rule is reading the wrong directory", [count(lib.workflows)])
+	msg := $"only {count(lib.workflows)} workflows were read; this rule is reading the wrong directory"
 }
 
 deny contains msg if {

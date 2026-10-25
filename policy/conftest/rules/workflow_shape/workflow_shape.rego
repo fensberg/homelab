@@ -4,6 +4,12 @@ package rules.workflow_shape
 import data.lib
 import rego.v1
 
+# A brace of a template a message quotes, which a template string cannot
+# hold as it is.
+open := "{"
+
+close := "}"
+
 deny contains msg if {
 	count(lib.workflows) == 0
 	msg := "found no workflows, so no workflow's shape was checked"
@@ -15,7 +21,7 @@ deny contains msg if {
 deny contains msg if {
 	some file, doc in lib.workflows
 	object.get(object.get(object.get(doc, "defaults", {}), "run", {}), "shell", "") != "bash"
-	msg := sprintf("%s does not set a pipefail shell. Add defaults: {run: {shell: bash}} above its jobs; without it every run: step runs under `bash -e {0}`, where a failing command in a pipeline is hidden by whatever it pipes into.", [file])
+	msg := $"{file} does not set a pipefail shell. Add defaults: {open}run: {open}shell: bash{close}{close} above its jobs; without it every run: step runs under `bash -e {open}0{close}`, where a failing command in a pipeline is hidden by whatever it pipes into."
 }
 
 # No step reads $TMPDIR. GitHub-hosted runners do not set it, so under set -u
@@ -27,7 +33,7 @@ deny contains msg if {
 	some line in split(v, "\n")
 	not startswith(trim_space(line), "#")
 	regex.match(`\$\{?TMPDIR\b`, line)
-	msg := sprintf("%s reads $TMPDIR at %s. GitHub-hosted runners do not set TMPDIR, so under `set -u` this is \"TMPDIR: unbound variable\" and the step fails before doing anything (#440). Use $RUNNER_TEMP, which Actions sets on every runner.", [file, concat(".", [sprintf("%v", [p]) | some p in where])])
+	msg := $"{file} reads $TMPDIR at {concat(".", [$"{p}" | some p in where])}. GitHub-hosted runners do not set TMPDIR, so under `set -u` this is \"TMPDIR: unbound variable\" and the step fails before doing anything (#440). Use $RUNNER_TEMP, which Actions sets on every runner."
 }
 
 # An App token's inputs are fed the value their names say: client-id the
@@ -49,7 +55,7 @@ wanted := {"client-id": "_CLIENT_ID", "app-id": "_APP_ID"}
 deny contains msg if {
 	some [file, field, secret] in token_inputs
 	not endswith(secret, wanted[field])
-	msg := sprintf("%s passes %s to `%s`. That input takes a value the name should say: client-id is the App's Client ID (beginning \"Iv\"), and app-id is the numeric App ID. A secret named for one and fed to the other is how the expedite duty failed every token mint for a week with \"Integration not found\" (#439). Name it *%s, and store the value that name says.", [file, secret, field, wanted[field]])
+	msg := $"{file} passes {secret} to `{field}`. That input takes a value the name should say: client-id is the App's Client ID (beginning \"Iv\"), and app-id is the numeric App ID. A secret named for one and fed to the other is how the expedite duty failed every token mint for a week with \"Integration not found\" (#439). Name it *{wanted[field]}, and store the value that name says."
 }
 
 deny contains msg if {
@@ -80,7 +86,7 @@ deny contains msg if {
 	some [file, where, step, args, envs] in contractor_runs
 	not regex.match(`-phase[ =]sterilize\b`, args)
 	not hands_over(envs)
-	msg := sprintf("%s%s, step %s runs the contractor and hands it no GitHub token. The contractor fetches the release the site runs before anything it does but sterilize, and is refused at Render without a token. Give the step GH_TOKEN, the job's own token.", [file, where, trim_space(object.get(step, "name", ""))])
+	msg := $"{file}{where}, step {trim_space(object.get(step, "name", ""))} runs the contractor and hands it no GitHub token. The contractor fetches the release the site runs before anything it does but sterilize, and is refused at Render without a token. Give the step GH_TOKEN, the job's own token."
 }
 
 # A concurrency group names the subject whose newer run replaces it: a pull
@@ -91,7 +97,7 @@ groups contains [file, file, doc.concurrency, lib.triggers(doc)] if {
 	doc.concurrency
 }
 
-groups contains [file, sprintf("%s job %s", [file, name]), job.concurrency, lib.triggers(doc)] if {
+groups contains [file, $"{file} job {name}", job.concurrency, lib.triggers(doc)] if {
 	some file, doc in lib.workflows
 	some name, job in object.get(doc, "jobs", {})
 	job.concurrency
@@ -136,7 +142,7 @@ deny contains msg if {
 	group := group_of(c)
 	some [ref, why] in needs(triggers)
 	not contains(group, ref)
-	msg := sprintf("%s: the concurrency group %q does not use %s, %s", [where, group, ref, why])
+	msg := $"{where}: the concurrency group \"{group}\" does not use {ref}, {why}"
 }
 
 # No workflow reaches one of this repository's own actions by a relative path.
@@ -152,5 +158,5 @@ deny contains msg if {
 deny contains msg if {
 	some [file, _, ref] in lib.uses
 	startswith(ref, "./")
-	msg := sprintf("%s reaches a local action with a relative `uses: %s`. Write it as `uses: $/%s`: it resolves at the commit being run, with no checkout, and cannot be redirected by whatever a workspace holds.", [file, ref, trim_prefix(ref, "./")])
+	msg := $"{file} reaches a local action with a relative `uses: {ref}`. Write it as `uses: $/{trim_prefix(ref, "./")}`: it resolves at the commit being run, with no checkout, and cannot be redirected by whatever a workspace holds."
 }

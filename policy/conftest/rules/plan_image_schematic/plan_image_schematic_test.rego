@@ -5,7 +5,7 @@ import rego.v1
 
 configured(resources) := {"path": "site-cluster.plan.json", "contents": {"configuration": {"root_module": {"module_calls": {"cluster": {"module": {"resources": resources}}}}}}}
 
-image(name, refs) := {"address": sprintf("proxmox_download_file.%s", [name]), "mode": "managed", "type": "proxmox_download_file", "expressions": {"file_name": {"references": refs}}}
+image(name, refs) := {"address": $"proxmox_download_file.{name}", "mode": "managed", "type": "proxmox_download_file", "expressions": {"file_name": {"references": refs}}}
 
 denies(msgs, words) if {
 	some msg in msgs

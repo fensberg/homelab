@@ -41,11 +41,11 @@ deny contains msg if {
 deny contains msg if {
 	some [address, r] in images
 	not carries(r, "schematic_id")
-	msg := sprintf("%s: the image path does not carry its schematic id. The resource is identified by that path, so re-minting a schematic is not a change: the image is never re-fetched, and the replace_triggered_by on the template has nothing to fire on.", [address])
+	msg := $"{address}: the image path does not carry its schematic id. The resource is identified by that path, so re-minting a schematic is not a change: the image is never re-fetched, and the replace_triggered_by on the template has nothing to fire on."
 }
 
 deny contains msg if {
 	some [address, r] in images
 	not carries(r, "talos_version")
-	msg := sprintf("%s: the image path does not carry the Talos version. The version resolves every extension's build, so two images from one schematic on different Talos releases are different bytes at the same path.", [address])
+	msg := $"{address}: the image path does not carry the Talos version. The version resolves every extension's build, so two images from one schematic on different Talos releases are different bytes at the same path."
 }

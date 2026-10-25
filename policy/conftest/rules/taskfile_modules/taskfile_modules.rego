@@ -30,5 +30,5 @@ deny contains msg if {
 
 deny contains msg if {
 	count(named) > 0
-	msg := sprintf("taskfile.yml vets or tests named modules: %s. That is a list, and a list is what went stale: clerk and inspector were left off three of them and were never compiled or run by anything. Sweep scripts/*/go.mod instead, so a module added tomorrow is covered the moment it exists.", [concat("; ", sort(named))])
+	msg := $"taskfile.yml vets or tests named modules: {concat("; ", sort(named))}. That is a list, and a list is what went stale: clerk and inspector were left off three of them and were never compiled or run by anything. Sweep scripts/*/go.mod instead, so a module added tomorrow is covered the moment it exists."
 }

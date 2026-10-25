@@ -7,7 +7,7 @@ plan(resources) := {"path": "site-cluster.plan.json", "contents": {"planned_valu
 
 credential(nodes, endpoints) := {"address": "data.talos_client_configuration.this", "type": "talos_client_configuration", "values": {"nodes": nodes, "endpoints": endpoints}}
 
-cp(n) := {"address": sprintf("data.talos_machine_configuration.controlplane[\"%d\"]", [n]), "type": "talos_machine_configuration", "values": {"machine_type": "controlplane"}}
+cp(n) := {"address": $"data.talos_machine_configuration.controlplane[\"{n}\"]", "type": "talos_machine_configuration", "values": {"machine_type": "controlplane"}}
 
 worker := {"address": "data.talos_machine_configuration.worker[\"200\"]", "type": "talos_machine_configuration", "values": {"machine_type": "worker"}}
 

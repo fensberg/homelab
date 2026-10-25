@@ -45,5 +45,5 @@ deny contains msg if {
 deny contains msg if {
 	some [address, r] in memberships
 	not off_the_machine(r)
-	msg := sprintf("%s does not read its vm_id off the VM resource. It must, so that OpenTofu orders the membership's destroy before the machine's. Reading the same number out of a local creates no dependency edge, the two deletes race, and the one that loses asks Proxmox to remove a VM that is already gone from the pool - HTTP 500, and a teardown that stops half-done.", [address])
+	msg := $"{address} does not read its vm_id off the VM resource. It must, so that OpenTofu orders the membership's destroy before the machine's. Reading the same number out of a local creates no dependency edge, the two deletes race, and the one that loses asks Proxmox to remove a VM that is already gone from the pool - HTTP 500, and a teardown that stops half-done."
 }

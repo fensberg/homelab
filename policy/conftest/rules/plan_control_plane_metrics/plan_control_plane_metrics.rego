@@ -65,14 +65,14 @@ deny contains msg if {
 
 deny contains msg if {
 	count(stack) != 1
-	msg := sprintf("%d HelmRelease named kube-prometheus-stack were found, so whether the chart scrapes the control plane cannot be read", [count(stack)])
+	msg := $"{count(stack)} HelmRelease named kube-prometheus-stack were found, so whether the chart scrapes the control plane cannot be read"
 }
 
 deny contains msg if {
 	some component, _ in components
 	some f in stack
 	not f.contents.spec.values[component]
-	msg := sprintf("the monitoring HelmRelease says nothing about %s at all, so this rule is reading the wrong shape and proves nothing", [component])
+	msg := $"the monitoring HelmRelease says nothing about {component} at all, so this rule is reading the wrong shape and proves nothing"
 }
 
 enabled(component) if stack[0].contents.spec.values[component].enabled == true
@@ -81,7 +81,7 @@ deny contains msg if {
 	some component, [path, what] in components
 	enabled(component)
 	not exposed(path)
-	msg := sprintf("the chart scrapes %s, and not every control plane's configuration sets %s. %s, so the target would sit red from the moment this deploys - and a red target nobody can fix is how people learn to ignore red targets.", [component, setting(path), what])
+	msg := $"the chart scrapes {component}, and not every control plane's configuration sets {setting(path)}. {what}, so the target would sit red from the moment this deploys - and a red target nobody can fix is how people learn to ignore red targets."
 }
 
 deny contains msg if {
@@ -89,5 +89,5 @@ deny contains msg if {
 	stack[0].contents.spec.values[component]
 	not enabled(component)
 	opened(path)
-	msg := sprintf("a control plane's configuration sets %s and the chart does not scrape %s. That leaves a port open on every control-plane node with nothing reading it. If the scrape is being removed deliberately, remove the machine configuration with it.", [setting(path), component])
+	msg := $"a control plane's configuration sets {setting(path)} and the chart does not scrape {component}. That leaves a port open on every control-plane node with nothing reading it. If the scrape is being removed deliberately, remove the machine configuration with it."
 }

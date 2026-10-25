@@ -7,7 +7,7 @@ plan(configs) := {"path": "site-cluster.plan.json", "contents": {"planned_values
 
 machine(address, patches) := {"address": address, "type": "talos_machine_configuration", "mode": "data", "values": {"config_patches": patches}}
 
-network(pods, services) := sprintf("cluster:\n  network:\n    podSubnets: [%s]\n    serviceSubnets: [%s]\n", [pods, services])
+network(pods, services) := $"cluster:\n  network:\n    podSubnets: [{pods}]\n    serviceSubnets: [{services}]\n"
 
 denies(msgs, words) if {
 	some msg in msgs

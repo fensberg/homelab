@@ -44,7 +44,7 @@ challenge contains step if {
 
 deny contains msg if {
 	not workflow in object.keys(lib.workflows)
-	msg := sprintf("%s is not there, so nothing asks about a sensitive change", [workflow])
+	msg := $"{workflow} is not there, so nothing asks about a sensitive change"
 }
 
 deny contains msg if {
@@ -115,7 +115,7 @@ deny contains msg if {
 deny contains msg if {
 	some step in challenge
 	step["if"]
-	msg := sprintf("the step that works out which keys were handed out runs only if %q; it has to run on every pull request", [step["if"]])
+	msg := $"the step that works out which keys were handed out runs only if \"{step["if"]}\"; it has to run on every pull request"
 }
 
 deny contains msg if {
@@ -136,20 +136,20 @@ two_conversations if {
 	count(ask) > 0
 }
 
-outputs := sprintf("steps.%s.outputs.", [c.id]) if some c in challenge
+outputs := $"steps.{c.id}.outputs." if some c in challenge
 
 deny contains msg if {
 	some step in ask
-	not contains(object.get(step, "if", ""), sprintf("%sasked == 'true'", [outputs]))
-	msg := sprintf("the step that asks runs if %q, not exactly when a key was handed out", [object.get(step, "if", "")])
+	not contains(object.get(step, "if", ""), $"{outputs}asked == 'true'")
+	msg := $"the step that asks runs if \"{object.get(step, "if", "")}\", not exactly when a key was handed out"
 }
 
 deny contains msg if {
 	some step in ask
 	some name, from in {"DIGEST": "digest", "ANCHOR": "anchor", "REPORT": "report"}
 	given := object.get(object.get(step, "env", {}), name, "")
-	not contains(given, concat("", [outputs, from]))
-	msg := sprintf("the step that asks takes its %s from %q, not from what security found, so the conversation is not keyed to the keys handed out", [name, given])
+	not contains(given, $"{outputs}{from}")
+	msg := $"the step that asks takes its {name} from \"{given}\", not from what security found, so the conversation is not keyed to the keys handed out"
 }
 
 deny contains msg if {
@@ -173,5 +173,5 @@ deny contains msg if {
 	some s in array.concat([v | is_string(v)], [k | some k in path; is_string(k)])
 	some word in dead
 	contains(s, word)
-	msg := sprintf("the workflow still manipulates or reads labels (%q). The acknowledgement is a conversation now; a label alongside it is a second, weaker gate that will drift from this one.", [word])
+	msg := $"the workflow still manipulates or reads labels (\"{word}\"). The acknowledgement is a conversation now; a label alongside it is a second, weaker gate that will drift from this one."
 }

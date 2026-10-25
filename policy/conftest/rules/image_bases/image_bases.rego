@@ -38,10 +38,10 @@ deny contains msg if {
 	some [f, i] in installs
 	from := object.get({"b": base(f, i.Stage)}, "b", "")
 	not contains(from, "@sha256:")
-	msg := sprintf("%s installs packages at whatever version the archive has, in a stage that starts from %q, which is not pinned by digest. Unpinned packages are tolerable on a base that cannot move. On a tag, both move, and two builds of this file share nothing that is held.", [f.path, from])
+	msg := $"{f.path} installs packages at whatever version the archive has, in a stage that starts from \"{from}\", which is not pinned by digest. Unpinned packages are tolerable on a base that cannot move. On a tag, both move, and two builds of this file share nothing that is held."
 }
 
 deny contains msg if {
 	count(installs) == 0
-	msg := sprintf("found %d Dockerfile(s) and no package install, so nothing was checked", [count(dockerfiles)])
+	msg := $"found {count(dockerfiles)} Dockerfile(s) and no package install, so nothing was checked"
 }

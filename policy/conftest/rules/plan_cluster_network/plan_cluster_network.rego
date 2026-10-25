@@ -46,7 +46,7 @@ deny contains msg if {
 	some [_, r] in configurations
 	some name in ranges
 	count(told(r, name)) == 0
-	msg := sprintf("%s is not told the cluster's network: its configuration sets no cluster.network.%s. It then takes Talos's default range, and a kubelet tells every pod on it to ask for DNS at an address nothing answers on (#578). clusterNetwork is fixed at cluster creation, so the cost of getting it wrong is a rebuild.", [r.address, name])
+	msg := $"{r.address} is not told the cluster's network: its configuration sets no cluster.network.{name}. It then takes Talos's default range, and a kubelet tells every pod on it to ask for DNS at an address nothing answers on (#578). clusterNetwork is fixed at cluster creation, so the cost of getting it wrong is a rebuild."
 }
 
 deny contains msg if {
@@ -58,5 +58,5 @@ deny contains msg if {
 	count(told(a, name)) > 0
 	count(told(b, name)) > 0
 	told(a, name) != told(b, name)
-	msg := sprintf("%s and %s are told different cluster.network.%s. One cluster has one pod and one service range, and a machine told another asks for DNS where nothing answers.", [a.address, b.address, name])
+	msg := $"{a.address} and {b.address} are told different cluster.network.{name}. One cluster has one pod and one service range, and a machine told another asks for DNS where nothing answers."
 }

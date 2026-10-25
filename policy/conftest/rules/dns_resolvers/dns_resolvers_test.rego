@@ -3,7 +3,7 @@ package rules.dns_resolvers_test
 import data.rules.dns_resolvers
 import rego.v1
 
-filler := [{"path": sprintf("modules/x/f%d.tf", [i]), "contents": {}} | some i in numbers.range(1, 10)]
+filler := [{"path": $"modules/x/f{i}.tf", "contents": {}} | some i in numbers.range(1, 10)]
 
 declared := {"path": "modules/c/variables.tf", "contents": {"locals": [{"dns_resolvers": ["1.1.1.1", "1.0.0.1"]}]}}
 

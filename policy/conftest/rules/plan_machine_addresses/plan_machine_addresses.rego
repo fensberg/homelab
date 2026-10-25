@@ -40,11 +40,11 @@ addressed(r) if {
 
 deny contains msg if {
 	count(machines) == 0
-	msg := sprintf("no %s that is a machine is in any plan, so this checked nothing", [machine_type])
+	msg := $"no {machine_type} that is a machine is in any plan, so this checked nothing"
 }
 
 deny contains msg if {
 	some [_, r] in machines
 	not addressed(r)
-	msg := sprintf("%s is built with no address of its own. It boots with nothing, on a network that hands nothing out, and its configuration cannot reach it: give it an initialization block with an ip_config, on the subnet it is on.", [r.address])
+	msg := $"{r.address} is built with no address of its own. It boots with nothing, on a network that hands nothing out, and its configuration cannot reach it: give it an initialization block with an ip_config, on the subnet it is on."
 }

@@ -5,7 +5,7 @@ import rego.v1
 
 configured(resources) := {"path": "site-cluster.plan.json", "contents": {"configuration": {"root_module": {"module_calls": {"cluster": {"module": {"resources": resources}}}}}}}
 
-pool(name, pool_id) := {"address": sprintf("proxmox_virtual_environment_pool.%s", [name]), "mode": "managed", "type": "proxmox_virtual_environment_pool", "expressions": {"pool_id": pool_id}}
+pool(name, pool_id) := {"address": $"proxmox_virtual_environment_pool.{name}", "mode": "managed", "type": "proxmox_virtual_environment_pool", "expressions": {"pool_id": pool_id}}
 
 denies(msgs, words) if {
 	some msg in msgs

@@ -5,7 +5,7 @@ import rego.v1
 
 configured(resources) := {"path": "site-cluster.plan.json", "contents": {"configuration": {"root_module": {"module_calls": {"cluster": {"module": {"resources": resources}}}}}}}
 
-kind(name, patches) := {"address": sprintf("data.talos_machine_configuration.%s", [name]), "mode": "data", "type": "talos_machine_configuration", "expressions": {"config_patches": patches}}
+kind(name, patches) := {"address": $"data.talos_machine_configuration.{name}", "mode": "data", "type": "talos_machine_configuration", "expressions": {"config_patches": patches}}
 
 denies(msgs, words) if {
 	some msg in msgs

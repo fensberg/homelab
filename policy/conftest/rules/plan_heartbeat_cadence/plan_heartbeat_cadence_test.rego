@@ -7,7 +7,7 @@ stack(route) := {"path": "clusters/k.yaml", "contents": {"kind": "HelmRelease", 
 
 schedule(cron) := {"path": "estate.plan.json", "contents": {"planned_values": {"root_module": {"child_modules": [{"resources": [{"address": "module.watchman.cloudflare_workers_cron_trigger.watchman", "type": "cloudflare_workers_cron_trigger", "values": {"schedules": [{"cron": cron}]}}]}]}}}}
 
-watchman(n) := schedule(sprintf("*/%d * * * *", [n]))
+watchman(n) := schedule($"*/{n} * * * *")
 
 route(group, repeat) := {"receiver": "watchman", "group_interval": group, "repeat_interval": repeat}
 

@@ -30,23 +30,23 @@ deny contains msg if {
 	some path in {p | some [p, _, _, _, _] in sites}
 	written := [[file, commit] | some [p, _, commit, file, _] in sites; p == path]
 	count(written) > 1
-	where := concat("\n  ", sort([sprintf("%s  @%s", [file, substring(commit, 0, 12)]) | some [file, commit] in written]))
-	msg := sprintf("%s is written in %d places:\n  %s\nAn action's commit may be written once. Reference the shared composite action with $/ instead, or add one under .github/workflows/<name>/action.yml holding the only literal.", [path, count(written), where])
+	where := concat("\n  ", sort([$"{file}  @{substring(commit, 0, 12)}" | some [file, commit] in written]))
+	msg := $"{path} is written in {count(written)} places:\n  {where}\nAn action's commit may be written once. Reference the shared composite action with $/ instead, or add one under .github/workflows/<name>/action.yml holding the only literal."
 }
 
 deny contains msg if {
 	some repo in {r | some [_, r, _, _, _] in sites}
 	commits := {commit | some [_, r, commit, _, _] in sites; r == repo}
 	count(commits) > 1
-	detail := concat("\n  ", sort([sprintf("%s  %s", [commit, concat(", ", sort({p | some [p, r, c, _, _] in sites; r == repo; c == commit}))]) | some commit in commits]))
-	msg := sprintf("%s is pinned to %d different commits across its action paths:\n  %s\nA commit belongs to the repository, not to a path inside it.", [repo, count(commits), detail])
+	detail := concat("\n  ", sort([$"{commit}  {concat(", ", sort({p | some [p, r, c, _, _] in sites; r == repo; c == commit}))}" | some commit in commits]))
+	msg := $"{repo} is pinned to {count(commits)} different commits across its action paths:\n  {detail}\nA commit belongs to the repository, not to a path inside it."
 }
 
 # A reading that found nothing would pass both rules. These are the smallest
 # numbers that could describe this repository at all.
 deny contains msg if {
 	count(lib.runnable) < 10
-	msg := sprintf("only %d workflow or action file(s) were read, so the commit rule checked almost nothing", [count(lib.runnable)])
+	msg := $"only {count(lib.runnable)} workflow or action file(s) were read, so the commit rule checked almost nothing"
 }
 
 deny contains msg if {

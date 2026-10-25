@@ -29,11 +29,11 @@ deny contains msg if {
 	some f in sources
 	given := object.get(ref(f), "digest", "")
 	not regex.match(digest, given)
-	msg := sprintf("%s: the release %q is not pinned by digest (ref.digest is %q). A tag can be moved in the registry without a pull request, so the site would run whatever it points at today. Pin the digest the fabricator reported for this release.", [f.path, f.contents.metadata.name, given])
+	msg := $"{f.path}: the release \"{f.contents.metadata.name}\" is not pinned by digest (ref.digest is \"{given}\"). A tag can be moved in the registry without a pull request, so the site would run whatever it points at today. Pin the digest the fabricator reported for this release."
 }
 
 deny contains msg if {
 	some f in sources
 	object.get(ref(f), "tag", "") == ""
-	msg := sprintf("%s: the release %q has no tag, so a diff moving its digest says nothing a person can read. Name the version beside the digest.", [f.path, f.contents.metadata.name])
+	msg := $"{f.path}: the release \"{f.contents.metadata.name}\" has no tag, so a diff moving its digest says nothing a person can read. Name the version beside the digest."
 }

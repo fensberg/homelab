@@ -17,6 +17,12 @@ package rules.config_template
 import data.lib
 import rego.v1
 
+# A brace of a template a message quotes, which a template string cannot
+# hold as it is.
+open := "{"
+
+close := "}"
+
 template := [f | some f in lib.at("config/management.tpl.json")]
 
 wrapped := `\{\{\s*op://[^}]*\}\}`
@@ -35,12 +41,12 @@ deny contains msg if {
 deny contains msg if {
 	some v in values
 	contains(regex.replace(v, wrapped, ""), "op://")
-	msg := sprintf("config/management.tpl.json has an unwrapped op:// reference (%s). op inject only substitutes {{ op://... }}. Unwrapped, the literal reference string is handed to whatever reads that key.", [v])
+	msg := $"config/management.tpl.json has an unwrapped op:// reference ({v}). op inject only substitutes {open}{open} op://... {close}{close}. Unwrapped, the literal reference string is handed to whatever reads that key."
 }
 
 deny contains msg if {
 	count(template) > 0
 	n := count([m | some v in values; some m in regex.find_n(wrapped, v, -1)])
 	n < 10
-	msg := sprintf("only %d wrapped references found; this rule is reading the wrong file", [n])
+	msg := $"only {n} wrapped references found; this rule is reading the wrong file"
 }

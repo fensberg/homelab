@@ -64,25 +64,25 @@ deny contains msg if {
 
 deny contains msg if {
 	count(scrape) != 1
-	msg := sprintf("%d ScrapeConfig named %s were found, and the watch is one", [count(scrape), name])
+	msg := $"{count(scrape)} ScrapeConfig named {name} were found, and the watch is one"
 }
 
 deny contains msg if {
 	some t in targets
 	not regex.match(workflow_of, t)
-	msg := sprintf("%s asks %q, which is not a workflow's latest completed scheduled run. Any other question gets an answer the rule does not read.", [where(scrape), t])
+	msg := $"{where(scrape)} asks \"{t}\", which is not a workflow's latest completed scheduled run. Any other question gets an answer the rule does not read."
 }
 
 deny contains msg if {
 	some file in scheduled
 	not file in asked
-	msg := sprintf("%s runs on a schedule and the cluster is not asked about it, so its failures reach nobody (#441). Add its address to the targets in %s.", [file, where(scrape)])
+	msg := $"{file} runs on a schedule and the cluster is not asked about it, so its failures reach nobody (#441). Add its address to the targets in {where(scrape)}."
 }
 
 deny contains msg if {
 	some file in asked
 	not file in scheduled
-	msg := sprintf("%s asks about %s, and no workflow of that name runs on a schedule. A renamed workflow drops out of the watch without a word; name it as it is now.", [where(scrape), file])
+	msg := $"{where(scrape)} asks about {file}, and no workflow of that name runs on a schedule. A renamed workflow drops out of the watch without a word; name it as it is now."
 }
 
 interval := object.get(scrape[0].contents.spec, "scrapeInterval", "")
@@ -90,7 +90,7 @@ interval := object.get(scrape[0].contents.spec, "scrapeInterval", "")
 deny contains msg if {
 	count(scrape) == 1
 	not regex.match(`^\d+m$`, interval)
-	msg := sprintf("%s asks every %q, which is not a number of minutes, so what it costs GitHub's allowance cannot be worked out", [where(scrape), interval])
+	msg := $"{where(scrape)} asks every \"{interval}\", which is not a number of minutes, so what it costs GitHub's allowance cannot be worked out"
 }
 
 allowed := 60
@@ -102,7 +102,7 @@ deny contains msg if {
 	every_minutes := to_number(trim_suffix(interval, "m"))
 	an_hour := floor((count(asked) * 60) / every_minutes)
 	an_hour > allowed / share
-	msg := sprintf("%s asks GitHub %d times an hour: %d workflows every %d minutes. A caller with no token is allowed %d from one address, and this may use half. Ask less often.", [where(scrape), an_hour, count(asked), every_minutes, allowed])
+	msg := $"{where(scrape)} asks GitHub {an_hour} times an hour: {count(asked)} workflows every {every_minutes} minutes. A caller with no token is allowed {allowed} from one address, and this may use half. Ask less often."
 }
 
 # How often each scheduled workflow is asked for: the most often of its
@@ -130,7 +130,7 @@ crons contains [basename(file), s.cron] if {
 deny contains msg if {
 	some [file, cron] in crons
 	count(split(trim_space(cron), " ")) != 5
-	msg := sprintf("%s is scheduled by %q, which is not five fields", [file, cron])
+	msg := $"{file} is scheduled by \"{cron}\", which is not five fields"
 }
 
 asked_for[file] := least if {
@@ -156,7 +156,7 @@ alerts contains r if {
 named := `instance=~"([^"]+)"`
 
 deny contains msg if {
-	msg := sprintf("an alert %s in %s names no workflow, so it is about every one of them at one deadline", [alert, where(object_of("PrometheusRule"))])
+	msg := $"an alert {alert} in {where(object_of("PrometheusRule"))} names no workflow, so it is about every one of them at one deadline"
 	some r in alerts
 	count(regex.find_all_string_submatch_n(named, r.expr, -1)) == 0
 }
@@ -171,24 +171,24 @@ deny contains msg if {
 	some [file, _] in deadlines
 	given := sort({g | some [f, g] in deadlines; f == file})
 	count(given) > 1
-	msg := sprintf("%s is given %d deadlines in %s, for %s", [file, count(given), where(object_of("PrometheusRule")), concat(" and for ", given)])
+	msg := $"{file} is given {count(given)} deadlines in {where(object_of("PrometheusRule"))}, for {concat(" and for ", given)}"
 }
 
 deny contains msg if {
 	some file, wanted in asked_for
 	not file in {f | some [f, _] in deadlines}
-	msg := sprintf("%s is asked for %s and has no deadline: if it stopped running, nothing would say so. Name it in the %s alert for %s workflows in %s.", [file, wanted, alert, wanted, where(object_of("PrometheusRule"))])
+	msg := $"{file} is asked for {wanted} and has no deadline: if it stopped running, nothing would say so. Name it in the {alert} alert for {wanted} workflows in {where(object_of("PrometheusRule"))}."
 }
 
 deny contains msg if {
 	some [file, got] in deadlines
 	wanted := asked_for[file]
 	got != wanted
-	msg := sprintf("%s is asked for %s and is held to the deadline for a %s workflow in %s, so it is either never late or always late.", [file, wanted, got, where(object_of("PrometheusRule"))])
+	msg := $"{file} is asked for {wanted} and is held to the deadline for a {got} workflow in {where(object_of("PrometheusRule"))}, so it is either never late or always late."
 }
 
 deny contains msg if {
 	some [file, _] in deadlines
 	not asked_for[file]
-	msg := sprintf("%s gives %s a deadline, and no workflow of that name runs on a schedule.", [where(object_of("PrometheusRule")), file])
+	msg := $"{where(object_of("PrometheusRule"))} gives {file} a deadline, and no workflow of that name runs on a schedule."
 }

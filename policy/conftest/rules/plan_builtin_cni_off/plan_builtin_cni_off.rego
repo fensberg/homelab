@@ -48,11 +48,11 @@ deny contains msg if {
 deny contains msg if {
 	some r in configurations
 	not holds(r, ["cluster", "network", "cni", "name"], "none")
-	msg := sprintf("%s: the machine's configuration does not set cluster.network.cni.name = \"none\". Talos would then install Flannel, which enforces no NetworkPolicy - the whole reason this estate moved to Cilium. Two CNIs would also both claim pod networking.", [r.address])
+	msg := $"{r.address}: the machine's configuration does not set cluster.network.cni.name = \"none\". Talos would then install Flannel, which enforces no NetworkPolicy - the whole reason this estate moved to Cilium. Two CNIs would also both claim pod networking."
 }
 
 deny contains msg if {
 	some r in configurations
 	not holds(r, ["cluster", "proxy", "disabled"], true)
-	msg := sprintf("%s: the machine's configuration does not set cluster.proxy.disabled = true. Cilium is configured with kubeProxyReplacement, so leaving kube-proxy running means two things programming service routing on every node.", [r.address])
+	msg := $"{r.address}: the machine's configuration does not set cluster.proxy.disabled = true. Cilium is configured with kubeProxyReplacement, so leaving kube-proxy running means two things programming service routing on every node."
 }

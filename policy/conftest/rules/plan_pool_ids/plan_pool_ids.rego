@@ -28,5 +28,5 @@ deny contains msg if {
 deny contains msg if {
 	some [address, r] in pools
 	not "local.site_name" in object.get(object.get(r.expressions, "pool_id", {}), "references", [])
-	msg := sprintf("%s has a pool id that does not include the site. Pools are datacenter-scoped, so an unprefixed id collides the moment two sites share a Proxmox cluster - and Proxmox answers a collision by adopting the other estate's machines into this pool rather than by failing.", [address])
+	msg := $"{address} has a pool id that does not include the site. Pools are datacenter-scoped, so an unprefixed id collides the moment two sites share a Proxmox cluster - and Proxmox answers a collision by adopting the other estate's machines into this pool rather than by failing."
 }

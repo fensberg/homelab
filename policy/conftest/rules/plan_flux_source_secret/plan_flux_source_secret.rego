@@ -58,7 +58,7 @@ created contains name if {
 deny contains msg if {
 	some [path, name] in named
 	not name in created
-	msg := sprintf("%s names secretRef %q, which nothing in this repository creates. A Flux source with a secretRef pointing at a missing secret does not fall back to anonymous access - it fails with AuthenticationFailed and never produces an artifact. If the repository is public, delete the secretRef. If it is not, create the secret where it is needed and name it here. Secrets this repository creates: %v", [path, name, sort(created)])
+	msg := $"{path} names secretRef \"{name}\", which nothing in this repository creates. A Flux source with a secretRef pointing at a missing secret does not fall back to anonymous access - it fails with AuthenticationFailed and never produces an artifact. If the repository is public, delete the secretRef. If it is not, create the secret where it is needed and name it here. Secrets this repository creates: {sort(created)}"
 }
 
 deny contains msg if {
@@ -69,5 +69,5 @@ deny contains msg if {
 deny contains msg if {
 	files := {f.path | some f in manifests}
 	count(files) < 10
-	msg := sprintf("only %d manifest(s) were read under clusters/, expected at least 10 - the reader has stopped finding them, so this rule proves nothing", [count(files)])
+	msg := $"only {count(files)} manifest(s) were read under clusters/, expected at least 10 - the reader has stopped finding them, so this rule proves nothing"
 }

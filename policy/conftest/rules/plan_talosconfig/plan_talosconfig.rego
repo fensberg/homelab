@@ -43,11 +43,11 @@ deny contains msg if {
 deny contains msg if {
 	some [_, r] in credentials
 	count(object.get(r.values, "nodes", [])) == 0
-	msg := sprintf("%s renders a talosconfig that sets no nodes. It is a working credential on which every node-targeted command refuses on first use and has to be re-run with -n, and the node addresses are the vault's to supply, not the operator's (#235).", [r.address])
+	msg := $"{r.address} renders a talosconfig that sets no nodes. It is a working credential on which every node-targeted command refuses on first use and has to be re-run with -n, and the node addresses are the vault's to supply, not the operator's (#235)."
 }
 
 deny contains msg if {
 	some [path, r] in credentials
 	count(object.get(r.values, "endpoints", [])) != control_planes(path)
-	msg := sprintf("%s renders a talosconfig with %d endpoint(s), and the site has %d control plane(s). Every control plane proxies the Talos API, so naming fewer loses the credential the moment one of them is the machine being diagnosed.", [r.address, count(object.get(r.values, "endpoints", [])), control_planes(path)])
+	msg := $"{r.address} renders a talosconfig with {count(object.get(r.values, "endpoints", []))} endpoint(s), and the site has {control_planes(path)} control plane(s). Every control plane proxies the Talos API, so naming fewer loses the credential the moment one of them is the machine being diagnosed."
 }

@@ -40,5 +40,5 @@ deny contains msg if {
 deny contains msg if {
 	some [address, r] in zoned
 	not keyed_off_the_zone(r)
-	msg := sprintf("%s is a zone resource keyed off something that is not of the zone. That builds it whether or not any untrusted machine exists, so an estate that has deprecated its last untrusted workload keeps maintaining the zone. Key it off a dmz collection - those are derived from the machines and are empty when there are none.", [address])
+	msg := $"{address} is a zone resource keyed off something that is not of the zone. That builds it whether or not any untrusted machine exists, so an estate that has deprecated its last untrusted workload keeps maintaining the zone. Key it off a dmz collection - those are derived from the machines and are empty when there are none."
 }

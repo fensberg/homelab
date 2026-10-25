@@ -18,7 +18,7 @@ import rego.v1
 # METADATA
 # description: Every rule's refusals, prefixed with the rule's package.
 # entrypoint: true
-deny contains sprintf("%s: %s", [name, msg]) if {
+deny contains $"{name}: {msg}" if {
 	some name, rules in data.rules
 	not endswith(name, "_test")
 	some msg in rules.deny
@@ -27,7 +27,7 @@ deny contains sprintf("%s: %s", [name, msg]) if {
 # METADATA
 # description: Every rule's warnings, prefixed with the rule's package.
 # entrypoint: true
-warn contains sprintf("%s: %s", [name, msg]) if {
+warn contains $"{name}: {msg}" if {
 	some name, rules in data.rules
 	not endswith(name, "_test")
 	some msg in rules.warn

@@ -28,7 +28,7 @@ deny contains msg if {
 	some [file, step] in checkouts
 	some key, _ in object.get(step, "with", {})
 	not key in {"fetch-depth", "persist-credentials"}
-	msg := sprintf("%s gives actions/checkout %q. A checkout here may only be told how deep to fetch. Anything that changes WHAT is checked out lets a caller place code that was never reviewed where later steps execute (#409). To read other code, fetch it as data into its own worktree and do not run it, as clerk.yml does.", [file, key])
+	msg := $"{file} gives actions/checkout \"{key}\". A checkout here may only be told how deep to fetch. Anything that changes WHAT is checked out lets a caller place code that was never reviewed where later steps execute (#409). To read other code, fetch it as data into its own worktree and do not run it, as clerk.yml does."
 }
 
 # A run on a trigger anybody's pull request reaches, holding secrets, never
@@ -52,7 +52,7 @@ deny contains msg if {
 	some step in object.get(job, "steps", [])
 	run := object.get(step, "run", "")
 	m := regex.find_n(moves_workspace, run, 1)[0]
-	msg := sprintf("%s job %q step %q runs %q. This workflow runs with secrets on a trigger that anybody's pull request can reach, and that command replaces what is in the workspace - where every later step, and every ./ action, executes from. A pull request's code belongs in its own worktree, read and never run.", [file, name, object.get(step, "name", ""), trim_space(m)])
+	msg := $"{file} job \"{name}\" step \"{object.get(step, "name", "")}\" runs \"{trim_space(m)}\". This workflow runs with secrets on a trigger that anybody's pull request can reach, and that command replaces what is in the workspace - where every later step, and every ./ action, executes from. A pull request's code belongs in its own worktree, read and never run."
 }
 
 deny contains msg if {
@@ -62,7 +62,7 @@ deny contains msg if {
 	run := object.get(step, "run", "")
 	regex.match(`refs/pull/|pull_request\.head`, run)
 	not contains(run, "git worktree add")
-	msg := sprintf("%s job %q step %q fetches a pull request's code without its own worktree. In a run holding secrets, a pull request is data. Fetch it into a worktree of its own - `git worktree add --detach <dir> <commit>` - so nothing that executes from the workspace can be reached by it.", [file, name, object.get(step, "name", "")])
+	msg := $"{file} job \"{name}\" step \"{object.get(step, "name", "")}\" fetches a pull request's code without its own worktree. In a run holding secrets, a pull request is data. Fetch it into a worktree of its own - `git worktree add --detach <dir> <commit>` - so nothing that executes from the workspace can be reached by it."
 }
 
 # A workflow that takes inputs when dispatched can publish nothing: whoever
@@ -79,12 +79,12 @@ writes(null) := {"declares no permissions, so it has whatever the repository's d
 
 writes(perms) := set() if perms in {"read-all", {}}
 
-writes(perms) := {sprintf("has permissions: %v", [perms])} if {
+writes(perms) := {$"has permissions: {perms}"} if {
 	is_string(perms)
 	perms != "read-all"
 }
 
-writes(perms) := {sprintf("may %s %s", [level, scope]) | some scope, level in perms; not level in {"read", "none"}} if {
+writes(perms) := {$"may {level} {scope}" | some scope, level in perms; not level in {"read", "none"}} if {
 	is_object(perms)
 	perms != {}
 }
@@ -93,7 +93,7 @@ deny contains msg if {
 	some file, doc in lib.workflows
 	dispatched(doc)
 	some why in writes(object.get(doc, "permissions", null))
-	msg := sprintf("%s takes inputs and %s. Whoever dispatches it would choose what goes into what it publishes. Take the input away, or the write.", [file, why])
+	msg := $"{file} takes inputs and {why}. Whoever dispatches it would choose what goes into what it publishes. Take the input away, or the write."
 }
 
 deny contains msg if {
@@ -102,7 +102,7 @@ deny contains msg if {
 	some name, job in object.get(doc, "jobs", {})
 	job.permissions
 	some why in writes(job.permissions)
-	msg := sprintf("%s takes inputs and its job %s %s. Whoever dispatches it would choose what goes into what it publishes. Take the input away, or the write.", [file, name, why])
+	msg := $"{file} takes inputs and its job {name} {why}. Whoever dispatches it would choose what goes into what it publishes. Take the input away, or the write."
 }
 
 # A workflow started by another takes nothing from it but its outcome: it
@@ -118,20 +118,20 @@ deny contains msg if {
 	is_string(v)
 	some m in regex.find_all_string_submatch_n(`github\.event\.workflow_run\.([a-z_]+)`, v, -1)
 	not m[1] in {"name", "conclusion", "event", "html_url"}
-	msg := sprintf("%s reads the watched run's %s, which whoever started that run may have chosen. Read its name, conclusion, event and address and nothing else.", [file, m[1]])
+	msg := $"{file} reads the watched run's {m[1]}, which whoever started that run may have chosen. Read its name, conclusion, event and address and nothing else."
 }
 
 deny contains msg if {
 	some [file, doc] in watchers
 	some step in all_steps(doc)
 	regex.match(`(checkout|download-artifact)\b`, object.get(step, "uses", ""))
-	msg := sprintf("%s checks out or downloads an artifact, so the watched run's code or output reaches a privileged runner", [file])
+	msg := $"{file} checks out or downloads an artifact, so the watched run's code or output reaches a privileged runner"
 }
 
 deny contains msg if {
 	some [file, doc] in watchers
 	not tells_nothing_checked_out(doc)
-	msg := sprintf("%s does not tell its first step to check nothing out", [file])
+	msg := $"{file} does not tell its first step to check nothing out"
 }
 
 tells_nothing_checked_out(doc) if {
@@ -143,7 +143,7 @@ tells_nothing_checked_out(doc) if {
 deny contains msg if {
 	some [file, doc] in watchers
 	not is_object(object.get(doc, "permissions", null))
-	msg := sprintf("%s does not spell out its permissions", [file])
+	msg := $"{file} does not spell out its permissions"
 }
 
 deny contains msg if {
@@ -151,7 +151,7 @@ deny contains msg if {
 	some scope, level in object.get(doc, "permissions", {})
 	not level in {"read", "none"}
 	scope != "issues"
-	msg := sprintf("%s may %s %s, and it runs with the default branch's token whoever started the run it watches", [file, level, scope])
+	msg := $"{file} may {level} {scope}, and it runs with the default branch's token whoever started the run it watches"
 }
 
 deny contains msg if {
@@ -159,9 +159,9 @@ deny contains msg if {
 	some name, job in object.get(doc, "jobs", {})
 	perms := job.permissions
 	some why in watcher_job_problems(perms)
-	msg := sprintf("%s, in its job %s, %s", [file, name, why])
+	msg := $"{file}, in its job {name}, {why}"
 }
 
 watcher_job_problems(perms) := {"does not spell out its permissions"} if not is_object(perms)
 
-watcher_job_problems(perms) := {sprintf("may %s %s", [level, scope]) | some scope, level in perms; not level in {"read", "none"}; scope != "issues"} if is_object(perms)
+watcher_job_problems(perms) := {$"may {level} {scope}" | some scope, level in perms; not level in {"read", "none"}; scope != "issues"} if is_object(perms)
