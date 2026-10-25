@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+rule: supplier_providers
+file: scripts/approved-suppliers.yml
+find: "  - source: tailscale/tailscale\n"
+replace: "  - source: tailscale/tailscale-gone\n"
+mentions: 'the provider "tailscale/tailscale", which is not an approved supplier'
+why: >
+  A provider runs with the estate's credentials. One the list no longer
+  declares and a root still locks is the most privileged delivery unapproved.

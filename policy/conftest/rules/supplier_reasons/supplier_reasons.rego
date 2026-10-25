@@ -19,12 +19,6 @@ package rules.supplier_reasons
 import data.lib
 import rego.v1
 
-hook_repos := [r | some f in lib.at(".pre-commit-config.yaml"); some r in object.get(f.contents, "repos", []); r.repo != "local"]
-
-declared_hooks[h.repo] := object.get(h, "reason", "") if {
-	some h in object.get(list, "hooks", [])
-}
-
 list := [f.contents | some f in lib.at("scripts/approved-suppliers.yml")][0]
 
 # Every reason has to be filled in. An entry with no reason is somebody
@@ -77,13 +71,6 @@ deny contains msg if {
 	some e in object.get(list, "exemptions", [])
 	not object.get(e, "issue", 0) > 0
 	msg := $"exemption for \"{e.path}\" names no issue. File the work it defers and put the number in issue:, or fix the thing instead - a red check is not on its own a reason to write an excuse."
-}
-
-deny contains msg if {
-	some r in hook_repos
-	reason := declared_hooks[r.repo]
-	trim_space(reason) == ""
-	msg := $"{r.repo} is declared with no reason. The reason is what a reviewer reads when deciding whether this supplier still belongs."
 }
 
 deny contains msg if {

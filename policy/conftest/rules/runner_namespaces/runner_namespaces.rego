@@ -30,8 +30,6 @@ import rego.v1
 
 releases(name) := [f | some f in lib.objects; f.contents.kind == "HelmRelease"; f.contents.metadata.name == name]
 
-sets := [f | some f in lib.objects; f.contents.kind == "HelmRelease"; f.contents.spec.chart.spec.chart == "gha-runner-scale-set"]
-
 local(name) := {[f.path, v] |
 	some f in lib.opentofu
 	some block in object.get(f.contents, "locals", [])

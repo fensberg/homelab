@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+rule: scheduled_deadlines
+file: .github/workflows/codeql.yml
+find: "    - cron: \"41 5 * * 0\"\n"
+replace: "    - cron: \"41 5 * * *\"\n"
+mentions: "either never late or always late"
+why: >
+  A workflow that is now asked for daily and still held to the weekly
+  deadline would go six days without running before anything said so.

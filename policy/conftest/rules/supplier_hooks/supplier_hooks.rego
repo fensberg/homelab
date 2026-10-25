@@ -55,3 +55,10 @@ deny contains msg if {
 	rev in {"", "main", "master", "HEAD"}
 	msg := $"{r.repo} is pinned to \"{rev}\", which moves. The code that runs on the next commit would not be the code anybody reviewed."
 }
+
+deny contains msg if {
+	some r in hook_repos
+	reason := declared_hooks[r.repo]
+	trim_space(reason) == ""
+	msg := $"{r.repo} is declared with no reason. The reason is what a reviewer reads when deciding whether this supplier still belongs."
+}

@@ -60,3 +60,8 @@ test_a_moving_rev_is_refused if {
 	denies(supplier_hooks.deny, `is pinned to "main", which moves`) with input as swap(5, hooks([object.union(hook, {"rev": "main"})]))
 	denies(supplier_hooks.deny, `is pinned to "", which moves`) with input as swap(5, hooks([object.remove(hook, ["rev"])]))
 }
+
+test_a_hook_declared_with_no_reason_is_refused if {
+	silent := list({"hooks": [{"repo": "https://github.com/pre-commit/pre-commit-hooks", "reason": " "}]})
+	denies(supplier_hooks.deny, "is declared with no reason") with input as swap(0, silent)
+}

@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+rule: cni_mtu
+file: clusters/bootstrap/cilium.yaml
+find: "  mtu: \"1450\"\n"
+replace: "  mtu: \"1400\"\n"
+mentions: "and the committed manifest says 1400"
+why: >
+  The cluster runs the committed render, not the values it was made from. A
+  render that disagrees with the pin is a pin that changes nothing.
