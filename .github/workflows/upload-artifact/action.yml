@@ -1,6 +1,6 @@
 # The one place the actions/upload-artifact commit is written.
 #
-# policy/conftest/action_commits.rego allows an action's commit to be written
+# policy/conftest/rules/action_commits/action_commits.rego allows an action's commit to be written
 # once; the converge's verdict and the as-built record from two workflows
 # needed it in three places.
 #

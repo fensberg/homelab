@@ -1,7 +1,7 @@
 # The one place the github/codeql-action/upload-sarif commit is written.
 #
 # codeql-action's init and analyze are each used once, in codeql.yml, and stay
-# there. policy/conftest/action_commits.rego requires every path of one action
+# there. policy/conftest/rules/action_commits/action_commits.rego requires every path of one action
 # repository to carry the same commit, so this and those cannot drift apart.
 #
 # Empty ref, sha and category are passed through as empty, which codeql-action

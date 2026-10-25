@@ -117,6 +117,28 @@ func TestEveryConfigurationRuleProvesItself(t *testing.T) {
 	}
 }
 
+// regalProgram is OPA's own linter for Rego, delivered by
+// scripts/take-delivery.sh.
+const regalProgram = "regal"
+
+// Every rule is written as OPA's linter would have it: one property to a
+// package, each in a directory of its own, and its refusals together. What
+// Regal checks and how strictly is .regal/config.yaml's to say, so this, the
+// lane and a person at a terminal lint alike.
+func TestTheConfigurationRulesAreWrittenAsTheirLinterWouldHaveThem(t *testing.T) {
+	heavy(t, "lints every policy file with regal")
+	if _, err := exec.LookPath(regalProgram); err != nil {
+		t.Fatal("regal is not on PATH; take delivery of it: scripts/take-delivery.sh regal")
+	}
+	stdout, stderr, err := repository(t).Invoke(parsed.Run{Env: []string{"NO_COLOR=1"}}, regalProgram, "lint", conftestRules)
+	if err != nil {
+		if _, failed := err.(*exec.ExitError); !failed {
+			t.Fatalf("regal could not be run: %v", err)
+		}
+		t.Errorf("a policy file is not written as Regal would have it:\n\n%s%s", stdout, stderr)
+	}
+}
+
 // opaProgram is the policy engine itself, delivered by scripts/take-delivery.sh:
 // Conftest runs the rules on it, and this reads them with it.
 const opaProgram = "opa"

@@ -64,7 +64,8 @@ concurrency:
 # rather than errors. It is set on every workflow, including those with no
 # `run:` step today, so the one added tomorrow is already covered.
 #
-# policy/conftest/workflow_shape.rego asserts this is present.
+# policy/conftest/rules/workflow_pipefail/workflow_pipefail.rego asserts this
+# is present.
 defaults:
   run:
     shell: bash

@@ -1,6 +1,6 @@
 # The one place the actions/download-artifact commit is written.
 #
-# policy/conftest/action_commits.rego allows an action's commit to be written
+# policy/conftest/rules/action_commits/action_commits.rego allows an action's commit to be written
 # once. Empty inputs are passed through as empty, which the action reads as
 # unset: no run-id means this run's own artifacts.
 name: "Download artifact"
