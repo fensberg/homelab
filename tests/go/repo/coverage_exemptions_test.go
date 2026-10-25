@@ -72,6 +72,28 @@ var knownTiers = map[string]bool{
 // Measured rather than read from a checked-in profile: a profile committed
 // alongside the code it describes is a second copy that drifts, and the whole
 // point here is to catch drift.
+// coverageProfilesEnv names the directory of coverage profiles a lane has
+// already written, one <module>.out per module under scripts/. The Go modules
+// lane runs every module's tests once, with coverage, and this judges what that
+// run measured rather than running them again (#815). Unset, as on a
+// workstation, the profiles are made here in the same way.
+const coverageProfilesEnv = "GO_COVERAGE_PROFILES"
+
+// coverageProfile is a module's profile in the directory a lane gave, or
+// nothing when no directory was given. A directory that holds no profile for
+// a module is refused: that module's tests did not run with coverage, and
+// judging the others alone would pass it unread.
+func coverageProfile(given, module string) (string, error) {
+	if given == "" {
+		return "", nil
+	}
+	profile := filepath.Join(given, module+".out")
+	if _, err := os.Stat(profile); err != nil {
+		return "", fmt.Errorf("%s is %s, and it holds no coverage profile for %s, so that module's tests did not run with coverage: %w", coverageProfilesEnv, given, module, err)
+	}
+	return profile, nil
+}
+
 func uncoveredByFile(t *testing.T) map[string][]string {
 	t.Helper()
 	tree := repository(t)
@@ -88,12 +110,19 @@ func uncoveredByFile(t *testing.T) map[string][]string {
 	//
 	// Paths are prefixed with the module, so two modules with an internal/run
 	// cannot collide and the file says which program each entry is about.
+	given := os.Getenv(coverageProfilesEnv)
 	for _, module := range goModules(t) {
 		dir := "scripts/" + module
 
-		profile := filepath.Join(t.TempDir(), module+".out")
-		if out, errs, err := tree.Invoke(parsed.Run{Dir: dir}, "go", "test", "-covermode=atomic", "-coverprofile="+profile, "./..."); err != nil {
-			t.Fatalf("running the %s tests with coverage: %v\n%s%s", module, err, out, errs)
+		profile, err := coverageProfile(given, module)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if profile == "" {
+			profile = filepath.Join(t.TempDir(), module+".out")
+			if out, errs, err := tree.Invoke(parsed.Run{Dir: dir}, "go", "test", "-covermode=atomic", "-coverprofile="+profile, "./..."); err != nil {
+				t.Fatalf("running the %s tests with coverage: %v\n%s%s", module, err, out, errs)
+			}
 		}
 		raw, err := os.ReadFile(profile)
 		if err != nil {
@@ -372,4 +401,22 @@ func guardedFixture(t *testing.T) (*token.FileSet, *ast.File) {
 	fixture.Write(t, "p.go", guardedAtTheDoor)
 	fset := token.NewFileSet()
 	return fset, fixture.Go(t, fset, "p.go")
+}
+
+// A lane's profiles are read where it says they are, and a module it did not
+// profile is refused rather than passed over.
+func TestACoverageProfileIsReadWhereTheLaneWroteIt(t *testing.T) {
+	if p, err := coverageProfile("", "contractor"); p != "" || err != nil {
+		t.Errorf("with no directory given, got %q, %v; want the profile made here", p, err)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "contractor.out"), []byte("mode: atomic\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if p, err := coverageProfile(dir, "contractor"); err != nil || p != filepath.Join(dir, "contractor.out") {
+		t.Errorf("got %q, %v; want the lane's profile", p, err)
+	}
+	if _, err := coverageProfile(dir, "security"); err == nil || !strings.Contains(err.Error(), "holds no coverage profile for security") {
+		t.Errorf("a module the lane did not profile was not refused: %v", err)
+	}
 }
