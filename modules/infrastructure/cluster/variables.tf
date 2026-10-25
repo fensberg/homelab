@@ -300,7 +300,7 @@ locals {
   # window in which it costs nothing. Ignite on 1.31 and the estate carries an
   # out-of-support control plane until epoch 05 exists to move it.
   #
-  # policy/conftest/rules/versions/versions.rego asserts kubectl stays within one minor.
+  # policy/conftest/rules/client_skew/client_skew.rego asserts kubectl stays within one minor.
   kubernetes_version = "1.36.3"
   # Two system extensions, generated via factory.talos.dev's schematic API:
   # siderolabs/tailscale and siderolabs/util-linux-tools. Talos ships neither

@@ -55,7 +55,7 @@ runs:
       # this action is for; the answer is to bound what may be written,
       # which the pattern does, not to find another way to write anything.
       # proved by TestTheConfigurationRulesHold, whose rule
-      # (policy/conftest/rules/version_pins/version_pins.rego) holds the pattern to being here
+      # (policy/conftest/rules/version_exports/version_exports.rego) holds the pattern to being here
       # and every pin to matching it.
       run: | # zizmor: ignore[github-env]
         set -euo pipefail

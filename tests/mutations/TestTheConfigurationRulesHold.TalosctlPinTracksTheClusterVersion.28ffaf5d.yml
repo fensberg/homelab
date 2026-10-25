@@ -1,6 +1,6 @@
 # --- Proved during the epoch-01 close-out ---------------------------------
 guard: TestTheConfigurationRulesHold
-rule: versions
+rule: client_skew
 file: scripts/versions.env
 find: "TALOSCTL_VERSION=v1.13.8"
 replace: "TALOSCTL_VERSION=v1.9.0"

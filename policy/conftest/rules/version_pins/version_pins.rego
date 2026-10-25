@@ -1,5 +1,6 @@
-# What scripts/versions.env pins, it alone pins, and every pin is one the
-# workflows can read.
+# What scripts/versions.env pins, it alone pins: no workflow writes down a
+# version of its own, whether as the pin's own key or as a setup action's
+# version input.
 #
 # versions.env is only "the one place a version is pinned" if nothing else
 # writes one down. Workflows were the leak: pr-validation.yml carried its own
@@ -12,17 +13,7 @@
 # `${{ env.GO_VERSION }}`), so a value that starts with $ is a reference and
 # passes.
 #
-# The composite action only exports a line whose key ends in _VERSION and
-# whose value starts alphanumerically and holds nothing but
-# [A-Za-z0-9._+-]. That pattern is a security boundary, not a convenience:
-# this repository is public and pr-validation.yml runs on pull_request, so on
-# a fork's branch versions.env is attacker-controlled, and a free-form
-# KEY=VALUE written to $GITHUB_ENV is how LD_PRELOAD or NODE_OPTIONS becomes
-# code execution in a later step.
-#
-# The cost of a narrow pattern is that a key outside it is skipped in
-# silence, and the job then runs with an empty version rather than failing.
-# So every key here must be one the action can actually export.
+# That every pin is one a workflow can read is rules.version_exports.
 package rules.version_pins
 
 import data.lib
@@ -35,18 +26,6 @@ open := "{"
 close := "}"
 
 pins := [f.contents | some f in lib.at("scripts/versions.env")][0]
-
-exporter := [f | some f in lib.at(".github/actions/versions/action.yml")]
-
-deny contains msg if {
-	count(pins) == 0
-	msg := "versions.env declares nothing, so this rule proves nothing"
-}
-
-deny contains msg if {
-	count(exporter) == 0
-	msg := ".github/actions/versions/action.yml is missing. Without it a workflow cannot read scripts/versions.env, and the only way to give a job a version is to declare one - which is what this rule forbids."
-}
 
 literal := `^["']?[^$\s"']`
 
@@ -70,27 +49,47 @@ declares contains [file, key] if {
 	regex.match($`(?m)^\s*{key}\s*[:=]\s*["']?[^$\s"']`, v)
 }
 
+# Nor does a setup action restate one as its version input.
+#
+# WHAT THIS GUARDS. versions.env claimed, from the day it was written, that a
+# test asserted no consumer restates a key - and none did (#165). Four
+# workflows carried their own `go-version: "1.26.7"`, including
+# deploy-infrastructure, the lane that reaches real hardware. They agreed with
+# the pin that day. Nothing kept them agreeing, and the same drift had
+# already happened once here, as the TOFU_VERSION above.
+#
+# The rule is shape, not value: every `<tool>-version:` input to a setup action
+# reads the pin through the environment the versions action exports. Checking
+# values instead would miss a restatement that happens to agree today, which is
+# the exact state all four were in.
+setup_input := `^(?:go|node|python|java|dotnet|tofu|opentofu|terraform|helm|kubectl)[-_]version$`
+
+inputs contains [file, key, v] if {
+	some file, doc in lib.runnable
+	walk(doc, [path, v])
+	count(path) > 0
+	key := path[count(path) - 1]
+	is_string(key)
+	regex.match(setup_input, key)
+}
+
+deny contains msg if {
+	count(pins) == 0
+	msg := "versions.env declares nothing, so this rule proves nothing"
+}
+
 deny contains msg if {
 	some [file, key] in declares
 	msg := $"{file} declares {key} itself. versions.env owns that pin. Read it with `uses: ./.github/actions/versions` and refer to ${open}{open} env.{key} {close}{close} instead - a second declaration is a version that drifts silently."
 }
 
-exportable := `^[A-Z][A-Z0-9_]*_VERSION=[A-Za-z0-9][A-Za-z0-9._+-]*$`
-
 deny contains msg if {
-	some key, value in pins
-	not regex.match(exportable, $"{key}={value}")
-	msg := $"versions.env declares \"{key}\", which .github/actions/versions will not export. A key must end in _VERSION, and a value must begin with a letter or digit and contain only letters, digits, dot, underscore, plus or dash. Anything else is skipped silently and the job runs with an empty value - see the action for why the pattern is deliberately this narrow. A checksum does not belong here at all: versions.env holds decisions, and a hash is what a supplier served for one. Declare the tool with fetch: or pypi: in scripts/approved-suppliers.yml and run task order-deliveries, which writes it to scripts/deliveries.lock (#416)."
-}
-
-restricts(f) if {
-	walk(f.contents, [_, v])
-	is_string(v)
-	contains(v, "_VERSION=[A-Za-z0-9][A-Za-z0-9._+-]*$")
+	some [file, key, v] in inputs
+	not startswith($"{v}", "${{")
+	msg := $"{file} restates a pinned version: {key}: {v}. Read it from scripts/versions.env instead: add the step `uses: ./.github/actions/versions` after the checkout, and write {key}: ${open}{open} env.<KEY> {close}{close}. A literal agrees with the pin only until the pin moves, and nothing says when it stops agreeing."
 }
 
 deny contains msg if {
-	msg := ".github/actions/versions no longer restricts what it writes to $GITHUB_ENV. On a fork's pull request versions.env is attacker-controlled, and an unconstrained write to the environment file is code execution in every later step - including the TruffleHog lane, which is the one lane deliberately not egress-blocked."
-	some f in exporter
-	not restricts(f)
+	count(inputs) < 2
+	msg := $"found only {count(inputs)} version input(s) - the pattern has stopped matching, so this rule proves nothing"
 }
