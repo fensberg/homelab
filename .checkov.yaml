@@ -66,7 +66,7 @@ skip-check:
   # the reason is general and is held for every workflow: one that takes
   # inputs holds no write permission, so there is no output for an input to
   # have shaped. proved by TestTheConfigurationRulesHold, whose rule this is
-  # (policy/conftest/rules/workflow_trust/workflow_trust.rego, a workflow that takes inputs)
+  # (policy/conftest/rules/dispatch_inputs/dispatch_inputs.rego)
   #
   # This went unseen until the exclusion of the test trees below was found to
   # cover every path with "tests" in it, that workflow's among them.

@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: workflow_trust
+rule: watcher_runs
 file: .github/workflows/planted-watcher.yml
 create: |
   name: Planted watcher

@@ -1,5 +1,5 @@
 guard: TestTheConfigurationRulesHold
-rule: workflow_trust
+rule: checkout_settings
 file: .github/workflows/checkout/action.yml
 find: "persist-credentials: false"
 replace: "persist-credentials: false\n        repository: someone/else"
