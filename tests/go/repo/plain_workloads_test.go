@@ -55,6 +55,7 @@ type plainWorkload struct {
 }
 
 func TestEveryPlainWorkloadIsSizedPlacedAndGivenAPriority(t *testing.T) {
+	light(t)
 	declared := declaredPriorityClasses(t)
 	found := plainWorkloads(t)
 	if len(found) == 0 {
@@ -191,6 +192,7 @@ func kustomizePatchFiles(t *testing.T) map[string]bool {
 // Every file declared as owned elsewhere still exists, or the declaration is
 // a hole with a reason attached to nothing.
 func TestEveryPlainWorkloadExemptionNamesARealFile(t *testing.T) {
+	light(t)
 	for _, e := range plainWorkloadsElsewhere {
 		if strings.TrimSpace(e.why) == "" {
 			t.Errorf("the %s %s is exempted with no reason", e.kind, e.name)

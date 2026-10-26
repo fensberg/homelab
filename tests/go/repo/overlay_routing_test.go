@@ -29,6 +29,7 @@ import (
 // priority is indistinguishable from no rule at all, and the failure it
 // produces looks like a broken cluster rather than a routing rule.
 func TestMarkedRepliesReachTheLocalTable(t *testing.T) {
+	light(t)
 	for _, p := range localTableRuleProblems(hypervisorCommands(t)) {
 		t.Error(p)
 	}
@@ -111,6 +112,7 @@ func localTableRuleProblems(commands []parsed.Command) []string {
 // playbook rather than recorded once against one machine - which is what makes
 // it survive a second hypervisor in this site, or a second site entirely.
 func TestTheRoutingFixIsAppliedPerHostNotPerSite(t *testing.T) {
+	light(t)
 	if !restartsWithTheRule(t, hypervisorPlay(t)) {
 		t.Error("the routing fix does not survive a daemon restart: no drop-in for tailscaled " +
 			"adds the local-table rule when the daemon starts.\n" +
@@ -159,6 +161,7 @@ func restartsWithTheRule(t *testing.T, play parsed.Play) bool {
 // clients see an IPv6-capable host, prefer it, and fail with EADDRNOTAVAIL.
 // That took the overlay's control plane down for hours.
 func TestIPv6IsDisabledAtTheStack(t *testing.T) {
+	light(t)
 	set := kernelSettings(hypervisorPlay(t))
 	for _, want := range []string{"net.ipv6.conf.all.disable_ipv6", "net.ipv6.conf.default.disable_ipv6"} {
 		if set[want] != "1" {
@@ -200,6 +203,7 @@ func kernelSettings(play parsed.Play) map[string]string {
 // The rule is read from the commands that add it, whatever order its
 // words come in, and judged by where it sits against the overlay's own.
 func TestTheLocalTableRuleIsJudgedByThePlaceItIsAddedAt(t *testing.T) {
+	light(t)
 	command := func(line string) []parsed.Command {
 		c, err := parsed.TemplateCommands("fixture", line)
 		if err != nil {
@@ -254,6 +258,7 @@ func hypervisorCommands(t *testing.T) []parsed.Command {
 // computer can do is not a step to ask somebody for, and an instruction that
 // lives only in a reply is lost at the next context refresh.
 func TestSetupConfiguresCommitSigning(t *testing.T) {
+	light(t)
 	setup := parsed.Commands(repository(t).Shell(t, installDependencies))
 	configures := func(setting string) []parsed.Command {
 		var out []parsed.Command

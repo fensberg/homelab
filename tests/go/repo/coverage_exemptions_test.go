@@ -350,6 +350,7 @@ func blocksOf(t *testing.T, profile string) []coverageBlock {
 // A test that runs the check at the top of a function and nothing below it
 // has not tested the function.
 func TestAFunctionWhoseDoorAloneIsRunIsUntested(t *testing.T) {
+	light(t)
 	blocks := blocksOf(t, `mode: atomic
 p/p.go:3.31,4.16 1 4
 p/p.go:4.16,6.3 1 4
@@ -370,6 +371,7 @@ p/p.go:18.20,22.2 3 1
 // A function held in a variable is a function, and one no test runs is
 // counted. `go tool cover -func` does not list it at all.
 func TestAFunctionHeldInAVariableIsCounted(t *testing.T) {
+	light(t)
 	blocks := blocksOf(t, `mode: atomic
 p/p.go:3.31,4.16 1 4
 p/p.go:4.16,6.3 1 4
@@ -388,6 +390,7 @@ p/p.go:18.20,22.2 3 1
 }
 
 func TestAProfileLineThatIsNotABlockIsRefused(t *testing.T) {
+	light(t)
 	if _, err := coverageBlocks("mode: atomic\np/p.go: something else\n"); err == nil {
 		t.Fatal("a profile this cannot read was read as a file with nothing untested")
 	}
@@ -406,7 +409,7 @@ func guardedFixture(t *testing.T) (*token.FileSet, *ast.File) {
 // A lane's profiles are read where it says they are, and a module it did not
 // profile is refused rather than passed over.
 func TestACoverageProfileIsReadWhereTheLaneWroteIt(t *testing.T) {
-	t.Parallel()
+	light(t)
 	if p, err := coverageProfile("", "contractor"); p != "" || err != nil {
 		t.Errorf("with no directory given, got %q, %v; want the profile made here", p, err)
 	}

@@ -276,6 +276,10 @@ unprovable:
     reason: table
   - test: TestAGroupOfRunnersIsAWallOnlyWhileItNamesWhatItAdmits
     reason: table
+  # The reader behind TestEveryGuardOpensBySayingHowItRuns, which its own
+  # ledger entry proves. Its table holds each way a guard may open.
+  - test: TestAGuardsOpeningIsReadFromItsFirstStatement
+    reason: table
   # The reader behind TestEveryCoverageFloorIsOneALaneMeasures, which its
   # own ledger entry proves. Its table holds each way the gate is handed a key.
   - test: TestAFloorIsMeasuredWhereTheGateIsHandedIt

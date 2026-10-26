@@ -149,6 +149,7 @@ func pullRequestRunnerOrder(t *testing.T) workorders.Order {
 }
 
 func TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake(t *testing.T) {
+	light(t)
 	tree := repository(t)
 	order := pullRequestRunnerOrder(t)
 	rel := order.Context + "/Dockerfile"

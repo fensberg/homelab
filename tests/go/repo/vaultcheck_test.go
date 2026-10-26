@@ -30,6 +30,7 @@ import (
 // removed: renaming the *call* while keeping the files would not be caught by
 // anything else.
 func TestVaultCheckStillExists(t *testing.T) {
+	light(t)
 	probe := repository(t).Go(t, token.NewFileSet(), "scripts/contractor/internal/phases/checkvault.go")
 	// The report has to actually be driven by a probe, or the rules in
 	// policy/semgrep/vault-check.yml are guarding a function nobody calls.

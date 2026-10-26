@@ -57,6 +57,7 @@ func goModules(t *testing.T) []string {
 // fails `task test:coverage` - but only when that task runs, and it is not on
 // the pull request path. This says the same thing in the tier that is.
 func TestEveryGoModuleHasACoverageFloor(t *testing.T) {
+	light(t)
 	var baseline struct {
 		Baselines map[string]float64 `json:"baselines"`
 	}
@@ -89,7 +90,7 @@ whatever the last green run happened to hit.`, key, m, key)
 // scripts/coverage-gate.sh, read through the shell parser, with go/$module
 // worked out from the modules the tree has.
 func TestEveryCoverageFloorIsOneALaneMeasures(t *testing.T) {
-	t.Parallel()
+	light(t)
 	var baseline struct {
 		Baselines map[string]float64 `json:"baselines"`
 	}
@@ -135,7 +136,7 @@ func gatedFloors(commands []parsed.Command, modules []string) map[string]bool {
 
 // The reading, on commands made up here.
 func TestAFloorIsMeasuredWhereTheGateIsHandedIt(t *testing.T) {
-	t.Parallel()
+	light(t)
 	got := gatedFloors([]parsed.Command{
 		{Words: []string{"bash", "scripts/coverage-gate.sh", `"go/$module"`, `"$pct"`}},
 		{Words: []string{"bash", "scripts/coverage-gate.sh", "go/tests-helpers", "$pct"}},

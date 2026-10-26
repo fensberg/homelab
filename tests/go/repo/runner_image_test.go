@@ -17,6 +17,7 @@ import (
 // So scripts/versions.env is the only place a version is written, and this
 // asserts neither consumer restates one.
 func TestVersionsAreDeclaredOnceAndSharedByBoth(t *testing.T) {
+	light(t)
 	tree := repository(t)
 
 	pins := versionsPinned(t)
@@ -99,6 +100,7 @@ func TestVersionsAreDeclaredOnceAndSharedByBoth(t *testing.T) {
 // on the runner, minutes into a converge - which is how the image came to
 // exist in the first place.
 func TestRunnerImageCarriesEveryBinaryTheContractorInvokes(t *testing.T) {
+	light(t)
 	installs := runs(dockerfile(t, runnerImageDockerfile))
 
 	// Hand-maintained, and it drifted: the Health phase started shelling out

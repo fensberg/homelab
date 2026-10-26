@@ -34,8 +34,8 @@ import (
 // (homelab/details/applications): it is passed over here, and its turn comes
 // when what requires it is gone.
 func TestAnApplicationIsRemovedByDeletingItsDirectoryAndItsBlocks(t *testing.T) {
-	skipIfInner(t)
 	heavy(t, "copies the repository once per application and runs every guard against each copy")
+	skipIfInner(t)
 	// Beside the other slow guards and not after them: it shares nothing
 	// with any of them but the compiled tests, which are made once.
 	t.Parallel()
@@ -174,6 +174,7 @@ func blockOf(a applications.Application) func(doc any) bool {
 // runs its directory, and nothing else: not another application's, and not
 // one whose name only begins with its own.
 func TestABlockIsAnApplicationsOwnSourceAndWhatRunsIt(t *testing.T) {
+	light(t)
 	app := applications.Application{Name: "first", Root: applications.Dir + "/first"}
 	doc := func(kind, name, path string) any {
 		return map[string]any{"kind": kind, "metadata": map[string]any{"name": name}, "spec": map[string]any{"path": path}}
