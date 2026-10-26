@@ -743,6 +743,24 @@ jobs:
             bash scripts/coverage-gate.sh "go/$module" "$pct"
           done
 
+      # The guards' helpers, held to their floor as the modules are. A bug in
+      # one makes a guard wrong rather than absent, which looks green, and
+      # tests/go/parsed is the one reader every guard reads the repository
+      # through. The floor sat in tests/coverage-baseline.json while no lane
+      # measured it (#792). Measured as task test counts it: each package
+      # that holds code, by its own tests; Go instruments no _test.go file, so
+      # the guards themselves are not in the figure. The packages are found,
+      # not listed.
+      - name: Coverage gate (the guards' helpers)
+        env:
+          GO_COVERAGE_PROFILES: ${{ runner.temp }}/go-coverage
+        run: |
+          mapfile -t packages < <(go -C tests/go list -f '{{if .GoFiles}}{{.ImportPath}}{{end}}' ./...)
+          go -C tests/go test -covermode=atomic -coverprofile="$GO_COVERAGE_PROFILES/tests-helpers.out" "${packages[@]}"
+          pct="$(go -C tests/go tool cover -func="$GO_COVERAGE_PROFILES/tests-helpers.out" \
+            | awk '/^total:/ {print substr($3, 1, length($3)-1)}')"
+          bash scripts/coverage-gate.sh "go/tests-helpers" "$pct"
+
       # Every function the tests above did not run is declared, judged on the
       # profiles they wrote. The invariants lane skips it by $OWN_LANE_TESTS.
       - name: Every uncovered function is declared
