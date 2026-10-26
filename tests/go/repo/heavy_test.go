@@ -58,10 +58,11 @@ func serial(t *testing.T, why string) {
 // refuses a workflow that passes it, because a -short in CI would turn every
 // heavy guard into a green skip with nothing left anywhere that runs it.
 //
-// The tier runs in two lanes, so "runs the whole package" is now two
-// commands: the invariants lane runs `go test ./...` skipping the meta-tests,
-// and the meta lane runs only them. Both name them through META_TESTS, and
-// that is where this looks for the gap. A name in it that matches no test
+// The tier runs in several lanes, so "runs the whole package" is several
+// commands: the invariants lane runs `go test ./...` skipping the meta-tests
+// and the guards with lanes of their own, and those lanes run only them. Each
+// set is named once, in a variable at the top of the workflow (META_TESTS,
+// OWN_LANE_TESTS), and that is where this looks for the gap. A name in it that matches no test
 // would be skipped by one lane and selected by nothing in the other - `-run`
 // with no match passes with "no tests to run" - so every name must be a test
 // that exists.
@@ -78,15 +79,27 @@ func TestHeavyGuardsRunOnEveryPullRequest(t *testing.T) {
 	}
 	repository(t).YAMLInto(t, workflowPath("pr-validation.yml"), &wf)
 
-	full, skipsMeta, meta := false, false, false
+	// The full run, and the variables it skips by: `-skip "$META_TESTS"` or
+	// `-skip "$META_TESTS|$OWN_LANE_TESTS"`. Each one names tests some other
+	// lane runs with `go test ./repo/ -run "$NAME"`.
+	fullRun := regexp.MustCompile(`^go test \./\.\.\.(?: -skip "((?:\$[A-Z_]+\|)*\$[A-Z_]+)")?$`)
+	full := false
+	var skipped []string
+	ranBy := map[string]bool{}
 	for _, job := range wf.Jobs {
 		for _, step := range job.Steps {
 			run := strings.TrimSpace(step.Run)
-			if step.Dir == "tests/go" && (run == "go test ./..." || run == `go test ./... -skip "$META_TESTS"`) {
+			if m := fullRun.FindStringSubmatch(run); step.Dir == "tests/go" && m != nil {
 				full = true
-				skipsMeta = skipsMeta || strings.Contains(run, "-skip")
+				for _, v := range strings.Split(m[1], "|") {
+					if v != "" {
+						skipped = append(skipped, strings.TrimPrefix(v, "$"))
+					}
+				}
 			}
-			meta = meta || run == `go test ./repo/ -run "$META_TESTS"`
+			if v, ok := strings.CutPrefix(run, `go test ./repo/ -run "$`); ok && strings.HasSuffix(v, `"`) {
+				ranBy[strings.TrimSuffix(v, `"`)] = true
+			}
 			for _, line := range strings.Split(step.Run, "\n") {
 				if strings.Contains(line, "go test") && strings.Contains(line, "-short") {
 					t.Errorf("pr-validation.yml runs Go tests with -short: %s\n\n"+
@@ -99,32 +112,33 @@ func TestHeavyGuardsRunOnEveryPullRequest(t *testing.T) {
 	if !full {
 		t.Error("pr-validation.yml no longer runs `go test ./...` in tests/go, so the guards " +
 			"heavy() skips at push run nowhere - every one of them is switched off")
-	}
-	if !full || !skipsMeta {
 		return
 	}
 
-	// The full run skips the meta-tests, so they must run somewhere else,
-	// selected by the same variable.
-	if !meta {
-		t.Error("pr-validation.yml skips $META_TESTS in the full run of tests/go and no lane " +
-			"runs them with `go test ./repo/ -run \"$META_TESTS\"`, so the mutation ledger and " +
-			"the comment-stripping re-run are switched off")
-	}
-	decl := regexp.MustCompile(`^\^\(([A-Za-z0-9_|]+)\)\$$`).FindStringSubmatch(wf.Env["META_TESTS"])
-	if decl == nil {
-		t.Fatal("pr-validation.yml uses $META_TESTS but does not declare it at the top as " +
-			"META_TESTS: \"^(TestA|TestB)$\", so this cannot check that each name is a real test")
-	}
+	// What the full run skips must run somewhere else, selected by the same
+	// variable, and every name in it must be a test: `-run` with no match
+	// passes with "no tests to run".
 	defined := map[string]bool{}
 	for _, f := range repoTestFuncs(t) {
 		defined[f] = true
 	}
-	for _, name := range strings.Split(decl[1], "|") {
-		if !defined[name] {
-			t.Errorf("META_TESTS names %s, which is not a test in tests/go/repo.\n\n"+
-				"The invariants lane skips it and the meta lane's -run matches nothing, which "+
-				"passes with \"no tests to run\". Rename it here to match the test.", name)
+	for _, name := range skipped {
+		if !ranBy[name] {
+			t.Errorf("pr-validation.yml skips $%s in the full run of tests/go and no lane "+
+				"runs them with `go test ./repo/ -run \"$%s\"`, so they run nowhere", name, name)
+		}
+		decl := regexp.MustCompile(`^\^\(([A-Za-z0-9_|]+)\)\$$`).FindStringSubmatch(wf.Env[name])
+		if decl == nil {
+			t.Errorf("pr-validation.yml uses $%s but does not declare it at the top as "+
+				"%s: \"^(TestA|TestB)$\", so this cannot check that each name is a real test", name, name)
+			continue
+		}
+		for _, test := range strings.Split(decl[1], "|") {
+			if !defined[test] {
+				t.Errorf("%s names %s, which is not a test in tests/go/repo.\n\n"+
+					"The invariants lane skips it and the lane's -run matches nothing, which "+
+					"passes with \"no tests to run\". Rename it here to match the test.", name, test)
+			}
 		}
 	}
 }

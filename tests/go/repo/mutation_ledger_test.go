@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"flag"
 	"fmt"
 	"hash/fnv"
 	"os"
@@ -465,6 +466,22 @@ func (p metaPart) proves(source string) bool {
 	return int(h.Sum32()%uint32(p.total)) == p.index
 }
 
+// A copy is handed the skips this run was given, and nothing when it was
+// given none. Read from the pattern rather than by setting the flag: the
+// flag is the whole binary's, and a guard running beside this one reads it.
+func TestACopyIsSkippedWhatTheLaneSkips(t *testing.T) {
+	light(t)
+	if flag.Lookup("test.skip") == nil {
+		t.Fatal("the test binary has no -test.skip flag to read")
+	}
+	if got := skipsFor(""); got != nil {
+		t.Errorf("with nothing skipped, a copy was handed %v", got)
+	}
+	if got := skipsFor("^(TestElsewhere)$"); len(got) != 2 || got[0] != "-test.skip" || got[1] != "^(TestElsewhere)$" {
+		t.Errorf("a copy was handed %v, want the lane's own skip", got)
+	}
+}
+
 func TestReadMetaPartTakesOnlyAPartItCanPlace(t *testing.T) {
 	light(t)
 	for _, c := range []struct {
@@ -516,11 +533,33 @@ type unbrokenRun struct {
 	output string
 }
 
+// laneSkips is the -test.skip this run was given, to hand to a run against a
+// copy: the copy is judged by the guards this lane judges, and a guard the
+// lane leaves to another (the coverage guard, which the Go modules lane runs
+// on the profiles it measured) is left there too. Twice per application it
+// was most of the removal guard's time, and past the lane's limit (#815).
+func laneSkips() []string {
+	f := flag.Lookup("test.skip")
+	if f == nil {
+		return nil
+	}
+	return skipsFor(f.Value.String())
+}
+
+// skipsFor is the arguments that hand a copy the skip pattern given, or
+// nothing for none.
+func skipsFor(pattern string) []string {
+	if pattern == "" {
+		return nil
+	}
+	return []string{"-test.skip", pattern}
+}
+
 // allVerdicts is runAll with nothing of the test in it, so that two runs
 // can be made side by side: a test may only be failed from its own
 // goroutine.
 func allVerdicts(bin string, tree *parsed.Tree) (map[string]bool, []byte) {
-	stdout, stderr, _ := tree.InvokeBinary(parsed.Run{Judged: true, Outside: true}, bin, "-test.v")
+	stdout, stderr, _ := tree.InvokeBinary(parsed.Run{Judged: true, Outside: true}, bin, append([]string{"-test.v"}, laneSkips()...)...)
 	out := append(stdout, stderr...)
 
 	verdicts := map[string]bool{}
