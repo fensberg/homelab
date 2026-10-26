@@ -1,5 +1,5 @@
 diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
-index 399cd7c8..d5e6b916 100644
+index 399cd7c8..cb6bb3b2 100644
 --- a/.github/workflows/pr-validation.yml
 +++ b/.github/workflows/pr-validation.yml
 @@ -743,6 +743,24 @@ jobs:
@@ -18,8 +18,8 @@ index 399cd7c8..d5e6b916 100644
 +        env:
 +          GO_COVERAGE_PROFILES: ${{ runner.temp }}/go-coverage
 +        run: |
-+          go -C tests/go test -covermode=atomic -coverprofile="$GO_COVERAGE_PROFILES/tests-helpers.out" \
-+            $(go -C tests/go list -f '{{if .GoFiles}}{{.ImportPath}}{{end}}' ./...)
++          mapfile -t packages < <(go -C tests/go list -f '{{if .GoFiles}}{{.ImportPath}}{{end}}' ./...)
++          go -C tests/go test -covermode=atomic -coverprofile="$GO_COVERAGE_PROFILES/tests-helpers.out" "${packages[@]}"
 +          pct="$(go -C tests/go tool cover -func="$GO_COVERAGE_PROFILES/tests-helpers.out" \
 +            | awk '/^total:/ {print substr($3, 1, length($3)-1)}')"
 +          bash scripts/coverage-gate.sh "go/tests-helpers" "$pct"
