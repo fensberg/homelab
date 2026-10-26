@@ -1,0 +1,11 @@
+guard: TestEveryGuardOpensBySayingHowItRuns
+file: tests/go/repo/heavy_test.go
+reads_source: true
+find: "func TestAGuardsOpeningIsReadFromItsFirstStatement(t *testing.T) {\n\tlight(t)\n"
+replace: "func TestAGuardsOpeningIsReadFromItsFirstStatement(t *testing.T) {\n\tt.Parallel()\n"
+mentions: "does not open by saying how it runs"
+why: >
+  A guard whose first line does not say how it runs is one a reviewer has
+  to read whole to know, and one that said nothing ran at push alone,
+  making every guard after it wait: 253 in a row took the push to 27
+  seconds against a budget of ten.

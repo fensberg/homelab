@@ -43,6 +43,7 @@ import (
 // longer has with its zero value and says nothing. The config's own top-level
 // keys are distinctive enough to find any second declaration of it.
 func TestTheConfigDocumentHasOneReader(t *testing.T) {
+	light(t)
 	const home = "scripts/contractor/config/"
 	// Keys only the management config uses. A struct field carrying either is
 	// a reader of that document, whatever the struct is named. Real struct tags
@@ -119,6 +120,7 @@ func structTags(t *testing.T, rel string) map[string]bool {
 // without deleting its entry, so the list only ever shrinks and every change
 // that shrinks it shows in its diff.
 func TestAFactCrossingAModuleBoundaryIsDeclared(t *testing.T) {
+	light(t)
 	crossing := crossModuleLiterals(t)
 
 	var declared struct {

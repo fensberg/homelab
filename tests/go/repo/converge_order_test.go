@@ -29,6 +29,7 @@ import (
 // the converge lane had never reached TakeOver before, having failed at Verify
 // every previous time for an unrelated reason.
 func TestNothingRunsTofuBeforeAttach(t *testing.T) {
+	light(t)
 	for name, seq := range sequencesWithAttach(t) {
 		takeOverAt := indexOf(seq, "take-over")
 		for i, phase := range seq[:takeOverAt] {
@@ -64,6 +65,7 @@ func TestNothingRunsTofuBeforeAttach(t *testing.T) {
 // ways to run the rest: they read tofu's -json stream and report an address
 // and a verb per resource.
 func TestOnlyQuietTofuSubcommandsAreStreamed(t *testing.T) {
+	light(t)
 	tree := repository(t)
 	checked := 0
 	for _, rel := range tree.Files(t) {
@@ -159,6 +161,7 @@ func firstLine(s string) string {
 // two tests above locate a phase's code that way, so a phase that broke the
 // convention would be silently exempt from both.
 func TestEveryPhaseHasASourceFileNamedAfterIt(t *testing.T) {
+	light(t)
 	for name, seq := range sequencesWithAttach(t) {
 		for _, phase := range seq {
 			if !repository(t).Exists(phasesDir + "/" + phase + ".go") {

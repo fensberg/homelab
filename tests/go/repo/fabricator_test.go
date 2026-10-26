@@ -157,6 +157,7 @@ func workOrders(t *testing.T) []workorders.Order { return ordersOf(t, repository
 // deploys it and finds the digest never moved; and an order with no
 // Dockerfile is a build that fails every run.
 func TestEveryDockerfileHasAWorkOrderAndEveryOrderADockerfile(t *testing.T) {
+	light(t)
 	orders := workOrders(t)
 	ordered := map[string]string{}
 	names := map[string]bool{}
@@ -232,6 +233,7 @@ func stepOrders(t *testing.T, root *parsed.Tree) []workorders.Order {
 // and against the repository, where the step and homelab/details/workorders
 // must agree whatever applications there are.
 func TestTheFabricatorReadsEveryWorkOrder(t *testing.T) {
+	light(t)
 	fixture := fabricatorFixture(t)
 	got, err := json.Marshal(stepOrders(t, fixture))
 	if err != nil {
@@ -295,6 +297,7 @@ func estatePinsEnv(t *testing.T, root *parsed.Tree) []string {
 // entries. Held of every order in the repository and of the fixture's, where
 // one pin is the application's own and one is the estate's.
 func TestTheFabricatorPassesEveryPinADockerfileAsksFor(t *testing.T) {
+	light(t)
 	script := fabricatorStep(t, "build", "Take the pins each Dockerfile asks for")
 	checked := 0
 	for name, root := range map[string]*parsed.Tree{"the fixture": fabricatorFixture(t), "the repository": repository(t)} {
@@ -328,6 +331,7 @@ func TestTheFabricatorPassesEveryPinADockerfileAsksFor(t *testing.T) {
 // An order's pins file is read, never run: a line that is not NAME=value is
 // passed over, and nothing in it is executed.
 func TestTheFabricatorReadsAnOrdersPinsAndRunsNothingInThem(t *testing.T) {
+	light(t)
 	root := fabricatorFixture(t)
 	script := fabricatorStep(t, "build", "Take the pins each Dockerfile asks for")
 	app := applications.Dir + "/thing"
@@ -345,6 +349,7 @@ func TestTheFabricatorReadsAnOrdersPinsAndRunsNothingInThem(t *testing.T) {
 
 // A Dockerfile asking for a version nobody pinned fails the build.
 func TestTheFabricatorRefusesAnUnpinnedArg(t *testing.T) {
+	light(t)
 	script := fabricatorStep(t, "build", "Take the pins each Dockerfile asks for")
 	dir := parsed.Empty(t)
 	dir.Write(t, "img/Dockerfile", "ARG UNPINNED_VERSION\nARG TARGETARCH\nFROM scratch\n")
@@ -441,6 +446,7 @@ esac`})
 // not by the first build that needs it. Held of the fixture, so the step is
 // proved whichever applications the estate has, and of every order it has.
 func TestTheReleaseIsNamedForTheVersionTheSoftwareReports(t *testing.T) {
+	light(t)
 	checked := 0
 	for name, root := range map[string]*parsed.Tree{"the fixture": fabricatorFixture(t), "the repository": repository(t)} {
 		for _, o := range ordersOf(t, root) {
@@ -470,6 +476,7 @@ func TestTheReleaseIsNamedForTheVersionTheSoftwareReports(t *testing.T) {
 // Software that never prints its version fails the build rather than
 // releasing under a guess.
 func TestAReleaseIsRefusedWhenTheVersionCannotBeRead(t *testing.T) {
+	light(t)
 	path := printing(t, "Initialize engine version: 6000.0.75f1")
 	ok, output, logs := runReleaseStep(t, "Read the version the build carries", parsed.Empty(t), path, []string{
 		"IMAGE=" + fixtureImage, "DIGEST=sha256:" + strings.Repeat("a", 64),
@@ -485,6 +492,7 @@ func TestAReleaseIsRefusedWhenTheVersionCannotBeRead(t *testing.T) {
 // The counter continues from the highest release of the same version, and a
 // package that does not exist yet is the first release.
 func TestTheReleaseCounterFollowsTheRegistry(t *testing.T) {
+	light(t)
 	for name, tc := range map[string]struct{ versions, want string }{
 		"continues after the highest": {`echo 1.0.15-1; echo 1.0.15-3; echo 1.0.14-9; echo latest`, "tag=1.0.15-4\n"},
 		"no package yet":              {`echo "gh: Not Found (HTTP 404)" >&2; exit 1`, "tag=1.0.15-1\n"},
@@ -512,6 +520,7 @@ esac`})
 // A registry error that is not "no such package" stops the release: numbering
 // from an empty list would publish a counter that already exists.
 func TestTheReleaseCounterRefusesARegistryItCannotRead(t *testing.T) {
+	light(t)
 	path := fakeTools(t, map[string]string{"gh": `if [ "$2" = "--paginate" ]; then echo "gh: Server Error (HTTP 500)" >&2; exit 1; fi
 echo Organization`})
 	ok, output, logs := runReleaseStep(t, "Number the release", parsed.Empty(t), path, []string{
@@ -524,6 +533,7 @@ echo Organization`})
 // The release carries the application's own directory and nothing else, with
 // the new image pinned by digest in its base - and that is what is pushed.
 func TestTheReleaseCarriesTheApplicationAloneWithTheNewDigest(t *testing.T) {
+	light(t)
 	root := fabricatorFixture(t)
 	scratch := t.TempDir()
 	path := fakeTools(t, map[string]string{"flux": `if [ "$1" = tag ]; then echo "$@" > "` + scratch + `/tagged"; exit 0; fi
@@ -607,6 +617,7 @@ echo '{"repository":"` + fixtureImage + `-release","tag":"1.0.15-1","digest":"sh
 // and a second images: key is invalid YAML nobody sees until Flux does; and a
 // pattern that captures the version and nothing else.
 func TestEveryReleaseOrderIsOneTheFabricatorCanFollow(t *testing.T) {
+	light(t)
 	for _, problem := range unfollowableReleases(t, repository(t)) {
 		t.Error(problem)
 	}
@@ -656,6 +667,7 @@ func unfollowableReleases(t *testing.T, root *parsed.Tree) []string {
 // written here: the fixture's is followable, and each way of breaking it is
 // named.
 func TestUnfollowableReleasesNamesEachWayAnOrderCanBeBroken(t *testing.T) {
+	light(t)
 	if problems := unfollowableReleases(t, fabricatorFixture(t)); len(problems) != 0 {
 		t.Fatalf("the fixture's release was refused: %v", problems)
 	}
@@ -706,6 +718,7 @@ esac`})
 // either gives a new one. A build of that fingerprint already in the registry
 // is reused rather than repeated.
 func TestAnImageOfTheSameInputsIsReused(t *testing.T) {
+	light(t)
 	repo := t.TempDir()
 	run := func(args ...string) {
 		t.Helper()
@@ -810,6 +823,7 @@ func committed(t *testing.T) (repo string, commit func(files map[string]string))
 // nothing is fingerprinted as it was before an order could read anything,
 // so that teaching the fabricator this rebuilt no image that had not moved.
 func TestAnImageIsMadeAgainWhenAFileItsBuildReadsChanges(t *testing.T) {
+	light(t)
 	repo, commit := committed(t)
 	none := `echo "gh: Not Found (HTTP 404)" >&2; exit 1`
 	fingerprint := func(reads string) string {
@@ -860,6 +874,7 @@ func TestAnImageIsMadeAgainWhenAFileItsBuildReadsChanges(t *testing.T) {
 // names is the files tracked in it. And the build is
 // run with them, as the context a Dockerfile knows as reads.
 func TestABuildIsHandedTheFilesItsOrderNamesAndNoOthers(t *testing.T) {
+	light(t)
 	repo, commit := committed(t)
 	commit(map[string]string{"img/Dockerfile": "FROM scratch\n", "shared/fetch.sh": "fetches\n", "shared/other.sh": "other\n"})
 	if err := os.WriteFile(filepath.Join(repo, "shared", "left-behind.json"), []byte("left by a step\n"), 0o644); err != nil {
@@ -1241,6 +1256,7 @@ func runPackageStep(t *testing.T, step, dir, path, scratch string, env []string)
 // The orders step hands each kind of order to its own job: an order with a
 // build context to the image build, and one with a package to the packaging.
 func TestEachKindOfOrderGoesToItsOwnJob(t *testing.T) {
+	light(t)
 	root := fabricatorFixture(t)
 	root.Write(t, workorders.Path, `{"orders":[{"name":"kit","context":"kits/kit"},{"name":"bundle","package":"pkg/release.json"}]}`)
 	ok, output, logs := runFabricatorScript(t, fabricatorStep(t, "orders", "Read the work orders"), root, nil)
@@ -1279,6 +1295,7 @@ func TestEachKindOfOrderGoesToItsOwnJob(t *testing.T) {
 // a change to a file beside them - whatever else a merge touched - is not.
 // One already published under that fingerprint is not published again.
 func TestAPackageOfTheSameFilesIsNotPublishedAgain(t *testing.T) {
+	light(t)
 	root, commit := packageFixture(t)
 	none := `echo "gh: Not Found (HTTP 404)" >&2; exit 1`
 	reuse := func(listing string) (map[string]string, string, string) {
@@ -1339,6 +1356,7 @@ func TestAPackageOfTheSameFilesIsNotPublishedAgain(t *testing.T) {
 // that month, continuing from the registry: the first of a month is 1, the
 // next is one more than the highest there, and a new month starts again.
 func TestAVersionIsTheMonthAndItsNumberInIt(t *testing.T) {
+	light(t)
 	for name, tc := range map[string]struct{ month, versions, want string }{
 		"the first ever":              {"2026.10", `echo "gh: Not Found (HTTP 404)" >&2; exit 1`, "v2026.10.1"},
 		"continues after the highest": {"2026.10", `printf '%s\n' v2026.10.1 v2026.10.3 v2026.10.2 v2026.9.7 fp-0123 latest`, "v2026.10.4"},
@@ -1401,6 +1419,7 @@ esac`}), dir
 // checkout - in the form OpenTofu fetches a module package in, under its
 // version and its fingerprint.
 func TestThePackageHoldsExactlyItsFilesAndIsPublishedForOpenTofu(t *testing.T) {
+	light(t)
 	root, _ := packageFixture(t)
 	// In the checkout and not in git: not the repository's, so not the
 	// package's.
@@ -1483,6 +1502,7 @@ func TestThePackageHoldsExactlyItsFilesAndIsPublishedForOpenTofu(t *testing.T) {
 // says of it; one described already is left; and a registry that does not
 // say what a version is leaves it undescribed, loudly.
 func TestAVersionIsDescribedByARelease(t *testing.T) {
+	light(t)
 	digest := "sha256:" + strings.Repeat("d", 64)
 	// gh that has, or has not, a release of the version already; oras that
 	// answers as the registry would for a version published earlier.

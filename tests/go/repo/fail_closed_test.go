@@ -60,6 +60,7 @@ var skipIsHonest = map[string]string{
 }
 
 func TestNoGuardSkipsWithoutSayingWhyItIsHonest(t *testing.T) {
+	light(t)
 	tree := repository(t)
 	fset := token.NewFileSet()
 	skipping := map[string]int{}
@@ -239,6 +240,7 @@ var droppedErrors = map[string]int{
 const droppedErrorCeiling = 5
 
 func TestNoGuardDropsAnErrorFromItsOwnSubject(t *testing.T) {
+	light(t)
 	// The guards, and the package they read the repository through: an error
 	// dropped in the reader is dropped for every guard reading through it.
 	tree := repository(t)

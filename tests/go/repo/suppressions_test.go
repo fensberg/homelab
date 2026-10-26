@@ -226,6 +226,7 @@ func (c *commentLines) around(line int, comment string) string {
 }
 
 func TestEverySilencedFindingNamesTheGuardThatProvesItMayBe(t *testing.T) {
+	heavy(t, "scans every tracked file's comments with Semgrep, about ten seconds")
 	s := readSilencers(t)
 	guards := guardsHere(t)
 
@@ -426,6 +427,7 @@ func nodesAt(n *yaml.Node, path []string) []*yaml.Node {
 // silenced, or declared to judge nothing. And the reverse: an entry for a
 // tool that no longer arrives is a claim about nothing.
 func TestEveryToolThatArrivesSaysHowItIsSilenced(t *testing.T) {
+	light(t)
 	s := readSilencers(t)
 
 	known := map[string]string{}

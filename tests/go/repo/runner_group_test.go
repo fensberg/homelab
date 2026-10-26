@@ -216,6 +216,7 @@ func notTheSame(asking, admitted []string) []string {
 }
 
 func TestEveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits(t *testing.T) {
+	light(t)
 	tree := repository(t)
 
 	sources := map[string]*hcl.File{}
@@ -283,6 +284,7 @@ func TestEveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits(t *testing.T) {
 
 // The reading and the judging, on groups and workflows made up here.
 func TestAGroupOfRunnersIsAWallOnlyWhileItNamesWhatItAdmits(t *testing.T) {
+	light(t)
 	const group = `
 resource "github_actions_runner_group" "one" {
   name                    = var.name

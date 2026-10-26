@@ -38,6 +38,7 @@ import (
 const hostExporterPackage = "prometheus-node-exporter"
 
 func TestMeasuringTheHostChangesAllThreeHalvesTogether(t *testing.T) {
+	light(t)
 	tree := repository(t)
 	playbook := hostPlaybook(t)
 	scrape, scraped := hostScrape(t)
@@ -85,6 +86,7 @@ func TestMeasuringTheHostChangesAllThreeHalvesTogether(t *testing.T) {
 // Service that makes it resolve is named for it. One that disagrees is a
 // certificate that does not match, found on the estate.
 func TestTheHostsExporterHasOneName(t *testing.T) {
+	light(t)
 	tree := repository(t)
 	name := stringConstant(t, tree, "scripts/contractor/internal/phases/secrets.go", "HostMetricsName")
 	if name == "" {

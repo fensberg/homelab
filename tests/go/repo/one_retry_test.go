@@ -115,6 +115,7 @@ what it sees that the other two cannot.`, f.Path, strings.TrimSpace(f.Text))
 // and the next person reading it believes there are more retries here than
 // there are.
 func TestEveryDeclaredRetryStillExists(t *testing.T) {
+	light(t)
 	for path, why := range declaredRetries {
 		if strings.TrimSpace(why) == "" {
 			t.Errorf("%s is declared with no reason, so nobody can tell whether it "+
