@@ -13,9 +13,9 @@ import (
 func planned(t *testing.T) *Tree {
 	t.Helper()
 	tree := Empty(t)
-	tree.Write(t, "management/cluster/main.tf", "# the root\n")
-	tree.Write(t, "modules/infrastructure/m/main.tf", "# a module\n")
-	tree.Write(t, "config/management.tpl.json", "{}\n")
+	tree.Write(t, "management/somewhere/first.tf", "# the root\n")
+	tree.Write(t, "modules/something/second.tf", "# a module\n")
+	tree.Write(t, "config/fixture.tpl.json", "{}\n")
 	tree.Write(t, "README.md", "not what a plan is made from\n")
 	tree.Index(t)
 	return tree
@@ -45,7 +45,7 @@ func TestAPlanIsKeptByWhatItIsMadeFrom(t *testing.T) {
 	if other, err := tree.planKey(t, "site1"); err != nil || other == first {
 		t.Errorf("another site's plans were kept under this site's key (%v)", err)
 	}
-	for _, rel := range []string{"management/cluster/main.tf", "modules/infrastructure/m/main.tf", "config/management.tpl.json"} {
+	for _, rel := range []string{"management/somewhere/first.tf", "modules/something/second.tf", "config/fixture.tpl.json"} {
 		before := key()
 		tree.Write(t, rel, "# changed\n")
 		tree.Index(t)
@@ -81,19 +81,19 @@ func TestKeptPlansAreEveryRootOrNone(t *testing.T) {
 // config_path, named for the template it is rendered from.
 func TestARootsTemplateIsTheOneItsConfigIsRenderedFrom(t *testing.T) {
 	tree := Empty(t)
-	tree.Write(t, "management/estate/variables.tf", `variable "config_path" {
-  default = "../../config/estate.rendered.json"
+	tree.Write(t, "management/somewhere/inputs.tf", `variable "config_path" {
+  default = "../../config/fixture.rendered.json"
 }
 `)
-	tree.Write(t, "management/plain/variables.tf", `variable "config_path" {
+	tree.Write(t, "management/plainly/inputs.tf", `variable "config_path" {
   type = string
 }
 `)
 	tree.Index(t)
-	if got, ok := tree.templateOf(t, "management/estate"); !ok || got != "config/estate.tpl.json" {
-		t.Errorf("the estate root's template was %q, %v; want config/estate.tpl.json", got, ok)
+	if got, ok := tree.templateOf(t, "management/somewhere"); !ok || got != "config/fixture.tpl.json" {
+		t.Errorf("a root's template was %q, %v; want config/fixture.tpl.json", got, ok)
 	}
-	if got, ok := tree.templateOf(t, "management/plain"); ok {
+	if got, ok := tree.templateOf(t, "management/plainly"); ok {
 		t.Errorf("a root with no default was given the template %q", got)
 	}
 	if got, ok := tree.templateOf(t, "management/absent"); ok {

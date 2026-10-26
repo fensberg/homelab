@@ -1,19 +1,23 @@
 package parsed
 
 import (
+	"path"
 	"testing"
+
+	"homelab/tests/harness"
 )
 
 // A Flux object is found by what it declares, and only when one manifest
 // declares it.
 func TestAFluxObjectIsFoundByWhatItDeclaresAndOnlyWhenOneDoes(t *testing.T) {
 	tree := Empty(t)
-	tree.Write(t, "clusters/core/a.yaml", "kind: ConfigMap\nmetadata:\n  name: once\n---\nkind: Secret\nmetadata:\n  name: twice\n")
-	tree.Write(t, "clusters/core/b.yml", "kind: Secret\nmetadata:\n  name: twice\n")
+	first, second := path.Join(harness.FluxTree, "layer", "first.yaml"), path.Join(harness.FluxTree, "layer", "second.yml")
+	tree.Write(t, first, "kind: ConfigMap\nmetadata:\n  name: once\n---\nkind: Secret\nmetadata:\n  name: twice\n")
+	tree.Write(t, second, "kind: Secret\nmetadata:\n  name: twice\n")
 	tree.Write(t, "elsewhere/c.yaml", "kind: ConfigMap\nmetadata:\n  name: outside\n")
 	tree.Index(t)
 
-	if path, docs := tree.FluxObject(t, "ConfigMap", "once"); path != "clusters/core/a.yaml" || len(docs) != 2 {
+	if path, docs := tree.FluxObject(t, "ConfigMap", "once"); path != first || len(docs) != 2 {
 		t.Errorf("the object declared once was found in %s with %d documents", path, len(docs))
 	}
 	if _, err := tree.FluxObjectPath(t, "Secret", "twice"); err == nil {
