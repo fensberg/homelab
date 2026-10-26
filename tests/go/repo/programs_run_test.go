@@ -418,6 +418,7 @@ func (s *goSource) interpreterGivenAScript(program ast.Expr, args []ast.Expr, sp
 }
 
 func TestEveryProgramRunIsNamedByAConstantOrIsTheOperators(t *testing.T) {
+	light(t)
 	s := readGoSource(t)
 
 	var failures []string

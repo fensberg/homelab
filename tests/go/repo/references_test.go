@@ -44,6 +44,7 @@ var (
 )
 
 func TestNoReferenceNamesAGuardThatIsGone(t *testing.T) {
+	heavy(t, "semgrep reads every file for the names of tests and guard files, a few seconds")
 	files := trackedFiles(t)
 	vendored := vendoredFiles(t, files)
 	exists := map[string]bool{}
@@ -55,7 +56,6 @@ func TestNoReferenceNamesAGuardThatIsGone(t *testing.T) {
 		t.Fatalf("only %d tests were found declared across the modules, which is not this repository - the reader has stopped matching", len(declared))
 	}
 
-	heavy(t, "semgrep reads every file for the names of tests and guard files, a few seconds")
 	tree := repository(t)
 	var problems []string
 	var prose []string
@@ -192,6 +192,7 @@ func isHistory(rel string) bool {
 }
 
 func TestDanglingInFindsWhatIsGoneAndLeavesWhatIsThere(t *testing.T) {
+	light(t)
 	declared := map[string]bool{"TestThere": true, "TestAVeryLongNameThatWraps": true}
 	exists := map[string]bool{"tests/go/repo/there_test.go": true}
 	for name, c := range map[string]struct {
@@ -214,6 +215,7 @@ func TestDanglingInFindsWhatIsGoneAndLeavesWhatIsThere(t *testing.T) {
 }
 
 func TestDanglingFindingJudgesEachNameAScanFound(t *testing.T) {
+	light(t)
 	declared := map[string]bool{"TestThere": true, "TestAVeryLongNameThatWraps": true}
 	exists := map[string]bool{"tests/go/repo/there_test.go": true}
 	for name, c := range map[string]struct {

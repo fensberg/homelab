@@ -62,8 +62,8 @@ func runContractorTests(t *testing.T, tree *parsed.Tree) (passed bool, failed ma
 }
 
 func TestEveryDecisionIsAssertedOn(t *testing.T) {
-	skipIfInner(t)
 	heavy(t, "mutates Go decisions and re-runs their tests, side by side")
+	skipIfInner(t)
 	// Beside the other slow guards and not after them.
 	t.Parallel()
 

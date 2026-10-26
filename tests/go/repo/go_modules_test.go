@@ -54,6 +54,7 @@ func goModules(t *testing.T) []string {
 // fails `task test:coverage` - but only when that task runs, and it is not on
 // the pull request path. This says the same thing in the tier that is.
 func TestEveryGoModuleHasACoverageFloor(t *testing.T) {
+	light(t)
 	var baseline struct {
 		Baselines map[string]float64 `json:"baselines"`
 	}

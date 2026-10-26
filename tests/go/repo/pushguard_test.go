@@ -51,6 +51,7 @@ func parsePreCommitConfig(t *testing.T) preCommitConfig {
 // one push it is supposed to permit - so the two are checked against each
 // other here as well as in scripts/superintendent's own tests.
 func TestGuardAndSignedpushAgreeOnTheScratchRef(t *testing.T) {
+	light(t)
 	const scratch = "refs/signing/"
 	if !slices.Contains(stringLiterals(t, "scripts/superintendent/enforce-push.go"), scratch) {
 		t.Errorf("pushguard no longer allows %s", scratch)

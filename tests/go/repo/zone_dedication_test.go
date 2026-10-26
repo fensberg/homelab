@@ -23,6 +23,7 @@ import (
 // out for a machine made up here, so what is held is what a machine is
 // given and not how the line happens to be written.
 func TestAZonesMachineIsKeptForItsZoneAndCanBeSentTo(t *testing.T) {
+	light(t)
 	const declared = "dmz_dedication"
 	found := 0
 	for _, file := range repository(t).OpenTofu(t) {
@@ -94,6 +95,7 @@ func dedicationOf(expr hclsyntax.Expression, zone string) (dedication, string) {
 
 // The working out, on declarations made up here.
 func TestADedicationIsWorkedOutAndAHalfOfOneIsSeen(t *testing.T) {
+	light(t)
 	for name, c := range map[string]struct {
 		written string
 		taint   string

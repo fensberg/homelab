@@ -23,6 +23,7 @@ import (
 // estate lacks is a credential the site's config asks the vault for and never
 // receives, so every run fails at Render naming a field rather than a bucket.
 func TestTheBucketTableAgreesWithTheHCL(t *testing.T) {
+	light(t)
 	hcl := bucketPurposesInHCL(t)
 	var table []string
 	for _, b := range config.Buckets {

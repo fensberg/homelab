@@ -76,6 +76,7 @@ func loadLanguages(t *testing.T) languageDeclaration {
 }
 
 func TestEveryKindOfFileIsGovernedOrDeclaredUngoverned(t *testing.T) {
+	light(t)
 	decl := loadLanguages(t)
 
 	governed := map[string]bool{}

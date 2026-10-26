@@ -151,6 +151,7 @@ func workflowCommands(t *testing.T) []parsed.Command {
 }
 
 func TestEveryLocalGuardIsAlsoEnforcedInCI(t *testing.T) {
+	light(t)
 	workflows := workflowCommands(t)
 	ran := map[string]bool{}
 	formatLaneRunsTheConfig := false

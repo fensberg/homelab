@@ -22,6 +22,7 @@ import (
 // a precondition runner must be called from somewhere that is not its own file
 // and is not a test.
 func TestEveryPreconditionRunnerIsCalled(t *testing.T) {
+	light(t)
 	tree := repository(t)
 	fset := token.NewFileSet()
 	files := map[string]*ast.File{}

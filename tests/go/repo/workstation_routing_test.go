@@ -33,6 +33,7 @@ import (
 // are true at once, so moving the workstation off the bridge is allowed and
 // re-adding the flag while it stays there is not.
 func TestAWorkstationOnTheHypervisorBridgeDoesNotAcceptRoutes(t *testing.T) {
+	light(t)
 	bridge, _ := workstationPlay(t).Vars["bridge"].(string)
 	onHypervisorBridge := regexp.MustCompile(`^vmbr\d+$`).MatchString(bridge)
 	accepts := slices.ContainsFunc(tailscaleUps(workstationCommands(t)), func(c parsed.Command) bool {

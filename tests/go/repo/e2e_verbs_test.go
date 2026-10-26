@@ -23,6 +23,7 @@ import (
 // runContractor call's verb is a string literal, and it is one of the
 // contractor's knownVerbs, read from its own source.
 func TestTheE2ETierNamesVerbsTheContractorHas(t *testing.T) {
+	light(t)
 	tree := repository(t)
 	verbs := contractorVerbs(t, tree, "scripts/contractor/main.go")
 

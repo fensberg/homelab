@@ -38,6 +38,7 @@ import (
 // it is written; an estate where no site runs anything has none, and what
 // this refuses is proved against files written here.
 func TestEverySiteRunsItsApplicationsAsTheyAreDeclared(t *testing.T) {
+	light(t)
 	tree := repository(t)
 	apps := tree.Applications(t)
 	environments := map[string][]string{}
@@ -226,6 +227,7 @@ func siteBlockProblems(rel string, parsedDocs []any, apps []applications.Applica
 // that follows its application's declaration is accepted, and each way a
 // block can depart from it is named.
 func TestSiteBlockProblemsNamesEachWayABlockDepartsFromItsDeclaration(t *testing.T) {
+	light(t)
 	app := func(name string, requires ...string) applications.Application {
 		return applications.Application{Name: name, Root: applications.Dir + "/" + name, Requires: requires}
 	}

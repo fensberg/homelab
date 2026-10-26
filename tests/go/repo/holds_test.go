@@ -33,6 +33,7 @@ import (
 // that names something no longer here is refused too, because it is a
 // promise about nothing.
 func TestEverythingThatKeepsDataSaysWhatItHolds(t *testing.T) {
+	light(t)
 	tree := repository(t)
 	apps := tree.Applications(t)
 	core := tree.CoreHolds(t)
@@ -255,6 +256,7 @@ func hasKey(n *yaml.Node, keys ...string) bool {
 // was worth keeping. Asking there would refuse over copies belonging to a
 // site that stood before, and leave the half-built machines behind.
 func TestNoTeardownStartsUntilTheSafetyOfficerClearsIt(t *testing.T) {
+	light(t)
 	const teardown, officer, undoesItsOwnBuild = "tearDown", "clearedBySafetyOfficer", "EmergencyDestroy"
 
 	tree := repository(t)
@@ -319,6 +321,7 @@ return what it returns.`, rel, fn.Name.Name, officer, teardown)
 // pool with no machines in it, or the driver is pointed at a storage it has
 // no right to - and each half is correct when read alone.
 func TestTheStorageDriversNamesAreTheSameWhereverTheyAreWritten(t *testing.T) {
+	light(t)
 	tree := repository(t)
 	workers := (&config.SiteNetwork{Name: "${local.site_name}"}).WorkerPool()
 	if !writesTemplate(t, tree, tree.Declaring(t, "resource", "proxmox_virtual_environment_pool", "workers"), workers) {
@@ -341,6 +344,7 @@ func TestTheStorageDriversNamesAreTheSameWhereverTheyAreWritten(t *testing.T) {
 // budgets a hypervisor's memory before anything is built. If the two drift,
 // the budget passes a site its host cannot hold, or refuses one it can.
 func TestAMachinesMemoryIsTheSameWhereItIsMadeAndWhereItIsBudgeted(t *testing.T) {
+	light(t)
 	tree := repository(t)
 	for resource, role := range map[string]config.MachineRole{
 		"talos_cp": config.ControlPlane, "talos_worker": config.Worker, "dmz": config.Untrusted,
@@ -414,6 +418,7 @@ func writesTemplate(t *testing.T, tree *parsed.Tree, b parsed.Block, want string
 // is asked by whoever is adding it and not remembered by anybody. It is
 // answered by changing this test: to the decision that was made.
 func TestASecondHypervisorReopensHowIdleCapacityIsLent(t *testing.T) {
+	light(t)
 	// Read as the program reads it, so this is not a second idea of what
 	// the config holds.
 	var template config.Config
