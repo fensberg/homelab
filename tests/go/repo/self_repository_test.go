@@ -17,7 +17,7 @@ import (
 // action's metadata at the path it names, and a misspelt one is found at a
 // push and not when a job tries to start.
 func TestEverySelfRepositoryReferenceNamesAnActionThatIsHere(t *testing.T) {
-	t.Parallel()
+	light(t)
 	tracked := map[string]bool{}
 	for _, rel := range trackedFiles(t) {
 		tracked[rel] = true

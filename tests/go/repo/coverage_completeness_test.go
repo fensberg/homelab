@@ -374,7 +374,7 @@ func blocklistEntries(t *testing.T) map[string]bool {
 }
 
 func TestEveryUnitIsExecutedByATestOrIsADeclaredDebt(t *testing.T) {
-	t.Parallel()
+	light(t)
 	tree := repository(t)
 	var list coverageBlocklist
 	tree.YAMLInto(t, "tests/coverage-blocklist.yml", &list)
@@ -444,7 +444,7 @@ once sat ten points below the real figure without anybody noticing.`,
 }
 
 func TestAssertingDeclarationsAndExpectedFailuresAreReadNotMatched(t *testing.T) {
-	t.Parallel()
+	light(t)
 	body := `variable "site" {
   type = string
   validation {

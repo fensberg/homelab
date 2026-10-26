@@ -500,7 +500,7 @@ func requestsAreComplete(t *testing.T, resources any) error {
 }
 
 func TestEveryWorkloadIsSizedPlacedAndGivenAPriority(t *testing.T) {
-	t.Parallel()
+	light(t)
 	declared := declaredPriorityClasses(t)
 
 	for _, w := range workloadPods {
@@ -663,7 +663,7 @@ func declaredPriorityClasses(t *testing.T) map[string]bool {
 // like adding a chart that is fine. That is the shape of every guard this
 // repository has had to repair: silence and success were indistinguishable.
 func TestEveryHelmReleaseSaysWhereItsPodSpecLives(t *testing.T) {
-	t.Parallel()
+	light(t)
 	described := map[string]bool{}
 	for _, w := range workloadPods {
 		described[w.file(t)+"#"+w.Release] = true
@@ -736,7 +736,7 @@ are the same silence from here.`, len(undescribed), strings.Join(undescribed, "\
 // builds perfectly and covers three controllers, or none, because a Flux
 // upgrade renamed one or added a fifth.
 func TestEveryFluxControllerIsPlacedAndGivenAPriority(t *testing.T) {
-	t.Parallel()
+	light(t)
 	declared := declaredPriorityClasses(t)
 	install, components := fluxObject(t, fluxInstallKind, fluxInstallName)
 	overlay := beside(install, applications.Kustomization)
@@ -868,7 +868,7 @@ func sortedKeys[V any](m map[string]V) []string {
 // was checked in, so a chart bump re-opens the question instead of carrying
 // the old answer forward.
 func TestEveryWorkloadRequiresItsSecurityPropertiesRatherThanInheritingThem(t *testing.T) {
-	t.Parallel()
+	light(t)
 	for _, w := range workloadPods {
 		t.Run(w.What, func(t *testing.T) {
 			if w.PodSecurityKey == "" && w.ContainerSecurityKey == "" {

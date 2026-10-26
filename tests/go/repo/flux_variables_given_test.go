@@ -274,7 +274,7 @@ func notGiven(l layer, names map[string][]string, secrets map[string]given) []st
 }
 
 func TestEveryLayerIsGivenEachVariableItNames(t *testing.T) {
-	t.Parallel()
+	light(t)
 	tree := repository(t)
 	secrets := secretsWritten(tree.OpenTofu(t))
 
@@ -332,7 +332,7 @@ func TestEveryLayerIsGivenEachVariableItNames(t *testing.T) {
 // The reading of both ends is held to what it claims, against a secret and
 // a layer written here.
 func TestALayerIsHeldToWhatItsSecretsCarry(t *testing.T) {
-	t.Parallel()
+	light(t)
 	secrets := secretsWritten(tofuOf(t, map[string]string{"a.tf": `
 resource "kubernetes_secret" "written" {
   metadata {

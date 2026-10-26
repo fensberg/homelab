@@ -345,7 +345,7 @@ closed without it.`, tc.hook, log)
 // same shape of problem (#257); the system Python no longer holds pre-commit,
 // and a copy that did would be one nothing locked by hash.
 func TestTheShimsFindTheDeliveredPreCommitAndSayWhenThereIsNone(t *testing.T) {
-	t.Parallel()
+	light(t)
 
 	t.Run("delivered but not on PATH", func(t *testing.T) {
 		f := newHookFixture(t, 0)

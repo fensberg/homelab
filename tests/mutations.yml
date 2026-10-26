@@ -276,9 +276,9 @@ unprovable:
     reason: table
   - test: TestAGroupOfRunnersIsAWallOnlyWhileItNamesWhatItAdmits
     reason: table
-  # The reader behind TestEveryGuardAtPushRunsBesideTheOthers, which its own
-  # ledger entry proves. Its table holds each way a guard says it runs alone.
-  - test: TestAGuardIsSeenToRunBesideTheOthersOrToSayWhyNot
+  # The reader behind TestEveryGuardOpensBySayingHowItRuns, which its own
+  # ledger entry proves. Its table holds each way a guard may open.
+  - test: TestAGuardsOpeningIsReadFromItsFirstStatement
     reason: table
   #
   # Already a mutation proof in the stronger form: it extracts the task's own

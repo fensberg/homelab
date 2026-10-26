@@ -79,7 +79,7 @@ func (f *retryFixture) calls(t *testing.T) int {
 
 // A command that fails once and then succeeds is retried, and the run is green.
 func TestRetryOutlastsATransientFailure(t *testing.T) {
-	t.Parallel()
+	light(t)
 	f := newRetryFixture(t, 1)
 
 	out, err := f.run(t, "3", "0", filepath.Join(f.dir, "curl"))
@@ -99,7 +99,7 @@ func TestRetryOutlastsATransientFailure(t *testing.T) {
 // everywhere else: "it worked" and "it worked eventually, after failing twice"
 // are different facts.
 func TestASuccessfulRetryIsNotSilent(t *testing.T) {
-	t.Parallel()
+	light(t)
 	f := newRetryFixture(t, 2)
 
 	out, err := f.run(t, "3", "0", filepath.Join(f.dir, "curl"))
@@ -121,7 +121,7 @@ that hides that is how it becomes the new normal.`, out)
 // bill nobody sees coming, and a retry that eventually reports success would be
 // worse than no retry at all.
 func TestRetryGivesUpAndFails(t *testing.T) {
-	t.Parallel()
+	light(t)
 	f := newRetryFixture(t, 99)
 
 	out, err := f.run(t, "3", "0", filepath.Join(f.dir, "curl"))
@@ -141,7 +141,7 @@ func TestRetryGivesUpAndFails(t *testing.T) {
 // The boundary case, because an off-by-one here silently doubles every caller's
 // work against a vendor.
 func TestOneAttemptRunsOnce(t *testing.T) {
-	t.Parallel()
+	light(t)
 	f := newRetryFixture(t, 99)
 
 	if _, err := f.run(t, "1", "0", filepath.Join(f.dir, "curl")); err == nil {
@@ -158,7 +158,7 @@ func TestOneAttemptRunsOnce(t *testing.T) {
 // retry doing something other than what the caller meant - and the caller would
 // never find out, because the command usually succeeds.
 func TestRetryRefusesArgumentsItCannotHonour(t *testing.T) {
-	t.Parallel()
+	light(t)
 	f := newRetryFixture(t, 0)
 	flaky := filepath.Join(f.dir, "curl")
 
@@ -192,7 +192,7 @@ func TestRetryRefusesArgumentsItCannotHonour(t *testing.T) {
 // exists now and every one written later, whether or not anybody remembered to
 // extend a guard. This asserts the mechanism works; it is not the mechanism.
 func TestRetryRefusesAnythingThatIsNotAFetch(t *testing.T) {
-	t.Parallel()
+	light(t)
 	f := newRetryFixture(t, 0)
 
 	// Verdicts, and a plain unknown command. None may be retried.
@@ -233,7 +233,7 @@ A refusal naming no remedy is one somebody works around.`, out)
 // would silently cover every new caller, which is the allow-list failure this
 // repository refuses everywhere else.
 func TestAnUndeclaredCommandIsRefusedRatherThanAllowed(t *testing.T) {
-	t.Parallel()
+	light(t)
 	f := newRetryFixture(t, 0)
 
 	declares := slices.ContainsFunc(parsed.Commands(repository(t).Shell(t, "scripts/retry.sh")), func(c parsed.Command) bool {

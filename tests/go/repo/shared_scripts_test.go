@@ -69,7 +69,7 @@ func namedScripts(t *testing.T) map[string][]string {
 }
 
 func TestEverySharedScriptIsNamedAndEveryNameIsAScript(t *testing.T) {
-	t.Parallel()
+	light(t)
 	scripts := sharedScripts(t)
 	named := namedScripts(t)
 

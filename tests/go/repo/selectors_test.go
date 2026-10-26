@@ -444,7 +444,7 @@ func TestEverySelectorARuleReadsThroughIsProved(t *testing.T) {
 }
 
 func TestSelectorUsesFindsLibByEveryNameAFileGivesIt(t *testing.T) {
-	t.Parallel()
+	light(t)
 	dir := t.TempDir()
 	parse := func(src string) any {
 		t.Helper()

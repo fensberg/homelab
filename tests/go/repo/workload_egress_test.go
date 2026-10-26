@@ -41,7 +41,7 @@ const (
 )
 
 func TestNoApplicationCanBeGivenAPathIntoTheEstate(t *testing.T) {
-	t.Parallel()
+	light(t)
 	// EVERY policy that governs an application, not one file.
 	//
 	// NetworkPolicies are additive: a second one, anywhere in the repository,
@@ -108,7 +108,7 @@ Excluded today: %s`, p.file, everywhere, estateRange, strings.Join(excepted, ", 
 // that opens the internet minus every private range and two private ranges
 // beside it is accepted, and each way of opening the estate is named.
 func TestPathsIntoTheEstateNamesEachWayOneIsOpened(t *testing.T) {
-	t.Parallel()
+	light(t)
 	const broad = "    - to:\n        - ipBlock:\n            cidr: 0.0.0.0/0\n            except:\n              - 10.0.0.0/8\n              - 172.20.0.0/16\n"
 	for name, c := range map[string]struct {
 		egress string

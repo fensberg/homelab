@@ -41,7 +41,7 @@ func routeVariable(name string) string {
 type fixedService struct{ file, name, clusterIP string }
 
 func TestEveryTunnelRouteIsAServiceAddressAndTheReverse(t *testing.T) {
-	t.Parallel()
+	light(t)
 	tree := repository(t)
 	apps := tree.Applications(t)
 	// What of the core is reached from away is declared beside the core, as a
@@ -148,7 +148,7 @@ func routeProblems(apps []applications.Application, services []fixedService) []s
 // written here: a route answered by its own Service is accepted, and each way
 // the two can disagree is named.
 func TestRouteProblemsNamesEachWayARouteAndItsServiceDisagree(t *testing.T) {
-	t.Parallel()
+	light(t)
 	app := func(name string, routes map[string]int) applications.Application {
 		root := applications.Dir + "/" + name
 		return applications.Application{Name: name, Root: root, Path: root + "/" + applications.Declaration, Routes: routes}

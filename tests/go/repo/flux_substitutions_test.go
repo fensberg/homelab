@@ -44,7 +44,7 @@ var (
 )
 
 func TestEveryFluxSubstitutionHasAStandInAndTheReverse(t *testing.T) {
-	t.Parallel()
+	light(t)
 	tree := repository(t)
 
 	declared := map[string]bool{}

@@ -16,7 +16,7 @@ var runnersOf = harness.RunnersOf
 // GitHub's runner by day - is read as itself, a runner nothing here can say
 // anything about, and so one the rules refuse.
 func TestARunnerIsReadAsItIsWrittenAndAnExpressionIsNoRunnerItCanName(t *testing.T) {
-	t.Parallel()
+	light(t)
 	read := func(value string) []string {
 		return runnersOf(&yaml.Node{Kind: yaml.ScalarNode, Value: value})
 	}

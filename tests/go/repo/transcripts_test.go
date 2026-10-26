@@ -229,7 +229,7 @@ check silently stopped reading - which is the same green as finding nothing.`, c
 // with no transcripts in it. That is the exact shape this whole file exists to
 // refuse, so the patterns are held to it too.
 func TestTheTranscriptShapesMatchWhatTheyClaim(t *testing.T) {
-	t.Parallel()
+	light(t)
 	cases := []struct {
 		name    string
 		line    string

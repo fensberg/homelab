@@ -224,7 +224,7 @@ func whyOurs(t *testing.T, path string, vendored map[string]bool) string {
 }
 
 func TestAnExcludedPathHoldsNothingTheToolWasMeantToRead(t *testing.T) {
-	t.Parallel()
+	light(t)
 	tracked := trackedFiles(t)
 	vendored := vendoredFiles(t, tracked)
 
@@ -260,7 +260,7 @@ func TestAnExcludedPathHoldsNothingTheToolWasMeantToRead(t *testing.T) {
 // machine reads, and it is used at all - an accepted word nobody writes is an
 // exemption waiting to hide a real misspelling.
 func TestAWordCodespellAcceptsIsOnlyEverWrittenAsCode(t *testing.T) {
-	t.Parallel()
+	light(t)
 	words := codespellList(t, "ignore-words-list")
 	// Told to accept nothing, there is nothing to hold it to.
 	if len(words) == 0 {

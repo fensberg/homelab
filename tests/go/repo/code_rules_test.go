@@ -356,7 +356,7 @@ func codeRules(t *testing.T) []codeRule {
 // site-name rules open with the same ones: the rule over programs had no
 // proof of its own, and one over a workflow stood for both (#780).
 func TestEveryPlaceACodeRuleReadsIsProved(t *testing.T) {
-	t.Parallel()
+	light(t)
 	const harness = "TestTheCodeRulesHold"
 	var proofs []mutation
 	for _, m := range readLedger(t).Mutations {
@@ -441,7 +441,7 @@ func segmentsMatch(pat, parts []string) bool {
 }
 
 func TestSemgrepPathsAreReadAsGitignoreLines(t *testing.T) {
-	t.Parallel()
+	light(t)
 	for _, c := range []struct {
 		pattern, rel string
 		want         bool
@@ -522,7 +522,7 @@ func acceptedIn(line string) []string {
 }
 
 func TestAcceptedInReadsSemgrepsOkMark(t *testing.T) {
-	t.Parallel()
+	light(t)
 	for _, c := range []struct {
 		line string
 		want []string

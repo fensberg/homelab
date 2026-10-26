@@ -189,7 +189,7 @@ func runnerProblems(release map[string]any) []string {
 }
 
 func TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore(t *testing.T) {
-	t.Parallel()
+	light(t)
 	tree := repository(t)
 	pools, egress := tree.Pools(t), tree.Egress(t)
 	if len(pools.Names) == 0 {
@@ -271,7 +271,7 @@ func TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore(t *testing.T)
 
 // The judging, on policies and runners made up here.
 func TestAPoolsPolicyIsHeldToItsListAndItsRunnersToNothingOfTheClusters(t *testing.T) {
-	t.Parallel()
+	light(t)
 	const good = `
 spec:
   egress:

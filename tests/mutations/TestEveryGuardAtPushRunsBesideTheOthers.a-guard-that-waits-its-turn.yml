@@ -1,9 +1,0 @@
-guard: TestEveryGuardAtPushRunsBesideTheOthers
-file: tests/go/repo/heavy_test.go
-reads_source: true
-find: "func TestAGuardIsSeenToRunBesideTheOthersOrToSayWhyNot(t *testing.T) {\n\tt.Parallel()\n"
-replace: "func TestAGuardIsSeenToRunBesideTheOthersOrToSayWhyNot(t *testing.T) {\n"
-mentions: "does not call t.Parallel()"
-why: >
-  A guard at push that runs alone makes every guard after it wait, and 253
-  of them in a row took the push to 27 seconds against a budget of ten.

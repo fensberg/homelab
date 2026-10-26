@@ -29,7 +29,7 @@ import (
 // point: an untracked 9 MB executable in the working tree is worth being told
 // about whether or not it was about to be committed.
 func TestNoCompiledBinaryIsUntrackedAndUnignored(t *testing.T) {
-	t.Parallel()
+	light(t)
 	// The scratch tree a meta test judges is a git repository too, so this
 	// asks git everywhere, and a git that cannot answer fails the test.
 	tree := repository(t)
@@ -59,7 +59,7 @@ still building to this path, point it at toolshed/ instead.`, path, info.Size())
 // The ignore rule stops the next one. This catches one that got in before the
 // rule existed - which is exactly what happened to survey.
 func TestNoCompiledBinaryIsTracked(t *testing.T) {
-	t.Parallel()
+	light(t)
 	tree := repository(t)
 	files := tree.Files(t)
 	const atLeastAHundredTracked = 100

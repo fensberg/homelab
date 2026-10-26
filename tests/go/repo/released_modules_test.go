@@ -32,7 +32,7 @@ import (
 // against an estate clears, nothing chooses a release by default, and every
 // site there is has a line.
 func TestEverySiteRootRunsItsModulesAsReleased(t *testing.T) {
-	t.Parallel()
+	light(t)
 	tree := repository(t)
 	tofu := tree.OpenTofu(t)
 	var release platform.Release
@@ -220,7 +220,7 @@ func unreleasedModules(t testing.TB, tree *parsed.Tree, root string, files []par
 }
 
 func TestUnreleasedModulesRefusesEveryWayAroundTheRelease(t *testing.T) {
-	t.Parallel()
+	light(t)
 	variable := func(name, def string) string {
 		return "variable \"" + name + "\" {\n  type    = string\n  default = " + def + "\n}\n"
 	}
@@ -261,7 +261,7 @@ func TestUnreleasedModulesRefusesEveryWayAroundTheRelease(t *testing.T) {
 }
 
 func TestUnversionedSitesWantsALineForEverySiteAndNoOther(t *testing.T) {
-	t.Parallel()
+	light(t)
 	pin := platform.Pin{Version: "v2026.10.1", Digest: "sha256:abc"}
 	if got := unversionedSites([]string{"alpha", "beta"}, map[string]platform.Pin{"alpha": pin, "beta": pin}); len(got) != 0 {
 		t.Errorf("every site with its line: %v", got)

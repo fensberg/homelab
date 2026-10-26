@@ -427,7 +427,7 @@ func nodesAt(n *yaml.Node, path []string) []*yaml.Node {
 // silenced, or declared to judge nothing. And the reverse: an entry for a
 // tool that no longer arrives is a claim about nothing.
 func TestEveryToolThatArrivesSaysHowItIsSilenced(t *testing.T) {
-	t.Parallel()
+	light(t)
 	s := readSilencers(t)
 
 	known := map[string]string{}

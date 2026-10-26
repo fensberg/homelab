@@ -39,7 +39,7 @@ import (
 // not worth the false positives, so this guards the reassignable seam and says
 // nothing about the others.
 func TestPackagesWithANetworkEndpointPinItInTests(t *testing.T) {
-	t.Parallel()
+	light(t)
 	tree := repository(t)
 	fset := token.NewFileSet()
 

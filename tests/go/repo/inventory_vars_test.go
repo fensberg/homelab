@@ -24,7 +24,7 @@ import (
 // What the inventory supplies is read from the program that writes it: every
 // host variable it prints into the inventory it builds.
 func TestNoPlayGivesADefaultToWhatTheInventorySuppliesPerHost(t *testing.T) {
-	t.Parallel()
+	light(t)
 	tree := repository(t)
 	hostVar := regexp.MustCompile(`^\s{10}([a-z_]+): `)
 	supplied := map[string]string{}

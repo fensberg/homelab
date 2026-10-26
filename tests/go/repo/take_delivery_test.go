@@ -151,7 +151,7 @@ type stringWriter struct{ b *strings.Builder }
 func (w *stringWriter) Write(p []byte) (int, error) { return w.b.Write(p) }
 
 func TestTakeDeliveryInstallsOnlyTheFileTheLockWasOrderedWith(t *testing.T) {
-	t.Parallel()
+	light(t)
 	binary := []byte("#!/bin/sh\necho the real tool\n")
 	lock := "# [fetch: tool TOOL_VERSION=1.0]\n" +
 		"https://example.com/v1.0/tool-linux-x86_64 --hash=sha256:" + sha256Hex(binary) + "\n# [end]\n"
@@ -197,7 +197,7 @@ func TestTakeDeliveryInstallsOnlyTheFileTheLockWasOrderedWith(t *testing.T) {
 // moved since is a different delivery and is fetched; and a run that was
 // refused records nothing, so what it did not install is not taken as here.
 func TestTakeDeliveryDoesNotFetchWhatIsAlreadyHereAsTheLockOrdersIt(t *testing.T) {
-	t.Parallel()
+	light(t)
 	binary := []byte("#!/bin/sh\necho the first tool\n")
 	lockFor := func(version string, body []byte) string {
 		return "# [fetch: tool TOOL_VERSION=" + version + "]\n" +
@@ -251,7 +251,7 @@ func TestTakeDeliveryDoesNotFetchWhatIsAlreadyHereAsTheLockOrdersIt(t *testing.T
 }
 
 func TestTakeDeliveryTakesTheNamedFileOutOfAnArchive(t *testing.T) {
-	t.Parallel()
+	light(t)
 	archive := tarGz(t, map[string]string{"LICENSE": "text", "tool": "#!/bin/sh\necho from the archive\n"})
 	lock := "# [fetch: tool TOOL_VERSION=2.0]\n" +
 		"https://example.com/v2.0/tool_2.0_linux_amd64.tar.gz --hash=sha256:" + sha256Hex(archive) + "\n# [end]\n"
@@ -269,7 +269,7 @@ func TestTakeDeliveryTakesTheNamedFileOutOfAnArchive(t *testing.T) {
 }
 
 func TestTakeDeliveryHandsPipEveryHashAndEachSharedLineOnce(t *testing.T) {
-	t.Parallel()
+	light(t)
 	lock := "# [pypi: alpha ALPHA_VERSION=1]\n" +
 		"alpha==1 --hash=sha256:" + strings.Repeat("a", 64) + "\n" +
 		"shared==3 --hash=sha256:" + strings.Repeat("c", 64) + "\n# [end]\n" +
@@ -320,7 +320,7 @@ func TestTakeDeliveryHandsPipEveryHashAndEachSharedLineOnce(t *testing.T) {
 }
 
 func TestTakeDeliveryRefusesWhatTheLockDoesNotDecide(t *testing.T) {
-	t.Parallel()
+	light(t)
 	script := []byte("#!/bin/sh\ntouch \"$HOME/ran\"\n")
 	lock := "# [fetch: stranger STRANGER_VERSION=1]\n" +
 		"https://example.com/install.sh --hash=sha256:" + sha256Hex(script) + "\n# [end]\n" +

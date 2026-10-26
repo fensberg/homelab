@@ -28,7 +28,7 @@ import (
 // So the set is written down. Adding one fails here, which is the moment to
 // ask whether a ninth variant is needed or whether an existing one would do.
 func TestTheWaysToStartASubprocessAreDeclared(t *testing.T) {
-	t.Parallel()
+	light(t)
 	// The current toolbelt. This number should go DOWN.
 	declared := map[string]bool{
 		"Cmd":            true,

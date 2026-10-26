@@ -31,7 +31,7 @@ import (
 // test any good" detector - no such thing exists - but it removes the need to
 // think hard about the one variety that has actually hurt here.
 func TestNoFunctionIsReachableOnlyFromItsTests(t *testing.T) {
-	t.Parallel()
+	light(t)
 	for _, pkg := range goPackages(t) {
 		testOnly, dead := unwiredFunctions(t, pkg)
 		for _, name := range testOnly {

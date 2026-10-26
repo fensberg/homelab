@@ -163,7 +163,7 @@ func hasGoMod(tree *parsed.Tree, dir string) bool {
 }
 
 func TestNoGoCommandResolvesAgainstTheRootlessRepository(t *testing.T) {
-	t.Parallel()
+	light(t)
 	tree := repository(t)
 
 	if hasGoMod(tree, ".") {

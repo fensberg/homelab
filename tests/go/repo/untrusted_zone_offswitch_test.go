@@ -37,7 +37,7 @@ import (
 // a count to named zones broke it while the behaviour it cared about was
 // unchanged - which is the failure the mutation ledger exists to make visible.
 func TestEveryZoneTaskLoopsOverTheZones(t *testing.T) {
-	t.Parallel()
+	light(t)
 	var checked int
 	for _, task := range hypervisorPlay(t).Tasks {
 		if !task.Uses("item.vnet") {

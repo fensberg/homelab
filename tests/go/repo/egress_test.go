@@ -18,7 +18,7 @@ import (
 // rule drift, and the copy that runs in CI would be the one nobody notices is
 // wrong.
 func TestEveryJobsEgressIsDeclaredInTheSuppliersList(t *testing.T) {
-	t.Parallel()
+	light(t)
 	// A workflow change arrives as a patch, and the suppliers list that must
 	// agree with it travels in the same patch, so the tree agrees with itself
 	// before the patch is applied and after.

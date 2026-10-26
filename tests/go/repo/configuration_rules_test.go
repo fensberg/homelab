@@ -79,10 +79,10 @@ func runConftest(t *testing.T, args ...string) (string, bool) {
 }
 
 func TestTheConfigurationRulesHold(t *testing.T) {
+	heavy(t, "plans every site's roots from nothing, for the rules over OpenTofu, which takes seconds")
 	if !repository(t).IsDir(conftestRules) {
 		t.Fatalf("%s is not there, so no configuration rule runs", conftestRules)
 	}
-	heavy(t, "plans every site's roots from nothing, for the rules over OpenTofu, which takes seconds")
 	// How it is run - every package, every file at once - is conftest.toml's
 	// to say, so this, the lane and a person at a terminal run it alike. The
 	// plans go with the files: OpenTofu is judged on what it would make, as
@@ -225,7 +225,7 @@ func isTestPackage(pkg string) bool { return strings.HasSuffix(pkg, "_test") }
 // package lib, which Rego joins to the first, and a rule in a file named
 // like a test, which Conftest runs like any other.
 func TestOnlyTheSelectorsReadTheInput(t *testing.T) {
-	t.Parallel()
+	light(t)
 	var libs, readers []string
 	for rel, tree := range policyFiles(t) {
 		switch {
@@ -252,7 +252,7 @@ func TestOnlyTheSelectorsReadTheInput(t *testing.T) {
 }
 
 func TestReadsInputCountsTheInputAndNothingThatSaysIt(t *testing.T) {
-	t.Parallel()
+	light(t)
 	tree := map[string]any{"rules": []any{
 		map[string]any{"type": "ref", "value": []any{map[string]any{"type": "var", "value": "input"}, map[string]any{"type": "string", "value": "path"}}},
 		map[string]any{"type": "string", "value": "input"},

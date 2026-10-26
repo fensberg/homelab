@@ -34,7 +34,7 @@ import (
 //     needs nothing written for it, and giving it work is a commit to its
 //     own directory.
 func TestTheFluxCoreIsSharedAndASiteDirectoryIsItsWork(t *testing.T) {
-	t.Parallel()
+	light(t)
 	tree := repository(t)
 	files := map[string][]any{}
 	for _, rel := range tracked(t, func(rel string) bool { return strings.HasPrefix(rel, fluxTree+"/") }) {
@@ -175,7 +175,7 @@ func resourcesOf(docs []any) []string {
 }
 
 func TestFluxLayoutRefusesWhatIsNotCoreOrASitesOwn(t *testing.T) {
-	t.Parallel()
+	light(t)
 	l := fluxLayout{core: "shared", bootstrap: "first", vendored: fluxTree + "/shared/engine/", sites: []string{"alpha", "beta"}}
 	good := map[string]string{
 		fluxTree + "/shared/kustomization.yaml":    "resources: [engine, parts.yaml]\n",

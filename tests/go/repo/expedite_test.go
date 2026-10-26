@@ -126,7 +126,7 @@ func TestTheExpediterListsWhatDeclaresAnUpstream(t *testing.T) {
 // daily pass does not ask it at all, and an estate with nothing to expedite
 // looks at nothing.
 func TestTheDoorbellIsRungForEachApplication(t *testing.T) {
-	t.Parallel()
+	light(t)
 	// A `go` that answers for procurement's check: the announcements of one
 	// appid are fresh, every other's are not, and it records what it was
 	// asked.
@@ -201,7 +201,7 @@ cp "` + script + `" "$dir/steamcmd.sh"`,
 // taken for exactly those whose public build is not the one their own pins
 // file records - each carrying the line to move and the file it is in.
 func TestADeliveryIsTakenForEachApplicationWhoseBuildMoved(t *testing.T) {
-	t.Parallel()
+	light(t)
 	root := expediteFixture(t)
 	ok, outputs, summary, logs := runExpediteStep(t, "deliver", "Ask SteamCMD what each build actually is", root,
 		steam(t, map[string]string{"111": "500", "221": "701"}), []string{"UPSTREAMS=" + expediteUpstreams})
@@ -265,7 +265,7 @@ esac`}), dir
 // application declared moved to the new build and every other line as it
 // was - on a branch and under a title that name the application.
 func TestTheExpediterSubmitsTheDeclaredPinAndNothingElse(t *testing.T) {
-	t.Parallel()
+	light(t)
 	root := expediteFixture(t)
 	path, fake := submitted(t)
 	pins := applications.Dir + "/alpha/" + applications.Pins

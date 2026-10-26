@@ -62,7 +62,7 @@ func readCustomBlocks(t *testing.T) customBlocks {
 }
 
 func TestAnApplicationsSettingsBuildOnItsBaseAndStayInItsDirectory(t *testing.T) {
-	t.Parallel()
+	light(t)
 	tree := repository(t)
 	// No floor on how many there are: an estate with no application has
 	// none, and what this refuses is proved against applications written
@@ -165,7 +165,7 @@ func environmentObjects(docs []any) []environmentObject {
 }
 
 func TestAGoFunctionWrittenTwiceIsDeclared(t *testing.T) {
-	t.Parallel()
+	light(t)
 	tree := repository(t)
 	declared := map[string]bool{}
 	for _, d := range readCustomBlocks(t).Go {
@@ -261,7 +261,7 @@ func reportCustomBlocks(t *testing.T, found, declared map[string]bool, what, why
 }
 
 func TestDuplicateFunctionsFindsCopiesAcrossPackagesOnly(t *testing.T) {
-	t.Parallel()
+	light(t)
 	body := func(pkg, name string) []byte {
 		return []byte("package " + pkg + "\nfunc " + name + "(s string) int {\n\tn := len(s)\n\tn++\n\treturn n\n}\n")
 	}
@@ -287,7 +287,7 @@ func TestDuplicateFunctionsFindsCopiesAcrossPackagesOnly(t *testing.T) {
 }
 
 func TestApplicationShapeProblemsRefusesWhatIsNotTheShape(t *testing.T) {
-	t.Parallel()
+	light(t)
 	at := func(rel string) string { return applications.Dir + "/" + rel }
 	files := map[string]string{
 		at("app/" + applications.Declaration):  "{}",

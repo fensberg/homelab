@@ -25,7 +25,7 @@ import (
 // Held of every application's declaration, found by reading them all, so the
 // next workload that declares one is held to it too.
 func TestEveryDeclaredBackupNamesAContainerAndLabelsTheWorkloadHas(t *testing.T) {
-	t.Parallel()
+	light(t)
 	tree := repository(t)
 	// Read by the contractor's own reader, so what is held to the manifest is
 	// exactly what a teardown would run.
@@ -68,7 +68,7 @@ func backupProblems(d applications.BeforeTeardown, containers, labels map[string
 // backup in a sidecar the pod has, picked by labels it carries, is accepted,
 // and a container or a label the pod does not have is named.
 func TestBackupProblemsNamesWhatADeclarationGetsWrong(t *testing.T) {
-	t.Parallel()
+	light(t)
 	containers, labels := map[string]bool{}, map[string]bool{}
 	podTemplates(t, "thing.yaml", fixtureDocuments(t, "kind: ConfigMap\n---\nkind: Deployment\nspec:\n  template:\n    metadata:\n      labels: {app: thing, tier: data}\n    spec:\n      initContainers:\n        - name: saver\n      containers:\n        - name: server\n"), containers, labels)
 	for name, c := range map[string]struct {

@@ -163,7 +163,7 @@ func (f *setupFixture) gitConfig(t *testing.T, key string) string {
 // only because this script sets core.hooksPath - without it the supplier guard
 // is a file nobody invokes and every shim tested elsewhere is unreachable.
 func TestSetupWiresTheHooksAndSigning(t *testing.T) {
-	t.Parallel()
+	light(t)
 	f := newSetupFixture(t, "")
 
 	out, err := f.run(t)
@@ -233,7 +233,7 @@ readable reason.`, want.key, got, want.value)
 // behalf. A warning there would be noise on every run, and a warning that is
 // always present is one nobody reads.
 func TestSetupSaysNothingToRegisterWhereThereIsNoAccount(t *testing.T) {
-	t.Parallel()
+	light(t)
 	f := newSetupFixture(t, noAccount)
 
 	out, err := f.run(t)
@@ -257,7 +257,7 @@ func TestSetupSaysNothingToRegisterWhereThereIsNoAccount(t *testing.T) {
 // unsigned one - and the operator's editor pushed into that refusal with no
 // readable reason.
 func TestSetupSaysPushesWillBeRefusedWithoutARegisteredKey(t *testing.T) {
-	t.Parallel()
+	light(t)
 	gh := "#!/usr/bin/env bash\ncase \"$1\" in\n  api) echo someone; exit 0 ;;\n  ssh-key) [ \"$2\" = list ] && exit 0; exit 1 ;;\nesac\nexit 0\n"
 	f := newSetupFixture(t, gh)
 
@@ -287,7 +287,7 @@ exactly like an unsigned one.`, out)
 // Regenerating a signing key on a second run would replace the one GitHub knows
 // about, turning a working setup into refused pushes.
 func TestSetupIsSafeToReRun(t *testing.T) {
-	t.Parallel()
+	light(t)
 	f := newSetupFixture(t, "")
 
 	if out, err := f.run(t); err != nil {

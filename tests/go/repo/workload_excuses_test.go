@@ -95,7 +95,7 @@ func stringMap(n *yaml.Node) map[string]string {
 // is a neighbour evicted. So where there is no CPU limit, those two are
 // there.
 func TestAContainerWithNoCPULimitReservesCPUAndIsLimitedInMemory(t *testing.T) {
-	t.Parallel()
+	light(t)
 	containers, _ := ourWorkloads(t)
 	var failures []string
 	for _, c := range containers {
@@ -127,7 +127,7 @@ func TestAContainerWithNoCPULimitReservesCPUAndIsLimitedInMemory(t *testing.T) {
 // repository's own is a Secret: every one a workload names is written into
 // the cluster by OpenTofu, from the vault.
 func TestNoSecretIsWrittenInTheTree(t *testing.T) {
-	t.Parallel()
+	light(t)
 	tree := repository(t)
 	tracked := tree.Files(t)
 	vendored := vendoredFiles(t, tracked)
@@ -167,7 +167,7 @@ func TestNoSecretIsWrittenInTheTree(t *testing.T) {
 // this repository cannot see, and may be somewhere a HEALTHCHECK is all there
 // is.
 func TestEveryImageBuiltHereIsRunByAManifestHere(t *testing.T) {
-	t.Parallel()
+	light(t)
 	tree := repository(t)
 	tracked := tree.Files(t)
 	var images []string

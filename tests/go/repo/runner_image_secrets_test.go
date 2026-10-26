@@ -30,7 +30,7 @@ var (
 )
 
 func TestRunnerImageCannotReceiveASecret(t *testing.T) {
-	t.Parallel()
+	light(t)
 	tree := repository(t)
 	// Every image the estate orders for itself: the one a converge runs in
 	// and any other a runner starts from. An application's image is its
