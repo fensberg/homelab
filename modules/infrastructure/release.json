@@ -17,8 +17,8 @@
     "config/facts/dns-resolvers.json",
     "config/facts/storage-names.json",
     "config/facts/untrusted-zone.json",
-    "scripts/versions.env",
     "modules/applications/*/application.json",
-    "modules/infrastructure"
+    "modules/infrastructure",
+    "scripts/versions.env"
   ]
 }
