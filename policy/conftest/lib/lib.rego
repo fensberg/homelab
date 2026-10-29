@@ -77,6 +77,36 @@ plan_scope(path) := scope if {
 	scope in {"site", "estate"}
 }
 
+# pull_request_pools is the label a job asks for each of the pools of
+# pull-request runners by, made from the names the suppliers list declares
+# under pull_request_pools - the one place a pool is named. The site is the
+# repository's variable, so a label ends in that and never in a site written
+# out.
+pull_request_pools contains $"pr-{name}-$\{\{ vars.pull_request_runners_site }}" if {
+	some f in at("scripts/approved-suppliers.yml")
+	some name in f.contents.pull_request_pools.names
+}
+
+# hosted_runner is whether a label is a runner GitHub provides.
+hosted_runner(label) if regex.match(`^(ubuntu|windows|macos)-[a-z0-9.-]+$`, label)
+
+# runner_labels is the runners a job's runs-on asks for, read as written: one
+# name, or each name of a list. Anything else - a group, an expression -
+# names no runner, and is read as none; a name in a list that is not text
+# reads as empty.
+runner_labels(runs_on) := [runs_on] if is_string(runs_on)
+
+runner_labels(runs_on) := [label_of(l) | some l in runs_on] if is_array(runs_on)
+
+runner_labels(runs_on) := [] if {
+	not is_string(runs_on)
+	not is_array(runs_on)
+}
+
+label_of(l) := l if is_string(l)
+
+label_of(l) := "" if not is_string(l)
+
 # provider_locks is every provider a lock file locks, as [path, source]:
 # what `tofu init` writes beside a root or a module to say which providers
 # it was initialised with and the hashes they must match. A lock file is

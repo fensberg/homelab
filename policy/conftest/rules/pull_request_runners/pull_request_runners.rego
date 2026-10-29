@@ -26,17 +26,6 @@ package rules.pull_request_runners
 import data.lib
 import rego.v1
 
-# A brace of a template a message quotes, which a template string cannot
-# hold as it is.
-open := "{"
-
-close := "}"
-
-pools contains $"pr-{name}-${open}{open} vars.pull_request_runners_site {close}{close}" if {
-	some f in lib.at("scripts/approved-suppliers.yml")
-	some name in f.contents.pull_request_pools.names
-}
-
 # The management pool, by the runner scale set that is it, for the message.
 management_pool := name if {
 	some f in lib.objects
@@ -45,30 +34,12 @@ management_pool := name if {
 	name := f.contents.spec.values.runnerScaleSetName
 }
 
-hosted := `^(ubuntu|windows|macos)-[a-z0-9.-]+$`
+safe(label) if lib.hosted_runner(label)
 
-# A runner is read as it is written: one name, or each name of a list. An
-# expression names no runner this can vet, and is refused as one
-# (tests/go/harness RunnersOf).
-runners(runs_on) := [runs_on] if is_string(runs_on)
-
-runners(runs_on) := [label | some l in runs_on; label := as_label(l)] if is_array(runs_on)
-
-runners(runs_on) := [] if {
-	not is_string(runs_on)
-	not is_array(runs_on)
-}
-
-as_label(l) := l if is_string(l)
-
-as_label(l) := "" if not is_string(l)
-
-safe(label) if regex.match(hosted, label)
-
-safe(label) if label in pools
+safe(label) if label in lib.pull_request_pools
 
 pull_request_safe(runs_on) if {
-	labels := runners(runs_on)
+	labels := lib.runner_labels(runs_on)
 	count(labels) > 0
 	every label in labels {
 		safe(label)
@@ -126,7 +97,7 @@ deny contains msg if {
 }
 
 deny contains msg if {
-	count(pools) == 0
+	count(lib.pull_request_pools) == 0
 	msg := "the suppliers list declares no pull-request pool under pull_request_pools.names, so every pool would be refused for want of a name"
 }
 
