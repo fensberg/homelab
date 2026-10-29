@@ -3,46 +3,54 @@ package rules.runner_namespaces_test
 import data.rules.runner_namespaces
 import rego.v1
 
-keep_off := [{"matchExpressions": [{"key": "node-role.kubernetes.io/control-plane", "operator": "DoesNotExist"}]}]
+fact := {"path": "config/facts/runner-namespaces.json", "contents": {"system": "sys", "runners": "own", "pull_request_runners": "prs"}}
 
-set(name, scale_set, terms, requests) := {"path": $"clusters/core/{name}.yaml", "contents": {"kind": "HelmRelease", "metadata": {"name": name, "namespace": "arc-runners"}, "spec": {"chart": {"spec": {"chart": "gha-runner-scale-set"}}, "values": {"runnerScaleSetName": scale_set, "template": {"spec": {"affinity": {"nodeAffinity": {"requiredDuringSchedulingIgnoredDuringExecution": {"nodeSelectorTerms": terms}}}, "containers": [{"name": "runner", "resources": {"requests": requests}}]}}}}}}
+suppliers := {"path": "scripts/approved-suppliers.yml", "contents": {"pull_request_pools": {"names": ["build"]}}}
 
-sized := {"cpu": "1", "memory": "2Gi"}
+release(name, namespace, chart, set) := {"path": $"clusters/core/{name}.yaml", "contents": {
+	"kind": "HelmRelease",
+	"metadata": {"name": name, "namespace": namespace},
+	"spec": {"chart": {"spec": {"chart": chart}}, "values": {"runnerScaleSetName": set}},
+}}
 
-controller := {"path": "clusters/core/controller.yaml", "contents": {"kind": "HelmRelease", "metadata": {"name": "gha-runner-scale-set-controller", "namespace": "arc-systems"}}}
+controller(namespace) := release("controller", namespace, "gha-runner-scale-set-controller", "")
 
-locals := {"path": "modules/p/variables.tf", "contents": {"locals": [{"runner_system_namespace": "arc-systems", "runners_namespace": "arc-runners"}]}}
+estates(namespace) := release("estates", namespace, "gha-runner-scale-set", "homelab-${SITE}")
 
-workflow(labels) := {"path": ".github/workflows/w.yml", "contents": {"jobs": {$"j{i}": {"runs-on": l} | some i, l in labels}}}
+pool(namespace) := release("pool", namespace, "gha-runner-scale-set", "pr-build-${SITE}")
 
-good := [
-	controller,
-	locals,
-	set("self-hosted", "homelab-${SITE}", keep_off, sized),
-	set("batch", "homelab-batch-${SITE}", keep_off, sized),
-	workflow(["homelab-${{ matrix.site }}", "homelab-batch-${{ matrix.site }}", "ubuntu-latest"]),
-]
-
-swap(i, f) := array.flatten([array.slice(good, 0, i), [f], array.slice(good, i + 1, count(good))])
+good := [fact, suppliers, controller("sys"), estates("own"), pool("prs")]
 
 denies(msgs, words) if {
 	some msg in msgs
 	contains(msg, words)
 }
 
-test_the_runners_as_they_should_be_pass if {
+test_each_release_in_its_namespace_passes if {
 	count(runner_namespaces.deny) == 0 with input as good
 }
 
-test_a_namespace_the_manifest_never_mentions_is_refused if {
-	denies(runner_namespaces.deny, `local.runners_namespace = "arc-elsewhere"`) with input as swap(1, {"path": "modules/p/variables.tf", "contents": {"locals": [{"runner_system_namespace": "arc-systems", "runners_namespace": "arc-elsewhere"}]}})
+test_the_controller_elsewhere_is_refused if {
+	denies(runner_namespaces.deny, "controller is the runners' controller, and is in the namespace \"own\"") with input as [fact, suppliers, controller("own"), estates("own"), pool("prs")]
 }
 
-test_a_namespace_declared_twice_is_refused if {
-	again := {"path": "modules/q/variables.tf", "contents": {"locals": [{"runners_namespace": "arc-runners"}]}}
-	denies(runner_namespaces.deny, "local.runners_namespace is declared 2 time(s)") with input as array.concat(good, [again])
+test_a_pool_among_the_estates_runners_is_refused if {
+	denies(runner_namespaces.deny, "pool is a pull-request pool, and is in the namespace \"own\"") with input as [fact, suppliers, controller("sys"), estates("own"), pool("own")]
 }
 
-test_no_controller_release_is_refused if {
-	denies(runner_namespaces.deny, "0 HelmRelease named gha-runner-scale-set-controller were found") with input as array.slice(good, 1, count(good))
+test_the_estates_runners_with_no_namespace_are_refused if {
+	unnamed := object.union(estates("own"), {"contents": {"metadata": {"name": "estates", "namespace": null}}})
+	denies(runner_namespaces.deny, "estates is a set of the estate's own runners, and is in the namespace") with input as [fact, suppliers, controller("sys"), object.remove(unnamed, []), pool("prs")]
+}
+
+test_a_fact_missing_a_namespace_is_refused if {
+	partial := {"path": "config/facts/runner-namespaces.json", "contents": {"system": "sys", "runners": "own"}}
+	denies(runner_namespaces.deny, "gives no pull_request_runners namespace") with input as [partial, suppliers, controller("sys"), estates("own"), pool("prs")]
+}
+
+test_nothing_to_read_is_refused if {
+	denies(runner_namespaces.deny, "no HelmRelease installs the runners' controller") with input as [fact]
+	denies(runner_namespaces.deny, "no set of the estate's own runners was read") with input as [fact]
+	denies(runner_namespaces.deny, "no pull-request pool was read") with input as [fact]
+	denies(runner_namespaces.deny, "gives no system namespace") with input as []
 }

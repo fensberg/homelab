@@ -108,6 +108,13 @@ pull_request_pools contains $"pr-{name}-$\{\{ vars.pull_request_runners_site }}"
 	some name in f.contents.pull_request_pools.names
 }
 
+# pull_request_pool is whether a set of runners is one of the pull-request
+# pools: its name begins as a pool's label does, before the site.
+pull_request_pool(set_name) if {
+	some label in pull_request_pools
+	startswith(set_name, split(label, "${{")[0])
+}
+
 # hosted_runner is whether a label is a runner GitHub provides.
 hosted_runner(label) if regex.match(`^(ubuntu|windows|macos)-[a-z0-9.-]+$`, label)
 

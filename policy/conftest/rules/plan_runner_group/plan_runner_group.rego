@@ -87,13 +87,20 @@ uses_a_pool if {
 
 # Each set of runners, by the group it joins and whether it is a pool: a pool
 # is a set whose name begins as a pool's label does.
-sets contains [group, is_pool] if {
+sets contains [group, true] if {
+	some [group, set] in scale_sets
+	lib.pull_request_pool(set)
+}
+
+sets contains [group, false] if {
+	some [group, set] in scale_sets
+	not lib.pull_request_pool(set)
+}
+
+scale_sets contains [f.contents.spec.values.runnerGroup, f.contents.spec.values.runnerScaleSetName] if {
 	some f in lib.objects
 	f.contents.kind == "HelmRelease"
 	f.contents.spec.chart.spec.chart == "gha-runner-scale-set"
-	group := f.contents.spec.values.runnerGroup
-	set := f.contents.spec.values.runnerScaleSetName
-	is_pool := count({p | some p in lib.pull_request_pools; startswith(set, split(p, "${{")[0])}) > 0
 }
 
 deny contains msg if {

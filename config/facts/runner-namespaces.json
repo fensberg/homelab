@@ -1,0 +1,14 @@
+{
+  "_comment": [
+    "The namespaces the runners live in: the controller's, the estate's own",
+    "runners', and the pull-request pools', apart from every other runner",
+    "(modules/infrastructure/platform/runner.tf says why). The platform",
+    "module creates them from here. Each HelmRelease names its namespace",
+    "written out, because the engineer tries a change by loading its pods",
+    "before Flux substitutes anything, and the rule",
+    "policy/conftest/rules/runner_namespaces holds each one to this file."
+  ],
+  "system": "arc-systems",
+  "runners": "arc-runners",
+  "pull_request_runners": "pull-request-runners"
+}

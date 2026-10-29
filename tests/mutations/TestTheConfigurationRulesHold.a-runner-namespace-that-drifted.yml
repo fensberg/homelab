@@ -1,11 +1,11 @@
 guard: TestTheConfigurationRulesHold
 rule: runner_namespaces
-file: modules/infrastructure/platform/variables.tf
-find: '  runners_namespace       = "arc-runners"'
-replace: '  runners_namespace       = "arc-runners-moved"'
-mentions: "The manifest and the OpenTofu have drifted"
+file: config/facts/runner-namespaces.json
+find: '"runners": "arc-runners",'
+replace: '"runners": "arc-runners-moved",'
+mentions: 'where config/facts/runner-namespaces.json makes "arc-runners-moved"'
 why: >
-  OpenTofu creates the runners' namespace from this local, and the scale
+  OpenTofu creates the runners' namespace from this fact, and the scale
   set's manifest names it as a literal. Moved on one side only, the release
   is put in a namespace nothing creates, and every job waiting for those
   runners queues for ever.

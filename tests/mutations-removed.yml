@@ -254,3 +254,5 @@ removed:
     reason: the rule is gone with the second copy it held KUBERNETES_VERSION to. The cluster module reads the Kubernetes a site runs from that line, which delivers the scheduler a change is tried with too, so the two are one line (2026-10-29)
   - proof: TestTheConfigurationRulesHold.a-site-on-another-kubernetes.yml
     reason: the rule is gone with the local it held to KUBERNETES_VERSION. The cluster module reads the Kubernetes a site runs from that line, so there is no second copy to move (2026-10-29)
+  - proof: TestTheConfigurationRulesHold.a-runner-controller-release-renamed.yml
+    reason: runner_namespaces finds each runner release by the chart it installs, not by its name, so a renamed release is still read and held; what the proof broke can no longer go unread. TestTheConfigurationRulesHold.a-runner-controller-moved.yml breaks the controller's namespace instead (2026-10-29)

@@ -67,6 +67,12 @@ test_the_pools_are_named_from_the_suppliers_list if {
 	pools == {"pr-builds-${{ vars.pull_request_runners_site }}", "pr-source-${{ vars.pull_request_runners_site }}"}
 }
 
+test_a_set_of_runners_is_a_pool_by_its_name if {
+	suppliers := [{"path": "scripts/approved-suppliers.yml", "contents": {"pull_request_pools": {"names": ["build"]}}}]
+	lib.pull_request_pool("pr-build-${SITE}") with input as suppliers
+	not lib.pull_request_pool("homelab-${SITE}") with input as suppliers
+}
+
 test_a_runner_is_read_as_it_is_written if {
 	lib.hosted_runner("ubuntu-24.04")
 	not lib.hosted_runner("self-hosted")
