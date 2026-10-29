@@ -9,6 +9,13 @@
 # It is also the estate's only documented route for a fork on a network with
 # internal resolvers or a policy against public upstreams. One line to change
 # is a route; four lines to find is a bug waiting.
+#
+# The addresses are the fact config/facts/dns-resolvers.json, and the cluster
+# module reads them into local.dns_resolvers, which every machine class reads.
+# So no OpenTofu writes a resolver address at all, the declaration included:
+# one written anywhere is a second list. plan_restated_facts refuses the
+# fact's own addresses written back into a plan; this refuses any address,
+# in a local too, which no plan shows.
 package rules.dns_resolvers
 
 import data.lib
@@ -28,11 +35,6 @@ ipv4 := `^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$`
 
 about_resolving(key) if regex.match(`dns|nameserver|servers`, key)
 
-declared_at(path) if {
-	path[0] == "locals"
-	path[2] == "dns_resolvers"
-}
-
 # A resolver written as a value, under a key that says what it is for.
 written contains [f.path, key, v] if {
 	some f in tf
@@ -42,7 +44,6 @@ written contains [f.path, key, v] if {
 	some key in path
 	is_string(key)
 	about_resolving(key)
-	not declared_at(path)
 }
 
 # Or written inside an expression OpenTofu renders - a cloud-init or a machine
@@ -65,7 +66,7 @@ deny contains msg if {
 
 deny contains msg if {
 	some [path, where, address] in written
-	msg := $"{path} names the resolver {address} directly ({where}). The resolvers are declared once, as local.dns_resolvers, because this value was restated four times and a fork changing it had to find all four. Read it from there."
+	msg := $"{path} names the resolver {address} directly ({where}). The resolvers are written once, in config/facts/dns-resolvers.json, because this value was restated four times and a fork changing it had to find all four. Read local.dns_resolvers."
 }
 
 deny contains msg if {

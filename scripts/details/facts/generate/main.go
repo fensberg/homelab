@@ -2,8 +2,8 @@
 // <facts> <out>. Each fact is a JSON object of names and values; a name that
 // begins with an underscore is a comment and is not a fact.
 //
-// A string, a number or a true or false is a constant. A list of objects is a
-// table: a struct type of the fields every entry has, and a slice of the
+// A string, a number or a true or false is a constant, and a list of them,
+// all of one kind, is a slice. A list of objects is a table: a struct type of the fields every entry has, and a slice of the
 // entries in the order the file gives them. Every entry has the same fields,
 // each a string, a number or a true or false of one kind throughout, so a
 // table reads the same whichever entry is read. Anything else is refused
@@ -98,6 +98,16 @@ func render(name string, raw []byte) ([]byte, error) {
 	var constants, tables strings.Builder
 	for _, k := range keys {
 		named := identifier(name) + identifier(k)
+		if entries, ok := fact[k].([]any); ok && len(entries) > 0 {
+			if _, kind, ok := scalar(entries[0]); ok {
+				list, err := listOf(named, kind, entries)
+				if err != nil {
+					return nil, fmt.Errorf("%s: %w", k, err)
+				}
+				tables.WriteString(list)
+				continue
+			}
+		}
 		if entries, ok := fact[k].([]any); ok {
 			table, err := tableOf(named, entries)
 			if err != nil {
@@ -108,7 +118,7 @@ func render(name string, raw []byte) ([]byte, error) {
 		}
 		literal, _, ok := scalar(fact[k])
 		if !ok {
-			return nil, fmt.Errorf("%s is not a string, a number, a true or false or a list of objects, so it cannot be written as Go", k)
+			return nil, fmt.Errorf("%s is not a string, a number, a true or false or a list of either, so it cannot be written as Go", k)
 		}
 		fmt.Fprintf(&constants, "\t%s = %s\n", named, literal)
 	}
@@ -137,6 +147,20 @@ func scalar(v any) (literal, kind string, ok bool) {
 		return fmt.Sprint(v), "bool", true
 	}
 	return "", "", false
+}
+
+// listOf is a list of strings, numbers or true or false, all of one kind,
+// as a slice, in the order given.
+func listOf(named, kind string, entries []any) (string, error) {
+	var literals []string
+	for i, e := range entries {
+		literal, k, ok := scalar(e)
+		if !ok || k != kind {
+			return "", fmt.Errorf("entry %d is not a %s, as the first is: a list is of one kind", i, kind)
+		}
+		literals = append(literals, literal)
+	}
+	return fmt.Sprintf("\nvar %s = []%s{%s}\n", named, kind, strings.Join(literals, ", ")), nil
 }
 
 // tableOf is a list of objects as a struct type and a slice of it, in the

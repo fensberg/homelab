@@ -276,12 +276,15 @@ func place(name, arg string) string {
 }
 
 // madeFrom is the place a proof breaks to reach a place a rule reads. A plan
-// is made from the OpenTofu, by the rule harness, so a rule over the plan or
-// its configuration is proved by breaking a file lib.opentofu picks, which
-// the harness plans again; every other place is broken where it is.
+// is made from the OpenTofu, by the rule harness, so a rule over the plan -
+// what it makes, its configuration, its module calls or its variables - is
+// proved by breaking a file lib.opentofu picks, which the harness plans
+// again; every other place is broken where it is.
 func madeFrom(p string) string {
-	if p == place("plan", "") || p == place("plan_configuration", "") {
-		return place("opentofu", "")
+	for _, readsAPlan := range []string{"plan", "plan_configuration", "plan_module_calls", "plan_variables"} {
+		if p == place(readsAPlan, "") {
+			return place("opentofu", "")
+		}
 	}
 	return p
 }

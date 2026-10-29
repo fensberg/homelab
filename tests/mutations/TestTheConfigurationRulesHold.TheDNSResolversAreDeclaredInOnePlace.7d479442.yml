@@ -1,8 +1,8 @@
 guard: TestTheConfigurationRulesHold
 rule: dns_resolvers
 file: modules/infrastructure/cluster/variables.tf
-find: '  dns_resolvers = ["1.1.1.1", "1.0.0.1"]'
-replace: "  dns_resolvers        = [\"1.1.1.1\", \"1.0.0.1\"]\n  fallback_dns_servers = [\"9.9.9.9\"]"
+find: '  dns_resolvers = jsondecode(file("${path.module}/../../../config/facts/dns-resolvers.json")).servers'
+replace: "  dns_resolvers        = jsondecode(file(\"${path.module}/../../../config/facts/dns-resolvers.json\")).servers\n  fallback_dns_servers = [\"9.9.9.9\"]"
 mentions: "names the resolver"
 why: >
   The resolvers were written out four times - twice in cloud-init and

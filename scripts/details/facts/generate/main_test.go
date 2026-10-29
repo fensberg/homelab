@@ -56,10 +56,25 @@ func TestAListOfObjectsIsATableInTheOrderGiven(t *testing.T) {
 	}
 }
 
+func TestAListOfValuesIsASliceOfTheirKind(t *testing.T) {
+	got, err := render("a-fact", []byte(`{"servers": ["192.0.2.1", "192.0.2.2"], "ports": [1, 2]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`var AFactServers = []string{"192.0.2.1", "192.0.2.2"}`, "var AFactPorts = []int{1, 2}"} {
+		if !strings.Contains(string(got), want) {
+			t.Errorf("the generated file does not say %q:\n%s", want, got)
+		}
+	}
+	if _, err := render("a-fact", []byte(`{"mixed": ["a", 1]}`)); err == nil {
+		t.Error("a list of two kinds was rendered")
+	}
+}
+
 func TestATableWhoseEntriesDisagreeIsRefused(t *testing.T) {
 	for name, raw := range map[string]string{
 		"empty":            `{"t": []}`,
-		"not objects":      `{"t": ["a"]}`,
+		"not objects":      `{"t": [{"a": 1}, "b"]}`,
 		"a field missing":  `{"t": [{"a": 1, "b": 2}, {"a": 1, "c": 2}]}`,
 		"a field too many": `{"t": [{"a": 1}, {"a": 1, "b": 2}]}`,
 		"two kinds":        `{"t": [{"a": 1}, {"a": "one"}]}`,
@@ -76,7 +91,7 @@ func TestAFactThatCannotBeConstantsIsRefused(t *testing.T) {
 		"not an object":   `["a", "b"]`,
 		"not JSON":        `{`,
 		"only comments":   `{"_comment": []}`,
-		"a list of names": `{"names": ["a"]}`,
+		"a list of lists": `{"names": [["a"]]}`,
 		"an inner object": `{"inner": {"a": 1}}`,
 	} {
 		if _, err := render("a-fact", []byte(raw)); err == nil {
@@ -116,7 +131,7 @@ func TestNothingToGenerateOrABadFactIsRefused(t *testing.T) {
 		t.Error("a directory with no fact was accepted")
 	}
 	facts := t.TempDir()
-	if err := os.WriteFile(filepath.Join(facts, "bad.json"), []byte(`{"a": [1]}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(facts, "bad.json"), []byte(`{"a": [[1]]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := write(facts, t.TempDir()); err == nil || !strings.Contains(err.Error(), "bad.json") {
