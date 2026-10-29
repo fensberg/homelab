@@ -230,3 +230,7 @@ removed:
     reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/plan_talosconfig.rego), as TestTheConfigurationRulesHold.TheRenderedTalosconfigNamesNodesAndEveryEndpoint.23de5290.yml, its mentions moved to the rule's words (2026-10-23)
   - proof: TestEveryMachineIsBuiltByAStepBeforeItIsWaitedFor.e7038f54.yml
     reason: its guard moved down to the steps package's own tests, beside the step list it holds the machines to, as TestEveryMachineIsBuiltByAStepBeforeItIsWaitedFor over the plan from nothing; it is proved there by the logic mutation that takes the zones' machines out of their step (2026-10-24)
+  - proof: TestEstateObjectsAreDeclaredOnlyInTheEstateRoot.3ed4b468.yml
+    reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/plan_estate_scope.rego), as TestTheConfigurationRulesHold.EstateObjectsAreDeclaredOnlyInTheEstateRoot.3ed4b468.yml, rewritten to change a lock and plant a resource that still plan, since the rule judges the plan and the locks (2026-10-23)
+  - proof: TestEstateObjectsAreDeclaredOnlyInTheEstateRoot.8f93a51b.yml
+    reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/plan_estate_scope.rego), as TestTheConfigurationRulesHold.EstateObjectsAreDeclaredOnlyInTheEstateRoot.8f93a51b.yml, rewritten to change a lock and plant a resource that still plan, since the rule judges the plan and the locks (2026-10-23)

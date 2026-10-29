@@ -2548,14 +2548,16 @@ the objects in site state and having each teardown forget them first, is the
 careful-handling fix: it works until somebody adds an object and not the
 matching forget.
 
-`tests/go/repo/estate_scope_test.go` holds the boundary in both directions.
-It walks every `.tf` file in the repository and refuses:
+`policy/conftest/rules/plan_estate_scope` holds the boundary in both
+directions (it was `tests/go/repo/estate_scope_test.go` until 2026-10-26).
+It judges what each root's plan would make, and what each root is
+initialised with, and refuses:
 
-- an estate type owned (by `resource` or `import`) anywhere but the estate
-  root;
-- any type in the estate root not declared as the estate's.
+- an estate type in a site's plan, or a site's root or module locking the
+  account's providers, which is what it would need to declare one;
+- any type in the estate's plan not declared as the estate's.
 
-A new estate object is therefore a decision written into that test, never an
+A new estate object is therefore a decision written into that rule, never an
 accident. The mutation ledger proves both directions.
 
 What both roots need, they read from a file rather than from each other:

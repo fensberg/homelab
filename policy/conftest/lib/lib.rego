@@ -65,6 +65,18 @@ plan_configuration contains [f.path, address, r] if {
 	address := concat(".", array.concat(calls, [r.address]))
 }
 
+# plan_scope is the scope of the root a plan is of: "site" for a site's
+# roots, "estate" for every other, as the rule harness writes each plan under
+# the directory of its scope. A node has no root of its own, so those are the
+# two. A plan written anywhere else has no scope, and a rule asking for one
+# is told nothing.
+plan_scope(path) := scope if {
+	parts := split(path, "/")
+	count(parts) >= 2
+	scope := parts[count(parts) - 2]
+	scope in {"site", "estate"}
+}
+
 # provider_locks is every provider a lock file locks, as [path, source]:
 # what `tofu init` writes beside a root or a module to say which providers
 # it was initialised with and the hashes they must match. A lock file is

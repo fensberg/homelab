@@ -128,13 +128,6 @@ debt:
   - 'json:"state"'
   - 'json:"vault_provider"'
 
-  # --- The resource type a site's buckets are (1)
-  #
-  # The lawyer finds the buckets it adopts and releases by this type, and the
-  # estate scope guard declares the type the estate's. A Go constant cannot be
-  # shared: the lawyer is a main package, which nothing may import.
-  - "cloudflare_r2_bucket"
-
   # --- A Kubernetes kind two readers of the releases file both name (1)
   #
   # The superintendent reads production's release pins to judge a delivery,

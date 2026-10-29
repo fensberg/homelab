@@ -27,3 +27,10 @@ test_an_actions_steps_are_read_with_their_environment if {
 	step.run == "x"
 	envs == [{"A": "1"}, {"B": "2"}]
 }
+
+test_a_plans_scope_is_the_directory_the_harness_wrote_it_under if {
+	lib.plan_scope("/tmp/x/site/site0-cluster.plan.json") == "site"
+	lib.plan_scope("/tmp/x/estate/estate.plan.json") == "estate"
+	not lib.plan_scope("/tmp/x/elsewhere/a.plan.json")
+	not lib.plan_scope("a.plan.json")
+}
