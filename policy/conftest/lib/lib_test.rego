@@ -31,6 +31,7 @@ test_an_actions_steps_are_read_with_their_environment if {
 test_a_plans_scope_is_the_directory_the_harness_wrote_it_under if {
 	lib.plan_scope("/tmp/x/site/site0-cluster.plan.json") == "site"
 	lib.plan_scope("/tmp/x/estate/estate.plan.json") == "estate"
+	lib.plan_scope("/tmp/x/pinned/site0-cluster.plan.json") == "pinned"
 	not lib.plan_scope("/tmp/x/elsewhere/a.plan.json")
 	not lib.plan_scope("a.plan.json")
 }
@@ -71,6 +72,18 @@ test_a_plans_outputs_are_read_from_its_root if {
 test_what_flux_applies_is_read_as_the_harness_renders_it if {
 	layer := {"path": "/tmp/x/layer-0-0.json", "contents": {"layer": {"name": "l", "path": "d"}, "documents": [{"kind": "ConfigMap"}]}}
 	lib.rendered_layers == {["/tmp/x/layer-0-0.json", {"name": "l", "path": "d"}, [{"kind": "ConfigMap"}]]} with input as [layer, {"path": "a.yaml", "contents": {"kind": "x"}}]
+}
+
+test_a_pinned_plan_is_read_apart_from_the_plans_a_change_makes if {
+	resources := {"planned_values": {"root_module": {"resources": [{"address": "a.b", "type": "a", "values": {}}]}}}
+	made := {"path": "/tmp/x/site/site0-platform.plan.json", "contents": resources}
+	pinned := {"path": "/tmp/x/pinned/site0-platform.plan.json", "contents": object.union(resources, {"configuration": {"root_module": {"outputs": {"o": {}}, "module_calls": {"m": {}}, "variables": {"v": {}}}}})}
+	count(lib.plan) == 1 with input as [made, pinned]
+	count(lib.pinned_plan) == 1 with input as [made, pinned]
+	{p | some [p, _] in lib.pinned_plan} == {"/tmp/x/pinned/site0-platform.plan.json"} with input as [made, pinned]
+	count(lib.plan_outputs) == 0 with input as [pinned]
+	count(lib.plan_module_calls) == 0 with input as [pinned]
+	count(lib.plan_variables) == 0 with input as [pinned]
 }
 
 test_the_pools_are_named_from_the_suppliers_list if {

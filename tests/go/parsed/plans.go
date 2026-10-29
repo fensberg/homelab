@@ -21,6 +21,7 @@ import (
 	"homelab/details/applications"
 	"homelab/details/asbuilt"
 	"homelab/details/platform"
+	"homelab/details/repopath"
 )
 
 // UnbuiltPlans is every site's roots planned from nothing, as files a policy
@@ -60,7 +61,7 @@ func (r *Tree) UnbuiltPlans(t testing.TB) []string {
 	}
 	var files []string
 	for _, site := range sites {
-		kept, err := r.keptPlans(t, site)
+		kept, err := r.keptPlans(t, site, steps.Released{})
 		if err != nil {
 			t.Errorf("planning %s from nothing: %v", site, err)
 			continue
@@ -81,7 +82,61 @@ func (r *Tree) UnbuiltPlans(t testing.TB) []string {
 			files = append(files, file)
 		}
 	}
+	files = append(files, r.pinnedPlans(t, out, sites)...)
 	return append(files, r.wholePlans(t, out)...)
+}
+
+// pinnedPlans is each site's roots planned from nothing with the modules of
+// the release its line in the versions file names, under pinned/: what a
+// converge of the site applies once this merges, before its line moves. Flux
+// applies what merges at once and the site's own secrets are written by the
+// release it runs, so what Flux applies is held to these too (#843).
+//
+// The release's files are read from the checkout this package was built in,
+// which holds the tags: a copy of the tree holds none of its history.
+func (r *Tree) pinnedPlans(t testing.TB, out string, sites []string) []string {
+	t.Helper()
+	objects, err := repopath.Root()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pins, err := platform.Pins(r.root)
+	if err != nil {
+		t.Fatalf("reading which release each site runs: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(out, pinnedScope), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	var files []string
+	for _, site := range sites {
+		pin, ok := pins[site]
+		if !ok {
+			t.Errorf("%s is a site and runs no release, so what it runs could not be planned", site)
+			continue
+		}
+		revision, err := platform.Revision(objects, pin)
+		if err != nil {
+			t.Errorf("%s runs %s: %v", site, pin.Version, err)
+			continue
+		}
+		kept, err := r.keptPlans(t, site, steps.Released{Objects: objects, Revision: revision})
+		if err != nil {
+			t.Errorf("planning %s from nothing with the modules of %s: %v", site, pin.Version, err)
+			continue
+		}
+		for _, root := range kept {
+			if root.Err != nil {
+				t.Errorf("the %s root of %s does not plan from nothing with the modules of %s, the release it runs: %v", root.Root, site, pin.Version, root.Err)
+				continue
+			}
+			file := filepath.Join(out, pinnedScope, site+"-"+root.Root+".plan.json")
+			if err := os.WriteFile(file, root.Plan, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			files = append(files, file)
+		}
+	}
+	return files
 }
 
 // The directories a plan is written under, by the scope of the root it is of:
@@ -89,6 +144,9 @@ func (r *Tree) UnbuiltPlans(t testing.TB) []string {
 const (
 	siteScope   = "site"
 	estateScope = "estate"
+	// pinnedScope is a site's roots planned with the modules of the release
+	// it runs, beside the checkout's own.
+	pinnedScope = "pinned"
 )
 
 // wholePlans is every root that is not a site's, planned whole from nothing
@@ -153,7 +211,7 @@ func (r *Tree) templateOf(t testing.TB, root string) (string, bool) {
 // keptWhole is a root's plan from nothing: the one made before from exactly
 // these files, or a new one, made under the same lock as a site's.
 func (r *Tree) keptWhole(t testing.TB, root, template string, tracked []string) ([]byte, error) {
-	key, err := r.planKey(t, path.Base(root))
+	key, err := r.planKey(t, path.Base(root), "")
 	if err != nil {
 		return nil, err
 	}
@@ -222,8 +280,8 @@ func (r *Tree) keptWhole(t testing.TB, root, template string, tracked []string) 
 // what the plan before it kept; and the providers one plan fetched are kept
 // for the next, by the lock file that chose them, so a machine reaches the
 // registry once for each set of providers rather than once for each plan.
-func (r *Tree) keptPlans(t testing.TB, site string) ([]steps.Unbuilt, error) {
-	key, err := r.planKey(t, site)
+func (r *Tree) keptPlans(t testing.TB, site string, release steps.Released) ([]steps.Unbuilt, error) {
+	key, err := r.planKey(t, site, release.Revision)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +309,7 @@ func (r *Tree) keptPlans(t testing.TB, site string) ([]steps.Unbuilt, error) {
 	if kept, err := readKept(dir); err != nil || kept != nil {
 		return kept, err
 	}
-	made, err := steps.PlanUnbuilt(r.root, site, filepath.Join(plans, "providers"))
+	made, err := steps.PlanUnbuiltAt(r.root, site, filepath.Join(plans, "providers"), release)
 	if err != nil {
 		return nil, err
 	}
@@ -293,22 +351,31 @@ func readKept(dir string) ([]steps.Unbuilt, error) {
 // config, every file the release holds - which is every file a module reads
 // from outside its own directory - and the site's own list of applications,
 // by path and content.
-func (r *Tree) planKey(t testing.TB, site string) (string, error) {
+//
+// Planned with a release's modules, the release's commit stands for the
+// modules and what they read, and the checkout's are left out: the roots,
+// the config and the site's list are what the checkout gives.
+func (r *Tree) planKey(t testing.TB, site, revision string) (string, error) {
 	release, err := platform.Read(r.root)
 	if err != nil {
 		return "", err
 	}
 	var from []string
 	for _, rel := range r.Files(t) {
-		if strings.HasPrefix(rel, "management/") || strings.HasPrefix(rel, "modules/") ||
-			strings.HasPrefix(rel, "config/") || rel == applications.SiteFilePath(site) ||
-			platform.Holds(release.Holds, rel) {
+		roots := strings.HasPrefix(rel, "management/") || strings.HasPrefix(rel, "config/") || rel == applications.SiteFilePath(site)
+		modules := strings.HasPrefix(rel, "modules/") || platform.Holds(release.Holds, rel)
+		if roots || modules && revision == "" {
 			from = append(from, rel)
 		}
 	}
 	sort.Strings(from)
 	h := sha256.New()
 	_, _ = io.WriteString(h, site+"\x00")
+	// Only where there is a release, so the checkout's own plans keep the
+	// keys they were kept by.
+	if revision != "" {
+		_, _ = io.WriteString(h, "release\x00"+revision+"\x00")
+	}
 	for _, rel := range from {
 		body, err := os.ReadFile(r.path(rel))
 		if err != nil {

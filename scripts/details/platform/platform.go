@@ -26,6 +26,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -324,6 +325,81 @@ func PlaceUnreleasedAs(repoRoot string, tracked []string, name string) (string, 
 		}
 	}
 	return target, nil
+}
+
+// PlaceReleasedAs makes the same tree from a release's own commit: the files
+// the release manifest at that commit holds, as they are there, read from the
+// git objects at objects - which may be another checkout than the one the
+// tree is made in, as a copy of the repository has none of its history. A
+// root planned against it is planned against the modules a site pinned to
+// that release runs, beside the checkout's own roots, which is what a
+// converge of that site applies. What was there before is replaced whole.
+func PlaceReleasedAs(objects, revision, repoRoot, name string) (string, error) {
+	manifest, err := gitShow(objects, revision, Manifest)
+	if err != nil {
+		return "", fmt.Errorf("reading what %s holds: %w", revision, err)
+	}
+	var release Release
+	if err := json.Unmarshal(manifest, &release); err != nil {
+		return "", fmt.Errorf("%s at %s is not a release manifest: %w", Manifest, revision, err)
+	}
+	listed, err := git(objects, "ls-tree", "-r", "-z", "--name-only", revision)
+	if err != nil {
+		return "", fmt.Errorf("listing %s: %w", revision, err)
+	}
+	target := filepath.Join(repoRoot, name)
+	if err := os.RemoveAll(target); err != nil {
+		return "", err
+	}
+	placed := 0
+	for _, rel := range strings.Split(strings.TrimRight(string(listed), "\x00"), "\x00") {
+		if rel == "" || !Holds(release.Holds, rel) {
+			continue
+		}
+		body, err := gitShow(objects, revision, rel)
+		if err != nil {
+			return "", err
+		}
+		dst := filepath.Join(target, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(dst, body, 0o644); err != nil {
+			return "", err
+		}
+		placed++
+	}
+	if placed == 0 {
+		return "", fmt.Errorf("%s holds no file at %s, so there is no release to plan with", Manifest, revision)
+	}
+	return target, nil
+}
+
+// gitShow is one file as it is at a revision.
+func gitShow(objects, revision, rel string) ([]byte, error) {
+	return git(objects, "show", revision+":"+rel)
+}
+
+// git runs git in the checkout whose objects are read.
+func git(objects string, args ...string) ([]byte, error) {
+	cmd := exec.Command("git", append([]string{"-C", objects}, args...)...)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	}
+	return out, nil
+}
+
+// Revision is the commit a release was made from: its tag, which the
+// repository's rulesets hold where it was made.
+func Revision(objects string, pin Pin) (string, error) {
+	out, err := git(objects, "rev-parse", "--verify", "--quiet", pin.Version+"^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("the release %s is not a tag this checkout holds, so the modules a site pinned to it runs cannot be read: %w", pin.Version, err)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 // pinLine is one site's line as it is written in the file, so that a pin
