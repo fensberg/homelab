@@ -240,9 +240,6 @@ func TestSensorAndParserAgreeOnEveryPath(t *testing.T) {
 	}
 }
 
-// removedProofs is where a removed proof is said to have been.
-const removedProofs = "tests/mutations-removed.yml"
-
 // A proof cannot be removed from the mutation ledger without the change
 // saying so.
 //
@@ -250,12 +247,25 @@ const removedProofs = "tests/mutations-removed.yml"
 // an entry away without lowering the count failed. The count went because
 // every change adding a guard raised it and so conflicted with every other.
 // What it gave is kept here, by the check that already reads what a change
-// touched: a proof that is gone, and that the list of removals does not name
-// with a reason, stops the check. Without this, a proof that is one of two
-// for its guard could be deleted and nothing would fail.
+// touched: a proof that is gone, and that no commit of the change names in a
+// Removes-proof trailer with a reason, stops the check. Without this, a proof
+// that is one of two for its guard could be deleted and nothing would fail.
+//
+// The reason travels in the commit that removes the proof, not in a list
+// kept beside the ledger, which only grew and was read once (#814).
 func TestAProofCannotBeRemovedWithoutSayingSo(t *testing.T) {
 	light(t)
 	site := t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = site
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
 	write := func(rel, body string) {
 		t.Helper()
 		path := filepath.Join(site, filepath.FromSlash(rel))
@@ -266,54 +276,59 @@ func TestAProofCannotBeRemovedWithoutSayingSo(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	git("init", "-q", "-b", "main")
+	git("config", "commit.gpgsign", "false")
+	git("config", "user.name", "whoever opened the piece")
+	git("config", "user.email", "piece@example.invalid")
+	const gone = ledgerEntries + "/WasProved.9.yml"
 	write("list", "docs/  # nothing here is touched\n")
 	write(ledgerEntries+"/StillHere.1.yml", "guard: StillHere\n")
-	run := func(removals, changed string) (string, error) {
+	write(gone, "guard: WasProved\n")
+	git("add", ".")
+	git("commit", "-qm", "where the piece leaves main")
+	base := git("rev-parse", "HEAD")
+
+	// The piece, once for each way of saying it: each run starts from main.
+	run := func(message string, files ...string) (string, error) {
 		t.Helper()
-		write(removedProofs, removals)
-		_, said, err := sensor(t, site, []string{"SENSITIVE_PATHS_FILE=" + filepath.Join(site, "list")}, changed)
+		git("checkout", "-q", "-B", "piece", base)
+		for _, f := range files {
+			write(f, "changed\n")
+		}
+		if err := os.Remove(filepath.Join(site, filepath.FromSlash(gone))); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		if message == "" {
+			write(gone, "guard: WasProved\n")
+		}
+		git("add", "-A")
+		git("commit", "-q", "--allow-empty", "-m", "the piece\n\n"+message)
+		head := git("rev-parse", "HEAD")
+		_, said, err := sensor(t, site, []string{"SENSITIVE_PATHS_FILE=" + filepath.Join(site, "list"), "BASE=" + base, "HEAD=" + head},
+			git("diff", "--name-only", base+"..."+head)+"\n")
 		return said, err
 	}
-	const gone = ledgerEntries + "/WasProved.9.yml"
 
-	if said, err := run("removed: []\n", ledgerEntries+"/StillHere.1.yml\nREADME.md\n"); err != nil {
+	if said, err := run("", ledgerEntries+"/StillHere.1.yml", "README.md"); err != nil {
 		t.Errorf("a change to a proof that is still there was refused: %v\n%s", err, said)
 	}
-	said, err := run("removed: []\n", gone+"\n")
+	said, err := run("Nothing said about it.")
 	if err == nil || !strings.Contains(said, gone) {
 		t.Errorf("a proof was removed and the change was not refused, or what was removed was not named: %v\n%s", err, said)
 	}
-	if said, err := run("removed:\n  - proof: WasProved.9.yml\n    reason: the guard it proved was removed with the thing it guarded\n", gone+"\n"); err != nil {
-		t.Errorf("a removal that is named with its reason was refused: %v\n%s", err, said)
+	if said, err := run("Removes-proof: WasProved.9.yml: the guard it proved was removed with the thing it guarded"); err != nil {
+		t.Errorf("a removal named with its reason in a trailer was refused: %v\n%s", err, said)
 	}
-	if _, err := run("removed:\n  - proof: WasProved.9.yml\n    reason:\n", gone+"\n"); err == nil {
+	if _, err := run("Removes-proof: WasProved.9.yml:"); err == nil {
 		t.Error("a removal named with no reason was let through, which is a line anybody can add")
 	}
-	if _, err := run("removed:\n  - proof: AnotherWasProved.9.yml\n    reason: it names a different proof\n", gone+"\n"); err == nil {
-		t.Error("a removal was let through on the strength of a line naming some other proof")
+	if _, err := run("Removes-proof: AnotherWasProved.9.yml: it names a different proof"); err == nil {
+		t.Error("a removal was let through on the strength of a trailer naming some other proof")
 	}
-}
-
-// Every removal on the list is of a proof that is really gone, with a
-// reason. A line naming a proof that is still there is a removal approved
-// before it has been made.
-func TestARemovalNamesAProofThatIsReallyGone(t *testing.T) {
-	light(t)
-	tree := repository(t)
-	var list struct {
-		Removed []struct {
-			Proof  string `yaml:"proof"`
-			Reason string `yaml:"reason"`
-		} `yaml:"removed"`
-	}
-	tree.YAMLInto(t, removedProofs, &list)
-	for _, r := range list.Removed {
-		if strings.TrimSpace(r.Reason) == "" {
-			t.Errorf("%s names %q as removed and gives no reason", removedProofs, r.Proof)
-		}
-		if tree.Exists(ledgerEntries + "/" + r.Proof) {
-			t.Errorf("%s names %q as removed, and it is still there. A removal is said in the change that makes it, not before.", removedProofs, r.Proof)
-		}
+	// And with no commits to read, nothing can say it.
+	_, said, err = sensor(t, site, []string{"SENSITIVE_PATHS_FILE=" + filepath.Join(site, "list")}, gone+"\n")
+	if err == nil {
+		t.Errorf("a removal was let through with no commits to read its reason from:\n%s", said)
 	}
 }
 
@@ -354,7 +369,6 @@ func TestABranchBehindMainIsJudgedByItsOwnChanges(t *testing.T) {
 	git("config", "user.email", "piece@example.invalid")
 	write("list", "guarded/  # what breaks if this is wrong\n")
 	write("guarded/kept", "as it was\n")
-	write(removedProofs, "removed: []\n")
 	write("notes", "as they were\n")
 	git("add", ".")
 	git("commit", "-qm", "where the branch leaves main")

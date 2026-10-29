@@ -34,7 +34,7 @@ import (
 // a code rule's example is written to be refused, and names what it likes.
 
 // historyPrefixes are where a name is a record of the past, not a claim.
-var historyPrefixes = []string{"docs/epochs/", ledgerEntries + "/", ledgerEntries + ".yml", "tests/mutations-removed.yml"}
+var historyPrefixes = []string{"docs/epochs/", ledgerEntries + "/", ledgerEntries + ".yml"}
 
 var (
 	testNamed     = regexp.MustCompile(`(^|[^.\w])(Test[A-Z][A-Za-z0-9_]*)`)

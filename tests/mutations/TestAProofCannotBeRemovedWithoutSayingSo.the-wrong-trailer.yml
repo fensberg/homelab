@@ -1,0 +1,9 @@
+guard: TestAProofCannotBeRemovedWithoutSayingSo
+file: .github/scripts/sensitive-paths.sh
+find: "key=Removes-proof,"
+replace: "key=Removed-proof,"
+mentions: "a removal named with its reason in a trailer was refused"
+why: >
+  The reason is read from the change's own commits, by the trailer's key.
+  Read by another key, every removal is refused however it is said, and the
+  first change that retires a proof cannot merge.
