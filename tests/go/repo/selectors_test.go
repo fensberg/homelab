@@ -279,12 +279,18 @@ func place(name, arg string) string {
 // is made from the OpenTofu, by the rule harness, so a rule over the plan -
 // what it makes, its configuration, its module calls, outputs or variables - is
 // proved by breaking a file lib.opentofu picks, which the harness plans
-// again; every other place is broken where it is.
+// again; a rule over the layers Flux applies is proved by breaking a
+// manifest lib.objects picks, which the harness renders again; every other
+// place is broken where it is.
 func madeFrom(p string) string {
 	for _, readsAPlan := range []string{"plan", "plan_configuration", "plan_module_calls", "plan_outputs", "plan_variables"} {
 		if p == place(readsAPlan, "") {
 			return place("opentofu", "")
 		}
+	}
+	// What Flux applies is rendered from the manifests, the same way.
+	if p == place("rendered_layers", "") {
+		return place("objects", "")
 	}
 	return p
 }

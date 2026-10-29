@@ -1,8 +1,9 @@
-guard: TestEverythingThatKeepsDataSaysWhatItHolds
+guard: TestTheConfigurationRulesHold
+rule: holds
 file: clusters/core/infrastructure/controllers/kube-prometheus-stack.yaml
 find: "              storageClassName: outlives-a-machine"
 replace: "              storageClassName: openebs-hostpath"
-mentions: "which lives on a machine, and the core declares it lives on a node"
+mentions: "which lives on a machine, and core declares it lives on a node"
 why: >
   The volume is moved back to a worker's own disk - to free the
   hypervisor's storage, or by a revert that did not know what else it

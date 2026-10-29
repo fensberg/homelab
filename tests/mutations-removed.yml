@@ -256,3 +256,11 @@ removed:
     reason: the rule is gone with the local it held to KUBERNETES_VERSION. The cluster module reads the Kubernetes a site runs from that line, so there is no second copy to move (2026-10-29)
   - proof: TestTheConfigurationRulesHold.a-runner-controller-release-renamed.yml
     reason: runner_namespaces finds each runner release by the chart it installs, not by its name, so a renamed release is still read and held; what the proof broke can no longer go unread. TestTheConfigurationRulesHold.a-runner-controller-moved.yml breaks the controller's namespace instead (2026-10-29)
+  - proof: TestEverythingThatKeepsDataSaysWhatItHolds.05a846ba.yml
+    reason: moved with its guard to the configuration rules, judged by Conftest (policy/conftest/rules/holds), as TestTheConfigurationRulesHold.EverythingThatKeepsDataSaysWhatItHolds.05a846ba.yml, read off the files as the guard was, with the class each lives on (2026-10-29)
+  - proof: TestEverythingThatKeepsDataSaysWhatItHolds.fa816ac9.yml
+    reason: moved with its guard to the configuration rules, judged by Conftest (policy/conftest/rules/holds), as TestTheConfigurationRulesHold.EverythingThatKeepsDataSaysWhatItHolds.fa816ac9.yml, read off the files as the guard was, with the class each lives on (2026-10-29)
+  - proof: TestEveryFluxSubstitutionHasAStandInAndTheReverse.b64621ff.yml
+    reason: moved with its guard to the configuration rules, judged on what Flux applies (policy/conftest/rules/rendered_stand_ins), as TestTheConfigurationRulesHold.EveryFluxSubstitutionHasAStandInAndTheReverse.b64621ff.yml, unchanged in what it breaks; judged on each layer as kustomize builds it (2026-10-29)
+  - proof: TestEveryLayerIsGivenEachVariableItNames.another-layers-variable.yml
+    reason: moved with its guard to the configuration rules, judged on what Flux applies (policy/conftest/rules/rendered_layer_variables), as TestTheConfigurationRulesHold.EveryLayerIsGivenEachVariableItNames.another-layers-variable.yml, unchanged in what it breaks; judged on each layer as kustomize builds it, given the keys each site's plan writes (2026-10-29)

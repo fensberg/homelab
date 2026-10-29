@@ -1,8 +1,9 @@
-guard: TestEveryLayerIsGivenEachVariableItNames
+guard: TestTheConfigurationRulesHold
+rule: rendered_layer_variables
 file: clusters/core/infrastructure/controllers/kube-prometheus-stack.yaml
 find: "      endpoints: ${ETCD_ENDPOINTS}\n"
 replace: "      endpoints: ${ADDRESS_PRIVATE_ACCESS}\n"
-mentions: "is not given it"
+mentions: "and neither its own substitutions nor any secret it substitutes from carries it"
 why: >
   A variable looks the same in every layer, and validation fills them all
   for every layer alike, so one used in a layer that is not given it passes

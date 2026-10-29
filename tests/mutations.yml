@@ -237,8 +237,6 @@ unprovable:
     reason: table
   - test: TestRouteProblemsNamesEachWayARouteAndItsServiceDisagree
     reason: table
-  - test: TestALayerIsHeldToWhatItsSecretsCarry
-    reason: table
   - test: TestPathsIntoTheEstateNamesEachWayOneIsOpened
     reason: table
   # Removes each application from a copy of the repository and runs every

@@ -1,4 +1,5 @@
-guard: TestEverythingThatKeepsDataSaysWhatItHolds
+guard: TestTheConfigurationRulesHold
+rule: holds
 file: clusters/core/holds.json
 find: '"held_by": "HelmRelease/kube-prometheus-stack"'
 replace: '"held_by": "HelmRelease/prometheus"'

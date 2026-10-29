@@ -68,6 +68,11 @@ test_a_plans_outputs_are_read_from_its_root if {
 	outputs == {["/tmp/x/estate/whole.plan.json", "o", {"expression": {"references": ["module.m.use"]}}]}
 }
 
+test_what_flux_applies_is_read_as_the_harness_renders_it if {
+	layer := {"path": "/tmp/x/layer-0-0.json", "contents": {"layer": {"name": "l", "path": "d"}, "documents": [{"kind": "ConfigMap"}]}}
+	lib.rendered_layers == {["/tmp/x/layer-0-0.json", {"name": "l", "path": "d"}, [{"kind": "ConfigMap"}]]} with input as [layer, {"path": "a.yaml", "contents": {"kind": "x"}}]
+}
+
 test_the_pools_are_named_from_the_suppliers_list if {
 	pools := lib.pull_request_pools with input as [{"path": "scripts/approved-suppliers.yml", "contents": {"pull_request_pools": {"names": ["builds", "source"]}}}]
 	pools == {"pr-builds-${{ vars.pull_request_runners_site }}", "pr-source-${{ vars.pull_request_runners_site }}"}

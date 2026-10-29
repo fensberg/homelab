@@ -193,6 +193,19 @@ facts[name] := f.contents if {
 	name := trim_suffix(parts[2], ".json")
 }
 
+# rendered_layers is what Flux applies, as the rule harness renders it, as
+# [path, layer, documents]: each layer's header - its name, namespace, the
+# directory it applies, what it substitutes from, and the stand-ins
+# validation derives for applications - and the documents
+# kustomize builds from that directory, before anything is substituted. An
+# application's directory no layer applies has a layer with no name.
+rendered_layers contains [f.path, f.contents.layer, f.contents.documents] if {
+	some f in input
+	is_object(f.contents)
+	is_object(f.contents.layer)
+	is_array(f.contents.documents)
+}
+
 # workflows is every workflow, by its path: a YAML file directly under
 # .github/workflows.
 workflows[f.path] := f.contents if {

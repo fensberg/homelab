@@ -1,4 +1,5 @@
-guard: TestEveryFluxSubstitutionHasAStandInAndTheReverse
+guard: TestTheConfigurationRulesHold
+rule: rendered_stand_ins
 file: tests/flux-substitutions.env
 find: 'ETCD_ENDPOINTS=["192.0.2.10","192.0.2.11","192.0.2.12"]'
 replace: "# ETCD_ENDPOINTS removed"
