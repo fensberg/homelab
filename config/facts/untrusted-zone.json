@@ -1,0 +1,14 @@
+{
+  "_comment": [
+    "How a machine in an untrusted zone is known: the key of the label and",
+    "taint it carries, whose value is its zone, and the key of the taint it",
+    "joins with and keeps until its clean snapshot is taken.",
+    "",
+    "The one place these are written. OpenTofu reads this file, Go is",
+    "generated from it (scripts/details/facts) and the alerts are handed it",
+    "by Flux, so the machine, the program that lifts the taint and the",
+    "query that finds the machine cannot name different keys."
+  ],
+  "key": "untrusted-zone",
+  "not_yet_clean": "untrusted-zone/not-yet-clean"
+}

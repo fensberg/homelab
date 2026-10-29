@@ -82,9 +82,9 @@ spec:
         # The untrusted zone's machine and no other: the label sends a
         # runner there, and the toleration is what lets it stay.
         nodeSelector:
-          untrusted-zone: zone0
+          ${UNTRUSTED_ZONE}: zone0
         tolerations:
-          - key: untrusted-zone
+          - key: ${UNTRUSTED_ZONE}
             operator: Equal
             value: zone0
             effect: NoSchedule

@@ -39,6 +39,10 @@ locals {
   #
   # Its own gateway, because it is in its own subnet rather than a band of the
   # node one.
+  # The keys a zone's machine is known by, written once for every language
+  # that names them.
+  untrusted_zone = jsondecode(file("${path.module}/../../../config/facts/untrusted-zone.json"))
+
   # How a zone's machine is kept for its zone: the taint that keeps other
   # work off it, and the label the work meant for it selects. Said once,
   # under one key, so the two cannot name different zones.
@@ -50,8 +54,8 @@ locals {
       # until the converge has taken its snapshot and lifted it. A machine
       # that ran a job first would have that job's leavings in the state
       # every later job is promised is clean.
-      taint  = "untrusted-zone=${v.zone}:NoSchedule,untrusted-zone/not-yet-clean=true:NoSchedule"
-      labels = { "untrusted-zone" = v.zone }
+      taint  = "${local.untrusted_zone.key}=${v.zone}:NoSchedule,${local.untrusted_zone.not_yet_clean}=true:NoSchedule"
+      labels = { (local.untrusted_zone.key) = v.zone }
     }
   }
 

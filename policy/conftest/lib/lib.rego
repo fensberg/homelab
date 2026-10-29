@@ -143,6 +143,18 @@ under(prefix) := [f | some f in input; startswith(f.path, prefix)]
 # named is every document of every file of one name, in whatever directory.
 named(name) := [f | some f in input; endswith(f.path, $"/{name}")]
 
+# facts is every fact, by its name: a JSON file directly under config/facts,
+# each a value more than one language here needs and written there once.
+facts[name] := f.contents if {
+	some f in input
+	parts := split(f.path, "/")
+	count(parts) == 3
+	parts[0] == "config"
+	parts[1] == "facts"
+	endswith(parts[2], ".json")
+	name := trim_suffix(parts[2], ".json")
+}
+
 # workflows is every workflow, by its path: a YAML file directly under
 # .github/workflows.
 workflows[f.path] := f.contents if {

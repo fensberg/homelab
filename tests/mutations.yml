@@ -272,8 +272,6 @@ unprovable:
     reason: table
   - test: TestTheLocalTableRuleIsJudgedByThePlaceItIsAddedAt
     reason: table
-  - test: TestADedicationIsWorkedOutAndAHalfOfOneIsSeen
-    reason: table
   # The reader behind TestEveryGuardOpensBySayingHowItRuns, which its own
   # ledger entry proves. Its table holds each way a guard may open.
   - test: TestAGuardsOpeningIsReadFromItsFirstStatement

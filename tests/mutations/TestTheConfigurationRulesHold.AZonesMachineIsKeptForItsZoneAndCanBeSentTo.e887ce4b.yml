@@ -1,6 +1,7 @@
-guard: TestAZonesMachineIsKeptForItsZoneAndCanBeSentTo
+guard: TestTheConfigurationRulesHold
+rule: plan_zone_dedication
 file: modules/infrastructure/cluster/talos.tf
-find: 'labels = { "untrusted-zone" = v.zone }'
+find: "labels = { (local.untrusted_zone.key) = v.zone }"
 replace: 'labels = { "zone" = v.zone }'
 mentions: "cannot be sent there"
 why: >

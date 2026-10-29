@@ -1,0 +1,11 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_zone_dedication
+file: modules/infrastructure/cluster/talos.tf
+find: ',${local.untrusted_zone.not_yet_clean}=true:NoSchedule"'
+replace: '"'
+mentions: "takes work before it has a clean snapshot"
+why: >
+  A zone's machine is closed to all work until its clean snapshot is
+  taken. Dropping the second taint lets the first job run on it before
+  then, and every later job is put back to a state holding that job's
+  leavings.

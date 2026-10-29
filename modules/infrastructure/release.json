@@ -13,6 +13,7 @@
     "clusters/bootstrap/cilium.yaml",
     "clusters/core/flux-system",
     "clusters/core/routes.json",
+    "config/facts/untrusted-zone.json",
     "modules/applications/*/application.json",
     "modules/infrastructure"
   ]

@@ -35,6 +35,16 @@ test_a_plans_scope_is_the_directory_the_harness_wrote_it_under if {
 	not lib.plan_scope("a.plan.json")
 }
 
+test_a_fact_is_known_by_its_name_and_found_nowhere_else if {
+	read := lib.facts with input as [
+		{"path": "config/facts/a-fact.json", "contents": {"key": "value"}},
+		{"path": "config/facts/deeper/b.json", "contents": {}},
+		{"path": "config/c.json", "contents": {}},
+		{"path": "config/facts/notes.yaml", "contents": {}},
+	]
+	read == {"a-fact": {"key": "value"}}
+}
+
 test_the_pools_are_named_from_the_suppliers_list if {
 	pools := lib.pull_request_pools with input as [{"path": "scripts/approved-suppliers.yml", "contents": {"pull_request_pools": {"names": ["builds", "source"]}}}]
 	pools == {"pr-builds-${{ vars.pull_request_runners_site }}", "pr-source-${{ vars.pull_request_runners_site }}"}
