@@ -15,6 +15,14 @@
 #
 # Each release is known by what it is - the chart it installs, and for a set
 # of runners whether it is a pull-request pool - and not by its name.
+#
+# AND WHAT IS ABOUT THE RUNNERS IS WHERE THEY ARE. A policy or a budget
+# selects a set's runners by the set's name, and selects only in its own
+# namespace: one left in another selects nothing and says nothing, and the
+# runners it was for are unwalled or unprotected. The sweeper is handed the
+# pull-request runners' namespace to watch, and its rights to read their pods
+# are granted in a namespace: told one and granted another, it sees no job
+# and puts back a machine in the middle of one.
 package rules.runner_namespaces
 
 import data.lib
@@ -48,11 +56,83 @@ own_sets contains f if {
 	not lib.pull_request_pool(f.contents.spec.values.runnerScaleSetName)
 }
 
+# The runners each set of runners makes are labelled with its name, so what
+# selects them names it; the set is in the namespace its release is in.
+set_label := "actions.github.com/scale-set-name"
+
+sets contains [f.contents.spec.values.runnerScaleSetName, object.get(f.contents.metadata, "namespace", "")] if {
+	some f in releases("gha-runner-scale-set")
+}
+
+selects contains [f, set] if {
+	some f in lib.objects
+	some key in ["endpointSelector", "podSelector", "selector"]
+	set := f.contents.spec[key].matchLabels[set_label]
+}
+
+# What is handed the namespace a set of runners is in, as the sweeper is:
+# the container, the namespace it was told, and the account it runs as.
+told contains [f, namespace, account] if {
+	some f in lib.objects
+	f.contents.kind == "Deployment"
+	some c in f.contents.spec.template.spec.containers
+	some i, arg in object.get(c, "args", [])
+	arg == "-runners"
+	namespace := c.args[i + 1]
+	account := object.get(f.contents.spec.template.spec, "serviceAccountName", "default")
+}
+
+granted contains [namespace, account] if {
+	some f in lib.objects
+	f.contents.kind == "RoleBinding"
+	namespace := object.get(f.contents.metadata, "namespace", "")
+	some subject in object.get(f.contents, "subjects", [])
+	subject.kind == "ServiceAccount"
+	account := subject.name
+}
+
 deny contains msg if {
 	some [f, want, what] in belongs
 	got := object.get(f.contents.metadata, "namespace", "")
 	got != want
 	msg := $"{f.path}: {f.contents.metadata.name} is {what}, and is in the namespace \"{got}\" where config/facts/runner-namespaces.json makes \"{want}\" for it. In a namespace the estate does not make it is never installed; in another runner's it is held by that runner's walls"
+}
+
+deny contains msg if {
+	some [f, set] in selects
+	some [named, want] in sets
+	named == set
+	got := object.get(f.contents.metadata, "namespace", "")
+	got != want
+	msg := $"{f.path}: {f.contents.kind} {f.contents.metadata.name} selects the runners of {set}, which are in \"{want}\", from \"{got}\". It selects only in its own namespace, so it holds nothing, and the runners it was for are left without it"
+}
+
+deny contains msg if {
+	some [f, set] in selects
+	count({ns | some [named, ns] in sets; named == set}) == 0
+	msg := $"{f.path}: {f.contents.kind} {f.contents.metadata.name} selects the runners of {set}, and no release makes a set of that name, so it selects nothing"
+}
+
+deny contains msg if {
+	some [f, namespace, _] in told
+	namespace != namespaces.pull_request_runners
+	msg := $"{f.path}: {f.contents.metadata.name} is told the pull-request runners are in \"{namespace}\", where config/facts/runner-namespaces.json makes \"{namespaces.pull_request_runners}\". It would watch a namespace with no runner in it, see no job, and put back machines mid-job"
+}
+
+deny contains msg if {
+	some [f, namespace, account] in told
+	not [namespace, account] in granted
+	msg := $"{f.path}: {f.contents.metadata.name} watches the runners in \"{namespace}\" as {account}, and nothing grants {account} anything there, so it can read none of their pods"
+}
+
+deny contains msg if {
+	count(selects) == 0
+	msg := "nothing selects a set of runners, so where the runners' walls are was not read"
+}
+
+deny contains msg if {
+	count(told) == 0
+	msg := "nothing is told where the pull-request runners are, so the sweeper's reading of them was not held"
 }
 
 deny contains msg if {
