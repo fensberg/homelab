@@ -87,6 +87,8 @@ In scope:
 - Pointing the Backup phase and the database operator at it.
 - A budget in config, per site, reviewable in git like everything else.
 - Alerting on refusal and on reconciliation drift (with epoch 04).
+- Every free-plan limit the estate draws on counted against it, not only
+  the Workers': see "The free plan, counted whole" below.
 
 Explicitly out of scope (and why):
 
@@ -97,6 +99,47 @@ Explicitly out of scope (and why):
 - Vendor-side spend notifications. Those stay, and should be configured now
   rather than waiting for this epoch - they are the backstop for anything that
   bypasses the gateway, including the gateway being wrong.
+
+## The free plan, counted whole
+
+Moved here from the test-suite refactor (#835) on 2026-10-29, which kept only
+what retired a rule that read OpenTofu's locals.
+
+**What holds today.** Each Worker's module gives a `use` output - timers,
+requests, reads and writes a day - and `management/estate/free-plan` adds the
+uses it is given against the limits. The `free_plan_use` output refuses a plan
+that would go over, and `policy/conftest/rules/plan_free_plan` refuses a Worker
+whose module's use is not among those given. The limits are the `free_plan`
+variable's default, read from Cloudflare's pages on 2026-10-08.
+
+**What is not counted.** The devbox's tunnel and its Zero Trust seat, each
+site's R2 buckets, tunnel and served names, the gateway policies, and the
+root's own Cloudflare resources in `zero-trust.tf` and `served.tf`.
+
+**The design so far:**
+
+- Every module holding a `cloudflare_*` resource gives a `use` output, and
+  the root's own resources move into a module, so the root only adds up
+  modules.
+- `plan_free_plan` widens from Workers to every Cloudflare resource type, and
+  starts from nothing: a type the estate plans that no limit is declared for
+  is refused, so a new kind of thing cannot arrive uncounted.
+- The limits move to `config/facts/free-plan.json`, which this epoch's
+  gateway reads too, with the R2, Zero Trust seat and tunnel limits added.
+  Each figure is read from Cloudflare's own pages and dated.
+
+**Open, and why it belongs here:**
+
+- **R2 is monthly and measured, not daily and declared.** Its limits are
+  storage per month and two classes of operation per month. A plan can count
+  buckets, tunnels and seats, but not what a bucket will hold or how often it
+  is written. The gateway's own counting is the source for those, so the
+  limits file's shape - daily and monthly figures, declared and measured
+  use - is decided with the gateway, its main reader.
+- **Counts versus use.** Seats, tunnels and Access applications are counts a
+  plan can take; requests and operations are use something has to report.
+  Which limit is held at plan time and which by the gateway at run time is
+  this epoch's decision.
 
 ## Related: the teardown destroys the backups
 

@@ -75,6 +75,16 @@ plan_module_calls contains [f.path, name, call] if {
 	some name, call in object.get(f.contents.configuration.root_module, "module_calls", {})
 }
 
+# plan_outputs is every output a plan's root declares, as [path, name,
+# output]: the output as the plan's configuration gives it, its expression's
+# references among it.
+plan_outputs contains [f.path, name, output] if {
+	some f in input
+	is_object(f.contents)
+	is_object(f.contents.configuration)
+	some name, output in object.get(f.contents.configuration.root_module, "outputs", {})
+}
+
 # plan_variables is every variable a plan's root declares, as [path, name,
 # declared, given]: the declaration as the configuration has it, and the
 # value the plan was made with, or null when it was given none.

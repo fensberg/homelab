@@ -62,6 +62,12 @@ test_a_plans_module_calls_and_variables_are_read_from_its_root if {
 	}
 }
 
+test_a_plans_outputs_are_read_from_its_root if {
+	plan := {"path": "/tmp/x/estate/whole.plan.json", "contents": {"configuration": {"root_module": {"outputs": {"o": {"expression": {"references": ["module.m.use"]}}}}}}}
+	outputs := lib.plan_outputs with input as [plan, {"path": "a.yaml", "contents": {"kind": "x"}}]
+	outputs == {["/tmp/x/estate/whole.plan.json", "o", {"expression": {"references": ["module.m.use"]}}]}
+}
+
 test_the_pools_are_named_from_the_suppliers_list if {
 	pools := lib.pull_request_pools with input as [{"path": "scripts/approved-suppliers.yml", "contents": {"pull_request_pools": {"names": ["builds", "source"]}}}]
 	pools == {"pr-builds-${{ vars.pull_request_runners_site }}", "pr-source-${{ vars.pull_request_runners_site }}"}
