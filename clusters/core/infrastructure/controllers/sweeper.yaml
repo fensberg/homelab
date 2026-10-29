@@ -103,7 +103,7 @@ spec:
               - matchExpressions:
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
-                  - key: ${UNTRUSTED_ZONE}
+                  - key: untrusted-zone
                     operator: DoesNotExist
 
       # Sent to the hypervisor by name, because its certificate names the

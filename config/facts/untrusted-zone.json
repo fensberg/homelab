@@ -7,7 +7,13 @@
     "The one place these are written. OpenTofu reads this file, Go is",
     "generated from it (scripts/details/facts) and the alerts are handed it",
     "by Flux, so the machine, the program that lifts the taint and the",
-    "query that finds the machine cannot name different keys."
+    "query that finds the machine cannot name different keys.",
+    "",
+    "Where work is sent the key is written out: a pod's selector and",
+    "toleration are read before Flux substitutes anything - by the engineer's",
+    "trial of a change against the site's own nodes - so a variable there",
+    "matches no machine. The pools are held to this file by",
+    "tests/go/repo/pull_request_pools_test.go, through the generated Go."
   ],
   "key": "untrusted-zone",
   "not_yet_clean": "untrusted-zone/not-yet-clean"

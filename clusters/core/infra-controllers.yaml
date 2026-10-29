@@ -29,7 +29,3 @@ spec:
       # the storage driver. Written by the same module, in the same way.
       - kind: Secret
         name: storage-vars
-      # The keys a machine in an untrusted zone is known by, which the
-      # sweeper keeps its own work off.
-      - kind: Secret
-        name: cluster-vars

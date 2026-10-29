@@ -162,11 +162,6 @@ func poolPolicyProblems(policy map[string]any, want []string) []string {
 	return out
 }
 
-// untrustedZoneVariable is how a manifest names the key a zone's machine is
-// labelled and tainted by: Flux fills it in from the secret OpenTofu writes
-// it to, from config/facts/untrusted-zone.json.
-const untrustedZoneVariable = "${UNTRUSTED_ZONE}"
-
 // runnerProblems is everything about a pool's own runners that lets them be
 // more than a pull request's: a token of the cluster's, or anywhere to run
 // but an untrusted zone's machine.
@@ -177,7 +172,7 @@ func runnerProblems(release map[string]any) []string {
 		out = append(out, "its runners are given an account's token: automountServiceAccountToken is not false")
 	}
 	selector, _ := walk(spec, capacity.NodeSelectorKey).(map[string]any)
-	zone, sent := selector[untrustedZoneVariable].(string)
+	zone, sent := selector[capacity.UntrustedZone].(string)
 	if !sent || zone == "" {
 		out = append(out, "its runners are not sent to an untrusted zone's machine: no nodeSelector for untrusted-zone, so they may land on a machine the estate trusts")
 	}
@@ -185,7 +180,7 @@ func runnerProblems(release map[string]any) []string {
 	tolerations, _ := walk(spec, "tolerations").([]any)
 	for _, tol := range tolerations {
 		each, _ := tol.(map[string]any)
-		tolerated = tolerated || (each["key"] == untrustedZoneVariable && each["value"] == zone && sent)
+		tolerated = tolerated || (each["key"] == capacity.UntrustedZone && each["value"] == zone && sent)
 	}
 	if !tolerated {
 		out = append(out, "its runners do not tolerate the zone's taint, so none can be placed and every job waits")
@@ -329,8 +324,8 @@ spec:
     template:
       spec:
         automountServiceAccountToken: false
-        nodeSelector: {"${UNTRUSTED_ZONE}": somewhere}
-        tolerations: [{key: "${UNTRUSTED_ZONE}", value: somewhere, effect: NoSchedule}]
+        nodeSelector: {untrusted-zone: somewhere}
+        tolerations: [{key: untrusted-zone, value: somewhere, effect: NoSchedule}]
 `
 	for name, c := range map[string]struct {
 		change func(string) string
@@ -342,7 +337,7 @@ spec:
 			return strings.Replace(s, "        automountServiceAccountToken: false\n", "", 1)
 		}, "given an account's token"},
 		"sent nowhere": {func(s string) string {
-			return strings.Replace(s, "        nodeSelector: {\"${UNTRUSTED_ZONE}\": somewhere}\n", "", 1)
+			return strings.Replace(s, "        nodeSelector: {untrusted-zone: somewhere}\n", "", 1)
 		}, "may land on a machine the estate trusts"},
 		"tolerating another zone": {func(s string) string { return strings.Replace(s, "value: somewhere", "value: elsewhere", 1) }, "do not tolerate the zone's taint"},
 	} {
