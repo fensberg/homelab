@@ -27,11 +27,11 @@ opentofu contains f if {
 	endswith(f.path, ".tf")
 }
 
-# plan is every resource a plan of a site's roots would make, as
-# [path, resource]: the plans the rule harness makes from nothing, with a
-# stand-in for every value the vault supplies, each resource with its
-# address, its type and the values it would be made with, wherever in the
-# plan's modules it is declared. A plan is found by what it is - what
+# plan is every resource a plan of the estate's or a site's roots would
+# make, as [path, resource] - plan_scope says which: the plans the rule
+# harness makes from nothing, with a stand-in for every value the vault
+# supplies, each resource with its address, its type and the values it would
+# be made with, wherever in the plan's modules it is declared. A plan is found by what it is - what
 # `tofu show -json` writes of a saved plan - and not by where it was written.
 plan contains [f.path, r] if {
 	some f in input

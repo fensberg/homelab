@@ -1,4 +1,5 @@
-guard: TestEveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits
+guard: TestTheConfigurationRulesHold
+rule: plan_runner_group
 file: clusters/core/infrastructure/configs/pull-requests-source.yaml
 find: "    runnerGroup: pull-requests\n"
 replace: "    runnerGroup: homelab\n"

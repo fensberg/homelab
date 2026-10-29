@@ -1,4 +1,5 @@
-guard: TestEveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits
+guard: TestTheConfigurationRulesHold
+rule: plan_runner_group
 file: management/estate/source-control.tf
 find: '"deploy-infrastructure.yml", "integration-tests.yml"'
 replace: '"deploy-infrastructure.yml"'

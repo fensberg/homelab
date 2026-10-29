@@ -231,6 +231,12 @@ removed:
   - proof: TestEveryMachineIsBuiltByAStepBeforeItIsWaitedFor.e7038f54.yml
     reason: its guard moved down to the steps package's own tests, beside the step list it holds the machines to, as TestEveryMachineIsBuiltByAStepBeforeItIsWaitedFor over the plan from nothing; it is proved there by the logic mutation that takes the zones' machines out of their step (2026-10-24)
   - proof: TestEstateObjectsAreDeclaredOnlyInTheEstateRoot.3ed4b468.yml
-    reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/plan_estate_scope.rego), as TestTheConfigurationRulesHold.EstateObjectsAreDeclaredOnlyInTheEstateRoot.3ed4b468.yml, rewritten to change a lock and plant a resource that still plan, since the rule judges the plan and the locks (2026-10-23)
+    reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/rules/plan_estate_scope), as TestTheConfigurationRulesHold.EstateObjectsAreDeclaredOnlyInTheEstateRoot.3ed4b468.yml, rewritten to change a lock and plant a resource that still plan, since the rule judges the plan and the locks (2026-10-23)
   - proof: TestEstateObjectsAreDeclaredOnlyInTheEstateRoot.8f93a51b.yml
-    reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/plan_estate_scope.rego), as TestTheConfigurationRulesHold.EstateObjectsAreDeclaredOnlyInTheEstateRoot.8f93a51b.yml, rewritten to change a lock and plant a resource that still plan, since the rule judges the plan and the locks (2026-10-23)
+    reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/rules/plan_estate_scope), as TestTheConfigurationRulesHold.EstateObjectsAreDeclaredOnlyInTheEstateRoot.8f93a51b.yml, rewritten to change a lock and plant a resource that still plan, since the rule judges the plan and the locks (2026-10-23)
+  - proof: TestEveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits.867b9a00.yml
+    reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/rules/plan_runner_group), as TestTheConfigurationRulesHold.EveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits.867b9a00.yml, unchanged in what it breaks (2026-10-29)
+  - proof: TestEveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits.aae32ea1.yml
+    reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/rules/plan_runner_group), as TestTheConfigurationRulesHold.EveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits.aae32ea1.yml, unchanged in what it breaks (2026-10-29)
+  - proof: TestEveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits.fd8d7c02.yml
+    reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/rules/plan_runner_group), as TestTheConfigurationRulesHold.EveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits.fd8d7c02.yml, unchanged in what it breaks (2026-10-29)

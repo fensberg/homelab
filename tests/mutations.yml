@@ -274,8 +274,6 @@ unprovable:
     reason: table
   - test: TestADedicationIsWorkedOutAndAHalfOfOneIsSeen
     reason: table
-  - test: TestAGroupOfRunnersIsAWallOnlyWhileItNamesWhatItAdmits
-    reason: table
   # The reader behind TestEveryGuardOpensBySayingHowItRuns, which its own
   # ledger entry proves. Its table holds each way a guard may open.
   - test: TestAGuardsOpeningIsReadFromItsFirstStatement
