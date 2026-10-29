@@ -9,7 +9,8 @@
 # asks for more than the free plan gives is refused before anything changes:
 # a Worker added, a timer added, or a site too many.
 #
-# tests/go/repo refuses a Worker that is declared and not counted here.
+# policy/conftest/rules/plan_free_plan refuses a Worker that is declared and
+# not counted here.
 
 variable "free_plan" {
   type = object({
@@ -32,27 +33,23 @@ variable "free_plan" {
   EOT
 }
 
-locals {
-  # Every Worker the estate runs, and what it uses in a day.
-  workers_use = {
+# Every Worker the estate runs, and what it uses in a day, added up. A
+# Worker's module gives its use as an output, and it is named here.
+module "free_plan" {
+  source = "./free-plan"
+
+  limits = var.free_plan
+  uses = {
     watchman = module.watchman.use
   }
-
-  free_plan_use = {
-    for what, most in var.free_plan : what => sum([for use in values(local.workers_use) : use[what]])
-  }
-  over_the_free_plan = [
-    for what, most in var.free_plan : "${what}: ${local.free_plan_use[what]} against ${most}"
-    if local.free_plan_use[what] > most
-  ]
 }
 
 output "free_plan_use" {
   description = "What the estate uses of the free plan in a day, by limit."
-  value       = local.free_plan_use
+  value       = module.free_plan.use
 
   precondition {
-    condition     = length(local.over_the_free_plan) == 0
-    error_message = "The estate would use more than Cloudflare's free plan gives, and what is over is refused there, not billed: ${join("; ", local.over_the_free_plan)}. Do less often what is done, or take the decision to pay for a plan - which is the operator's, and is not made by raising the figure here."
+    condition     = length(module.free_plan.over) == 0
+    error_message = "The estate would use more than Cloudflare's free plan gives, and what is over is refused there, not billed: ${join("; ", module.free_plan.over)}. Do less often what is done, or take the decision to pay for a plan - which is the operator's, and is not made by raising the figure here."
   }
 }

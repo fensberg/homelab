@@ -20,6 +20,7 @@ import (
 	"homelab/contractor/steps"
 	"homelab/details/applications"
 	"homelab/details/asbuilt"
+	"homelab/details/platform"
 )
 
 // UnbuiltPlans is every site's roots planned from nothing, as files a policy
@@ -48,6 +49,15 @@ func (r *Tree) UnbuiltPlans(t testing.TB) []string {
 		t.Fatal("the config template declares no site, so there is nothing to plan")
 	}
 	out := t.TempDir()
+	// Each plan is written under the scope its root is: a site's roots under
+	// site/, every other root under estate/. A node has no root of its own,
+	// so a root that is not a site's is the estate's, and a rule tells the
+	// two apart by where the plan is (lib.plan_scope).
+	for _, scope := range []string{siteScope, estateScope} {
+		if err := os.MkdirAll(filepath.Join(out, scope), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
 	var files []string
 	for _, site := range sites {
 		kept, err := r.keptPlans(t, site)
@@ -64,7 +74,7 @@ func (r *Tree) UnbuiltPlans(t testing.TB) []string {
 				t.Errorf("the %s root of %s planned to nothing, so no rule over its plan can be judged", root.Root, site)
 				continue
 			}
-			file := filepath.Join(out, site+"-"+root.Root+".plan.json")
+			file := filepath.Join(out, siteScope, site+"-"+root.Root+".plan.json")
 			if err := os.WriteFile(file, root.Plan, 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -73,6 +83,13 @@ func (r *Tree) UnbuiltPlans(t testing.TB) []string {
 	}
 	return append(files, r.wholePlans(t, out)...)
 }
+
+// The directories a plan is written under, by the scope of the root it is of:
+// the two scopes that have roots. policy/conftest/lib reads them back.
+const (
+	siteScope   = "site"
+	estateScope = "estate"
+)
 
 // wholePlans is every root that is not a site's, planned whole from nothing
 // (asbuilt.PlanWhole): the estate's, which keeps its modules beside it. A
@@ -102,7 +119,7 @@ func (r *Tree) wholePlans(t testing.TB, out string) []string {
 			t.Errorf("%s does not plan from nothing, so no rule over its plan can be judged: %v", root, err)
 			continue
 		}
-		file := filepath.Join(out, path.Base(root)+".plan.json")
+		file := filepath.Join(out, estateScope, path.Base(root)+".plan.json")
 		if err := os.WriteFile(file, plan, 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -273,12 +290,19 @@ func readKept(dir string) ([]steps.Unbuilt, error) {
 
 // planKey is what a site's plans are made from, as one digest: every
 // tracked file under the roots, the modules, the applications and the
-// config, and the site's own list of applications, by path and content.
+// config, every file the release holds - which is every file a module reads
+// from outside its own directory - and the site's own list of applications,
+// by path and content.
 func (r *Tree) planKey(t testing.TB, site string) (string, error) {
+	release, err := platform.Read(r.root)
+	if err != nil {
+		return "", err
+	}
 	var from []string
 	for _, rel := range r.Files(t) {
 		if strings.HasPrefix(rel, "management/") || strings.HasPrefix(rel, "modules/") ||
-			strings.HasPrefix(rel, "config/") || rel == applications.SiteFilePath(site) {
+			strings.HasPrefix(rel, "config/") || rel == applications.SiteFilePath(site) ||
+			platform.Holds(release.Holds, rel) {
 			from = append(from, rel)
 		}
 	}

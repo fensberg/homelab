@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_runner_group
+file: .github/workflows/clerk.yml
+find: "runs-on: ubuntu-latest"
+replace: "runs-on: homelab-${{ vars.pull_request_runners_site }}"
+mentions: "clerk.yml asks for the estate's runner and no group admits it"
+why: >
+  A workflow moved onto the estate's runners without being named where
+  their group's workflows are given is never handed a runner. Changing a
+  job's runs-on is the plausible way to get there.

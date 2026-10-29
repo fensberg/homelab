@@ -1,9 +1,0 @@
-guard: TestEveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits
-file: management/estate/source-control.tf
-find: '"deploy-infrastructure.yml", "integration-tests.yml"'
-replace: '"deploy-infrastructure.yml"'
-mentions: "would wait for a runner for ever"
-why: >
-  A workflow on the estate's runners that their group does not name is
-  given no runner, and says so only by never starting. Dropping a name
-  from the list is the plausible way to get there.

@@ -1,0 +1,10 @@
+guard: TestTheCodeRulesHold
+rule: a-module-is-fetched-as-released
+file: management/platform/root.tf
+find: '?digest=${var.digest}"'
+replace: '?tag=v2026.10.1"'
+mentions: "the one form that reaches the release"
+why: >
+  A tag is a name a registry can be made to answer differently. A plan
+  made against the checkout takes the other branch and cannot see it, so
+  this is held as the source is written.

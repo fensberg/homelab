@@ -1,0 +1,11 @@
+guard: TestTheConfigurationRulesHold
+rule: runner_namespaces
+file: scripts/approved-suppliers.yml
+find: "    - packages\n"
+replace: "    - packaging\n"
+mentions: 'is a set of the estate''s own runners, and is in the namespace "pull-request-runners"'
+why: >
+  A pool is a pool only while the suppliers list names it. Renamed there
+  and not in its release, the release is no longer known as a pool, and a
+  set of runners in the pull-request namespace that is not a pool is one
+  whose walls are not the pools'.

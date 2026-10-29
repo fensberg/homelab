@@ -237,8 +237,6 @@ unprovable:
     reason: table
   - test: TestRouteProblemsNamesEachWayARouteAndItsServiceDisagree
     reason: table
-  - test: TestALayerIsHeldToWhatItsSecretsCarry
-    reason: table
   - test: TestPathsIntoTheEstateNamesEachWayOneIsOpened
     reason: table
   # Removes each application from a copy of the repository and runs every
@@ -250,13 +248,9 @@ unprovable:
     reason: table
   - test: TestFluxLayoutRefusesWhatIsNotCoreOrASitesOwn
     reason: table
-  - test: TestUnreleasedModulesRefusesEveryWayAroundTheRelease
-    reason: table
   - test: TestOwnerOutsideItsAddressFindsTheNameAndNotTheAddress
     reason: table
   - test: TestLockFaultsFindsEachWayALockDoesNotHold
-    reason: table
-  - test: TestUnversionedSitesWantsALineForEverySiteAndNoOther
     reason: table
   - test: TestAssertingDeclarationsAndExpectedFailuresAreReadNotMatched
     reason: table
@@ -271,10 +265,6 @@ unprovable:
   - test: TestAPoolsPolicyIsHeldToItsListAndItsRunnersToNothingOfTheClusters
     reason: table
   - test: TestTheLocalTableRuleIsJudgedByThePlaceItIsAddedAt
-    reason: table
-  - test: TestADedicationIsWorkedOutAndAHalfOfOneIsSeen
-    reason: table
-  - test: TestAGroupOfRunnersIsAWallOnlyWhileItNamesWhatItAdmits
     reason: table
   # The reader behind TestEveryGuardOpensBySayingHowItRuns, which its own
   # ledger entry proves. Its table holds each way a guard may open.

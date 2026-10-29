@@ -1,0 +1,33 @@
+# How a module call reaches the release its site was given.
+#
+# A site's root fetches every module from the release its site's line names,
+# or, for a check that has to see a change before it is released, the same
+# path in a checkout. policy/conftest/rules/plan_released_modules holds each
+# site's plan to calling through the checkout it was handed; what the plan
+# cannot show is the other branch, which it did not take. So the form is held
+# here, as the source is written.
+rules:
+  - id: a-module-is-fetched-as-released
+    languages: [hcl]
+    severity: ERROR
+    message: >-
+      reads its modules from var.unreleased and not in the one form that
+      reaches the release: var.unreleased != "" ?
+      "${var.unreleased}/<path>" :
+      "oci://${var.release}//<path>?digest=${var.digest}", the same path in
+      both. A tag, a fixed registry or digest, a path, or another module when
+      checked than when released runs something no site's line chose.
+    patterns:
+      - pattern-inside: |
+          module $M {
+            ...
+          }
+      - pattern: source = $S
+      - metavariable-regex:
+          metavariable: $S
+          regex: '.*var\.unreleased'
+      # The whole of the form, with the path the checkout is read at written
+      # once and required again where the release is fetched.
+      - metavariable-regex:
+          metavariable: $S
+          regex: '^(?!var\.unreleased != "" \? "\$\{var\.unreleased\}/([^"$?]+)" : "oci://\$\{var\.release\}//\1\?digest=\$\{var\.digest\}"$)'

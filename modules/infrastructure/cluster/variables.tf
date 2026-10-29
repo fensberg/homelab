@@ -154,15 +154,16 @@ locals {
   # defensible and neither is obvious, which is exactly the class of choice that
   # should not live as a literal repeated in two files.
   #
-  # THE PATH FOR A FORK, which is the other half of #360: change this line. A
-  # network with internal resolvers, split-horizon DNS, or a policy against
-  # public upstreams needs nothing else - every machine the estate builds reads
-  # from here. tests/go/repo/cluster_network_test.go refuses a restatement.
+  # THE PATH FOR A FORK, which is the other half of #360: change the list in
+  # config/facts/dns-resolvers.json. A network with internal resolvers,
+  # split-horizon DNS, or a policy against public upstreams needs nothing
+  # else - every machine the estate builds reads from here.
+  # policy/conftest/rules/dns_resolvers refuses a restatement.
   #
   # Not moved into the vault template: a resolver address is not a secret, and
   # putting it there would make a fork edit a vault item to change a routing
   # decision that belongs in code where it can be reviewed.
-  dns_resolvers = ["1.1.1.1", "1.0.0.1"]
+  dns_resolvers = jsondecode(file("${path.module}/../../../config/facts/dns-resolvers.json")).servers
 
   # The two largest address commitments in the estate, the site's own.
   #
@@ -260,8 +261,6 @@ locals {
   worker_names = [for k in local.worker_keys : local.workers[k].name]
 
   # --- platform ------------------------------------------------------------
-  # renovate: datasource=github-releases depName=siderolabs/talos
-  #
   # This line, not schematic_id, is what selects extension versions. The image
   # URL in compute.tf is factory.talos.dev/image/<schematic>/<talos_version>/…,
   # and the Factory resolves each extension to the build matching that Talos
@@ -276,10 +275,11 @@ locals {
   # a running estate, so a rebuild is the only delivery mechanism there is. This
   # branch is merged between a demolish and a build-site, which is the only
   # window in which this costs nothing.
-  talos_version = "v1.13.9"
+  # The version itself is TALOS_VERSION in scripts/versions.env, the one
+  # place a version is pinned, beside the talosctl that has to stay within a
+  # minor of it.
+  talos_version = local.versions.TALOS_VERSION
 
-  # renovate: datasource=github-releases depName=kubernetes/kubernetes
-  #
   # Was inline in talos.tf as a bare "1.31.1" with no comment, no annotation
   # and no entry in versions.env - so nothing watched it and nothing could
   # have told you it had gone stale. It had: Talos v1.13.9 defaults to
@@ -300,8 +300,20 @@ locals {
   # window in which it costs nothing. Ignite on 1.31 and the estate carries an
   # out-of-support control plane until epoch 05 exists to move it.
   #
-  # policy/conftest/rules/client_skew/client_skew.rego asserts kubectl stays within one minor.
-  kubernetes_version = "1.36.3"
+  # The version itself is KUBERNETES_VERSION in scripts/versions.env, which
+  # the scheduler a change is tried with is delivered by too, so the two are
+  # one line. policy/conftest/rules/client_skew asserts kubectl stays within
+  # one minor.
+  kubernetes_version = local.versions.KUBERNETES_VERSION
+
+  # scripts/versions.env, as KEY = value: every line that assigns, and none
+  # of its comments.
+  versions = {
+    for line in split("\n", file("${path.module}/../../../scripts/versions.env")) :
+    split("=", line)[0] => join("=", slice(split("=", line), 1, length(split("=", line))))
+    if can(regex("^[A-Z0-9_]+=", line))
+  }
+
   # Two system extensions, generated via factory.talos.dev's schematic API:
   # siderolabs/tailscale and siderolabs/util-linux-tools. Talos ships neither
   # by default. util-linux-tools provides fstrim, which stays useful whatever

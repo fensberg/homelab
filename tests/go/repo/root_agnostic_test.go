@@ -171,7 +171,6 @@ func rootsNamed(rel string, fset *token.FileSet, f *ast.File, roots []string, to
 // kind and labels. Named once, so a rename is one edit here and every guard
 // that reads the thing follows it.
 var (
-	declMachineConfig = []string{"data", "talos_machine_configuration", "controlplane"}
 	declClusterHealth = []string{"data", "talos_cluster_health"}
 	declMachines      = []string{"resource", steps.MachineResource, "talos_cp"}
 	declPools         = []string{"resource", "proxmox_virtual_environment_pool", "control_plane"}

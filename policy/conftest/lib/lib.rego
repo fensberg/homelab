@@ -27,11 +27,11 @@ opentofu contains f if {
 	endswith(f.path, ".tf")
 }
 
-# plan is every resource a plan of a site's roots would make, as
-# [path, resource]: the plans the rule harness makes from nothing, with a
-# stand-in for every value the vault supplies, each resource with its
-# address, its type and the values it would be made with, wherever in the
-# plan's modules it is declared. A plan is found by what it is - what
+# plan is every resource a plan of the estate's or a site's roots would
+# make, as [path, resource] - plan_scope says which: the plans the rule
+# harness makes from nothing, with a stand-in for every value the vault
+# supplies, each resource with its address, its type and the values it would
+# be made with, wherever in the plan's modules it is declared. A plan is found by what it is - what
 # `tofu show -json` writes of a saved plan - and not by where it was written.
 plan contains [f.path, r] if {
 	some f in input
@@ -64,6 +64,86 @@ plan_configuration contains [f.path, address, r] if {
 	calls := [$"module.{p[i + 1]}" | some i, k in p; k == "module_calls"]
 	address := concat(".", array.concat(calls, [r.address]))
 }
+
+# plan_module_calls is every module a plan's root calls, as [path, name,
+# call]: the call as the plan's configuration gives it, its source as it was
+# resolved for that plan.
+plan_module_calls contains [f.path, name, call] if {
+	some f in input
+	is_object(f.contents)
+	is_object(f.contents.configuration)
+	some name, call in object.get(f.contents.configuration.root_module, "module_calls", {})
+}
+
+# plan_outputs is every output a plan's root declares, as [path, name,
+# output]: the output as the plan's configuration gives it, its expression's
+# references among it.
+plan_outputs contains [f.path, name, output] if {
+	some f in input
+	is_object(f.contents)
+	is_object(f.contents.configuration)
+	some name, output in object.get(f.contents.configuration.root_module, "outputs", {})
+}
+
+# plan_variables is every variable a plan's root declares, as [path, name,
+# declared, given]: the declaration as the configuration has it, and the
+# value the plan was made with, or null when it was given none.
+plan_variables contains [f.path, name, declared, given] if {
+	some f in input
+	is_object(f.contents)
+	is_object(f.contents.configuration)
+	some name, declared in object.get(f.contents.configuration.root_module, "variables", {})
+	given := object.get(object.get(object.get(f.contents, "variables", {}), name, {}), "value", null)
+}
+
+# plan_scope is the scope of the root a plan is of: "site" for a site's
+# roots, "estate" for every other, as the rule harness writes each plan under
+# the directory of its scope. A node has no root of its own, so those are the
+# two. A plan written anywhere else has no scope, and a rule asking for one
+# is told nothing.
+plan_scope(path) := scope if {
+	parts := split(path, "/")
+	count(parts) >= 2
+	scope := parts[count(parts) - 2]
+	scope in {"site", "estate"}
+}
+
+# pull_request_pools is the label a job asks for each of the pools of
+# pull-request runners by, made from the names the suppliers list declares
+# under pull_request_pools - the one place a pool is named. The site is the
+# repository's variable, so a label ends in that and never in a site written
+# out.
+pull_request_pools contains $"pr-{name}-$\{\{ vars.pull_request_runners_site }}" if {
+	some f in at("scripts/approved-suppliers.yml")
+	some name in f.contents.pull_request_pools.names
+}
+
+# pull_request_pool is whether a set of runners is one of the pull-request
+# pools: its name begins as a pool's label does, before the site.
+pull_request_pool(set_name) if {
+	some label in pull_request_pools
+	startswith(set_name, split(label, "${{")[0])
+}
+
+# hosted_runner is whether a label is a runner GitHub provides.
+hosted_runner(label) if regex.match(`^(ubuntu|windows|macos)-[a-z0-9.-]+$`, label)
+
+# runner_labels is the runners a job's runs-on asks for, read as written: one
+# name, or each name of a list. Anything else - a group, an expression -
+# names no runner, and is read as none; a name in a list that is not text
+# reads as empty.
+runner_labels(runs_on) := [runs_on] if is_string(runs_on)
+
+runner_labels(runs_on) := [label_of(l) | some l in runs_on] if is_array(runs_on)
+
+runner_labels(runs_on) := [] if {
+	not is_string(runs_on)
+	not is_array(runs_on)
+}
+
+label_of(l) := l if is_string(l)
+
+label_of(l) := "" if not is_string(l)
 
 # provider_locks is every provider a lock file locks, as [path, source]:
 # what `tofu init` writes beside a root or a module to say which providers
@@ -100,6 +180,31 @@ under(prefix) := [f | some f in input; startswith(f.path, prefix)]
 
 # named is every document of every file of one name, in whatever directory.
 named(name) := [f | some f in input; endswith(f.path, $"/{name}")]
+
+# facts is every fact, by its name: a JSON file directly under config/facts,
+# each a value more than one language here needs and written there once.
+facts[name] := f.contents if {
+	some f in input
+	parts := split(f.path, "/")
+	count(parts) == 3
+	parts[0] == "config"
+	parts[1] == "facts"
+	endswith(parts[2], ".json")
+	name := trim_suffix(parts[2], ".json")
+}
+
+# rendered_layers is what Flux applies, as the rule harness renders it, as
+# [path, layer, documents]: each layer's header - its name, namespace, the
+# directory it applies, what it substitutes from, and the stand-ins
+# validation derives for applications - and the documents
+# kustomize builds from that directory, before anything is substituted. An
+# application's directory no layer applies has a layer with no name.
+rendered_layers contains [f.path, f.contents.layer, f.contents.documents] if {
+	some f in input
+	is_object(f.contents)
+	is_object(f.contents.layer)
+	is_array(f.contents.documents)
+}
 
 # workflows is every workflow, by its path: a YAML file directly under
 # .github/workflows.

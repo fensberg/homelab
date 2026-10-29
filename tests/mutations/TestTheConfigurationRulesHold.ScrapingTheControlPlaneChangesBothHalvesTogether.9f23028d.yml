@@ -1,8 +1,8 @@
 guard: TestTheConfigurationRulesHold
 rule: plan_control_plane_metrics
-file: modules/infrastructure/cluster/talos.tf
-find: 'listen-metrics-urls = "http://0.0.0.0:2381"'
-replace: 'listen-metrics-urls-disabled = "http://0.0.0.0:2381"'
+file: config/facts/control-plane-listeners.json
+find: '"argument": "listen-metrics-urls",'
+replace: '"argument": "listen-metrics-urls-disabled",'
 mentions: "not every control plane's configuration sets cluster.etcd.extraArgs.listen-metrics-urls"
 why: >
   The chart scraping etcd and Talos exposing it are two changes in two

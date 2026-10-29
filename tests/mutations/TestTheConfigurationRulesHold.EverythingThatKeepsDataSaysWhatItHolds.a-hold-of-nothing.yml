@@ -1,0 +1,20 @@
+guard: TestTheConfigurationRulesHold
+rule: holds
+file: modules/applications/planted/application.json
+create: |
+  {
+    "holds": [
+      {
+        "what": "a volume that is not there",
+        "lifetime": "site",
+        "lives_on": "machine",
+        "held_by": "PersistentVolumeClaim/nowhere"
+      }
+    ]
+  }
+mentions: "planted says it holds something in PersistentVolumeClaim/nowhere, and nothing of its own declares storage"
+why: >
+  An application's hold that names storage it no longer declares is a
+  promise about nothing, and the safety officer believes it. Planted,
+  because the ledger holds the rule to every application's declaration
+  without naming any real one.

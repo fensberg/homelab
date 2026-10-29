@@ -29,6 +29,13 @@ spec:
     - name: capacity.recorded
       interval: 1m
       rules:
+        # Each machine kept for an untrusted zone, by its node. A dashboard
+        # is not substituted into - its own variables would arrive blank - so
+        # what it shows of the zone's machine it selects by this, and the key
+        # the machine is known by is written where Flux fills it in.
+        - record: node:untrusted_zone:info
+          expr: max by (node) (kube_node_spec_taint{key="${UNTRUSTED_ZONE}"})
+
         # What the workers hold, and what they hold with the largest gone.
         #
         # A WORKER HERE IS ONE WORK THAT CANNOT WAIT MAY LAND ON. A machine in
@@ -40,16 +47,16 @@ spec:
           expr: >-
             sum(kube_node_status_allocatable{resource="memory"}
             unless on (node) kube_node_role{role="control-plane"}
-            unless on (node) kube_node_spec_taint{key="untrusted-zone"})
+            unless on (node) kube_node_spec_taint{key="${UNTRUSTED_ZONE}"})
         - record: site:workers_allocatable_memory_bytes:one_gone
           expr: >-
             sum(kube_node_status_allocatable{resource="memory"}
             unless on (node) kube_node_role{role="control-plane"}
-            unless on (node) kube_node_spec_taint{key="untrusted-zone"})
+            unless on (node) kube_node_spec_taint{key="${UNTRUSTED_ZONE}"})
             -
             max(kube_node_status_allocatable{resource="memory"}
             unless on (node) kube_node_role{role="control-plane"}
-            unless on (node) kube_node_spec_taint{key="untrusted-zone"})
+            unless on (node) kube_node_spec_taint{key="${UNTRUSTED_ZONE}"})
 
         # What work that cannot wait reserves on the workers: every running
         # pod there whose priority is not batch.
@@ -58,7 +65,7 @@ spec:
             sum(
               (kube_pod_container_resource_requests{resource="memory"}
                unless on (node) kube_node_role{role="control-plane"}
-               unless on (node) kube_node_spec_taint{key="untrusted-zone"})
+               unless on (node) kube_node_spec_taint{key="${UNTRUSTED_ZONE}"})
               * on (namespace, pod) group_left ()
               max by (namespace, pod) (kube_pod_info{priority_class!="batch"})
               * on (namespace, pod) group_left ()

@@ -97,7 +97,7 @@ spec:
         # nowhere to run.
         - alert: NoUntrustedWorkerIsThere
           expr: >-
-            absent(kube_node_spec_taint{key="untrusted-zone"})
+            absent(kube_node_spec_taint{key="${UNTRUSTED_ZONE}"})
             and on() kube_deployment_created{namespace="sweeper", deployment="sweeper"}
           for: 15m
           labels:

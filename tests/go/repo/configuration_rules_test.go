@@ -79,15 +79,16 @@ func runConftest(t *testing.T, args ...string) (string, bool) {
 }
 
 func TestTheConfigurationRulesHold(t *testing.T) {
-	heavy(t, "plans every site's roots from nothing, for the rules over OpenTofu, which takes seconds")
+	heavy(t, "plans every site's roots from nothing and renders every layer Flux applies, for the rules over what each makes, which takes seconds")
 	if !repository(t).IsDir(conftestRules) {
 		t.Fatalf("%s is not there, so no configuration rule runs", conftestRules)
 	}
 	// How it is run - every package, every file at once - is conftest.toml's
 	// to say, so this, the lane and a person at a terminal run it alike. The
 	// plans go with the files: OpenTofu is judged on what it would make, as
-	// it works that out, and not on its source.
-	args := append(append([]string{"test"}, conftestInputs(t)...), repository(t).UnbuiltPlans(t)...)
+	// it works that out, and not on its source. So do the layers Flux
+	// applies, as kustomize builds them.
+	args := append(append(append([]string{"test"}, conftestInputs(t)...), repository(t).UnbuiltPlans(t)...), repository(t).RenderedLayers(t, derivedStandIns(t))...)
 	out, ok := runConftest(t, args...)
 	if !ok {
 		var refused []string
@@ -102,6 +103,18 @@ func TestTheConfigurationRulesHold(t *testing.T) {
 		t.Errorf("a configuration rule refuses the repository:\n\n  %s\n\nThe rule is in %s, named by its package; its own tests beside it show what it accepts.",
 			strings.Join(refused, "\n  "), conftestRules)
 	}
+}
+
+// derivedStandIns is the stand-ins validation derives for what the platform
+// hands a site's applications, by the script it runs, as it ships.
+func derivedStandIns(t *testing.T) map[string]string {
+	t.Helper()
+	// covers: shell:.github/scripts/application-standins.sh
+	listing, errs, err := repository(t).Invoke(parsed.Run{}, "bash", parsed.Here(".github/scripts/application-standins.sh"))
+	if err != nil {
+		t.Fatalf("deriving the applications' stand-ins: %v\n%s", err, errs)
+	}
+	return parsed.StandIns(string(listing))
 }
 
 // Every rule is held to what it claims by tests of its own: Conftest's

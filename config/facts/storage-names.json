@@ -1,0 +1,14 @@
+{
+  "_comment": [
+    "The names a site's machines and volumes are kept under on the",
+    "hypervisor, after the site's own name. The storage driver's token and",
+    "the sweeper's are confined by them: the contractor tells the hypervisor",
+    "what to grant from the Go generated from this file, and OpenTofu makes",
+    "the pools and points the driver at the storage from the same file. If",
+    "the two drifted, a token would be confined to a pool with no machines",
+    "in it, or the driver pointed at a storage it has no right to."
+  ],
+  "worker_pool_suffix": "-workers",
+  "untrusted_pool_suffix": "-untrusted",
+  "volume_storage_suffix": "-volumes"
+}

@@ -78,8 +78,8 @@ data "github_repository" "estate" {
 # workflows that converge the estate, that converge a site and that test
 # against one, as each is on the branch the estate is built from.
 #
-# TestEveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits holds this list
-# and the workflows to each other.
+# policy/conftest/rules/plan_runner_group holds this list and the workflows
+# to each other.
 module "runners" {
   source = "./runners"
 

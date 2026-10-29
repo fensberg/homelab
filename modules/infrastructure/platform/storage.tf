@@ -22,8 +22,10 @@ locals {
   # that needs "a node of this site" takes it.
   storage_hypervisor = local.site.hypervisor.nodes[sort(keys(local.site.hypervisor.nodes))[0]]
 
-  # The storage the hypervisor's playbook makes for this site's volumes.
-  volume_storage = "${var.site}-volumes"
+  # The storage the hypervisor's playbook makes for this site's volumes, by
+  # the name config/facts/storage-names.json gives it, which is the one the
+  # contractor tells the playbook to make.
+  volume_storage = "${var.site}${jsondecode(file("${path.module}/../../../config/facts/storage-names.json")).volume_storage_suffix}"
 }
 
 resource "kubernetes_namespace" "storage_driver" {

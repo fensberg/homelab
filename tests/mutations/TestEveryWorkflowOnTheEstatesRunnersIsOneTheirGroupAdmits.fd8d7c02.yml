@@ -1,9 +1,0 @@
-guard: TestEveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits
-file: management/estate/runners/group.tf
-find: "restricted_to_workflows    = true"
-replace: "restricted_to_workflows    = false"
-mentions: "admits any workflow"
-why: >
-  The list of workflows is only a wall while the group is held to it. One
-  word lets any workflow of an admitted repository, on any branch, run
-  inside the estate.

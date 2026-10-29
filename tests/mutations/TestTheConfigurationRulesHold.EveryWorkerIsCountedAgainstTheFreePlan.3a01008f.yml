@@ -1,9 +1,9 @@
 guard: TestTheConfigurationRulesHold
-rule: free_plan
+rule: plan_free_plan
 file: management/estate/free-plan.tf
-find: "    watchman = module.watchman.use\n"
-replace: "    watchmen = module.watchman.use\n"
-mentions: "is not counted against the free plan"
+find: "  uses = {\n    watchman = module.watchman.use\n  }\n"
+replace: "  uses = {}\n"
+mentions: "use is not among what the free_plan_use output adds up"
 why: >
   A second Worker is added beside the first, or the first's line is
   dropped from the sum while its use is reworked, and the plan-time
