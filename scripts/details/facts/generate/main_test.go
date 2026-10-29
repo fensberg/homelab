@@ -28,12 +28,55 @@ func TestAFactIsAConstantForEachOfItsValues(t *testing.T) {
 	}
 }
 
+func TestAListOfObjectsIsATableInTheOrderGiven(t *testing.T) {
+	got, err := render("a-fact", []byte(`{"kept": [{"name": "b", "first": true, "size": 2}, {"name": "a", "first": false, "size": 1.5}], "plain": "x"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`APlain = "x"`,
+		"type AFactKeptEntry struct {",
+		"First bool",
+		"Name  string",
+		"Size  float64",
+		"var AFactKept = []AFactKeptEntry{",
+		`{First: true, Name: "b", Size: 2},`,
+		`{First: false, Name: "a", Size: 1.5},`,
+	} {
+		if !strings.Contains(string(got), strings.Replace(want, "APlain", "AFactPlain", 1)) {
+			t.Errorf("the generated file does not say %q:\n%s", want, got)
+		}
+	}
+	if strings.Index(string(got), `Name: "b"`) > strings.Index(string(got), `Name: "a"`) {
+		t.Errorf("the entries are not in the order the file gives them:\n%s", got)
+	}
+	only, err := render("a-fact", []byte(`{"kept": [{"n": 1}]}`))
+	if err != nil || strings.Contains(string(only), "const (") || !strings.Contains(string(only), "N int") {
+		t.Errorf("a fact that is only a table: %v\n%s", err, only)
+	}
+}
+
+func TestATableWhoseEntriesDisagreeIsRefused(t *testing.T) {
+	for name, raw := range map[string]string{
+		"empty":            `{"t": []}`,
+		"not objects":      `{"t": ["a"]}`,
+		"a field missing":  `{"t": [{"a": 1, "b": 2}, {"a": 1, "c": 2}]}`,
+		"a field too many": `{"t": [{"a": 1}, {"a": 1, "b": 2}]}`,
+		"two kinds":        `{"t": [{"a": 1}, {"a": "one"}]}`,
+		"a value inside":   `{"t": [{"a": [1]}]}`,
+	} {
+		if _, err := render("a-fact", []byte(raw)); err == nil {
+			t.Errorf("%s was rendered", name)
+		}
+	}
+}
+
 func TestAFactThatCannotBeConstantsIsRefused(t *testing.T) {
 	for name, raw := range map[string]string{
 		"not an object":   `["a", "b"]`,
 		"not JSON":        `{`,
 		"only comments":   `{"_comment": []}`,
-		"a list":          `{"names": ["a"]}`,
+		"a list of names": `{"names": ["a"]}`,
 		"an inner object": `{"inner": {"a": 1}}`,
 	} {
 		if _, err := render("a-fact", []byte(raw)); err == nil {

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"homelab/details/cloudflare"
+	"homelab/details/facts"
 )
 
 // Bucket is one of a site's object-storage buckets, by purpose.
@@ -16,23 +17,13 @@ import (
 // declaration of what to create, adopt or keep: a site cannot create, delete
 // or adopt a bucket at all, because it holds no credential that could. What a
 // site still has to know is which bucket is which, and which one its teardown
-// empties. TestTheBucketTableAgreesWithTheHCL holds this list to the estate's.
-type Bucket struct {
-	// Key is the bucket's purpose, as the estate names it and as the site's
-	// object_storage config is keyed.
-	Key string
-
-	// EmptiedAtTeardown says a site teardown empties the bucket with the
-	// site's own key. The database bucket describes a cluster that is ending:
-	// CloudNativePG refuses to archive into a bucket holding another cluster's
-	// WAL, so the next build of the site needs it empty. Everything else holds
-	// what is meant to outlive the cluster.
-	EmptiedAtTeardown bool
-
-	// Holds is one line for an operator-facing message, so a log line about a
-	// bucket says what is in it rather than only what it is called.
-	Holds string
-}
+// empties. Both read config/facts/buckets.json, where each field is said:
+// Key is the bucket's purpose, as the estate names it and the site's
+// object_storage config is keyed; EmptiedAtTeardown says a site teardown
+// empties it, which the database bucket alone is, because CloudNativePG
+// refuses to archive into a bucket holding another cluster's WAL; Holds is
+// one line for a message, saying what is in it.
+type Bucket = facts.BucketsGrantedEntry
 
 // Buckets is every bucket a site is granted, in the order a reader should
 // meet them: the cluster's own working data first, then what outlives it.
@@ -49,16 +40,12 @@ type Bucket struct {
 // bucket; there is no prefix condition on a permanent token, and a token that
 // may write may also delete (#94). So a bucket is exactly one blast radius and
 // a prefix buys no protection at all.
-var Buckets = []Bucket{
-	{Key: "database", EmptiedAtTeardown: true, Holds: "the state database's WAL archive and base backups"},
-	// Separate from the database bucket, which is the whole point: the state
-	// dump exists to survive the database being lost, and while both sat in
-	// one bucket the key that lives in a cluster Secret could delete the
-	// break-glass copy along with the backups it was meant to rescue.
-	{Key: "state", Holds: "age-encrypted OpenTofu state dumps"},
-	{Key: "staging", Holds: "staging workload data"},
-	{Key: "production", Holds: "production workload data"},
-}
+//
+// THE STATE DUMPS ARE APART FROM THE DATABASE, which is the whole point: the
+// state dump exists to survive the database being lost, and while both sat in
+// one bucket the key that lives in a cluster Secret could delete the
+// break-glass copy along with the backups it was meant to rescue.
+var Buckets = facts.BucketsGranted
 
 // BucketByKey finds a bucket by its key.
 //

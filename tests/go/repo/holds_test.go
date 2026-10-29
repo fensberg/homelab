@@ -3,13 +3,10 @@ package repo
 import (
 	"go/ast"
 	"go/token"
-	"slices"
 	"sort"
 	"strings"
 	"testing"
 
-	"github.com/hashicorp/hcl/v2"
-	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
 	"gopkg.in/yaml.v3"
 
@@ -315,30 +312,6 @@ return what it returns.`, rel, fn.Name.Name, officer, teardown)
 	}
 }
 
-// The storage driver's token is confined by two names, and each name is
-// written twice: once where the hypervisor is told what to grant, once where
-// OpenTofu makes the thing. If the two drift, the token is confined to a
-// pool with no machines in it, or the driver is pointed at a storage it has
-// no right to - and each half is correct when read alone.
-func TestTheStorageDriversNamesAreTheSameWhereverTheyAreWritten(t *testing.T) {
-	light(t)
-	tree := repository(t)
-	workers := (&config.SiteNetwork{Name: "${local.site_name}"}).WorkerPool()
-	if !writesTemplate(t, tree, tree.Declaring(t, "resource", "proxmox_virtual_environment_pool", "workers"), workers) {
-		t.Errorf("the pool a site's workers are put in is not %q, which is the pool the hypervisor confines the storage driver's token to", workers)
-	}
-	// The sweeper's token is confined the same way, to the pool of the
-	// machines it gives back as they were built.
-	untrusted := (&config.SiteNetwork{Name: "${local.site_name}"}).UntrustedPool()
-	if !writesTemplate(t, tree, tree.Declaring(t, "resource", "proxmox_virtual_environment_pool", "untrusted"), untrusted) {
-		t.Errorf("the pool a site's untrusted machines are put in is not %q, which is the pool the hypervisor confines the sweeper's token to", untrusted)
-	}
-	volumes := config.VolumeStorage("${var.site}")
-	if !writesTemplate(t, tree, tree.Declaring(t, "resource", "kubernetes_secret", "storage_vars"), volumes) {
-		t.Errorf("the storage the driver is told to keep volumes in is not %q, which is the one the hypervisor makes for it and grants it", volumes)
-	}
-}
-
 // What each machine is given is written twice until a site's config says
 // it: where the cluster module makes the machine, and where the contractor
 // budgets a hypervisor's memory before anything is built. If the two drift,
@@ -365,43 +338,6 @@ func TestAMachinesMemoryIsTheSameWhereItIsMadeAndWhereItIsBudgeted(t *testing.T)
 			t.Errorf("a %s is made with %d MiB and budgeted at %d MiB. The budget is what refuses a site its host cannot hold, and it is holding the wrong figure", role, made>>20, budgeted>>20)
 		}
 	}
-}
-
-// writesTemplate says whether a block writes a string that is this template
-// - the same text and the same references, in the same order - itself or in
-// a local value it reads. The template given is the program's own spelling
-// of the name, with the references the OpenTofu fills it from.
-func writesTemplate(t *testing.T, tree *parsed.Tree, b parsed.Block, want string) bool {
-	t.Helper()
-	wantExpr, diags := hclsyntax.ParseTemplate([]byte(want), "the program's spelling", hcl.InitialPos)
-	if diags.HasErrors() {
-		t.Fatalf("%q is not a template: %s", want, diags.Error())
-	}
-	wantParts, ok := templateParts(wantExpr)
-	if !ok {
-		t.Fatalf("%q is not a template this reads", want)
-	}
-	found := false
-	var look func(n hclsyntax.Node)
-	look = func(n hclsyntax.Node) {
-		_ = hclsyntax.VisitAll(n, func(n hclsyntax.Node) hcl.Diagnostics {
-			switch e := n.(type) {
-			case *hclsyntax.TemplateExpr:
-				if parts, ok := templateParts(e); ok && slices.Equal(parts, wantParts) {
-					found = true
-				}
-			case *hclsyntax.ScopeTraversalExpr:
-				if e.Traversal.RootName() == "local" && len(e.Traversal) >= 2 {
-					if into := tree.Resolve(t, b.Dir(), &hclsyntax.ScopeTraversalExpr{Traversal: e.Traversal[:2], SrcRange: e.SrcRange}); into != hclsyntax.Expression(e) {
-						look(into)
-					}
-				}
-			}
-			return nil
-		})
-	}
-	look(b.Block)
-	return found
 }
 
 // A second hypervisor reopens how idle capacity is lent.

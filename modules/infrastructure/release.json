@@ -13,6 +13,8 @@
     "clusters/bootstrap/cilium.yaml",
     "clusters/core/flux-system",
     "clusters/core/routes.json",
+    "config/facts/control-plane-listeners.json",
+    "config/facts/storage-names.json",
     "config/facts/untrusted-zone.json",
     "modules/applications/*/application.json",
     "modules/infrastructure"

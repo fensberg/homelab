@@ -3348,6 +3348,10 @@ table is created, filled, and then destroyed by the next teardown with a zero
 exit code**, because nothing told Sterilize to release it. The reverse is noisy
 and harmless.
 
+Since 2026-10-29 there is nothing to drift: the buckets are written once, in
+`config/facts/buckets.json`. The estate creates them from it and the
+contractor's table is generated from it, so the guard is gone.
+
 The address and fate used to be string literals repeated at each call site - two
 copies at two buckets, which would have been eight at four. That is not a set,
 it is eight chances to disagree.
@@ -4241,6 +4245,10 @@ covering. `TestEveryDeclaredControlPlaneListenerIsDialled` reads the
 `extraArgs` patches out of `talos.tf`, finds every component told to listen
 somewhere other than loopback, and fails in both directions: a listener
 declared and not dialled, or dialled and not declared.
+
+Since 2026-10-29 the list cannot go stale: the listeners are written once, in
+`config/facts/control-plane-listeners.json`. The cluster module opens them
+from it and the integration tier dials them from it, so the guard is gone.
 
 Matched on the component rather than the port, because the port is a component
 default that `talos.tf` never states. What the configuration does say is which

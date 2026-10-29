@@ -24,7 +24,9 @@
 # already exist, because the world backups in production are the only copy of
 # the world while no site stands.
 locals {
-  purposes = toset(["database", "state", "staging", "production"])
+  # One bucket for each a site is granted, as config/facts/buckets.json
+  # lists them for the contractor too.
+  purposes = toset([for b in jsondecode(file("${path.module}/../../../config/facts/buckets.json")).granted : b.key])
 }
 
 resource "cloudflare_r2_bucket" "this" {

@@ -71,18 +71,25 @@
 # exercise - somebody looking at the tree should be told what a group is
 # without coming back here to read HCL.
 
+locals {
+  # The names the hypervisor confines the storage driver's and the sweeper's
+  # tokens by, written once for these pools and for what the contractor
+  # tells the hypervisor to grant.
+  storage_names = jsondecode(file("${path.module}/../../../config/facts/storage-names.json"))
+}
+
 resource "proxmox_virtual_environment_pool" "control_plane" {
   pool_id = "${local.site_name}-control-plane"
   comment = "Talos control planes. etcd quorum lives here, so draining one is a quorum decision."
 }
 
 resource "proxmox_virtual_environment_pool" "workers" {
-  pool_id = "${local.site_name}-workers"
+  pool_id = "${local.site_name}${local.storage_names.worker_pool_suffix}"
   comment = "Talos workers. CI and anything else that may be evicted and rescheduled."
 }
 
 resource "proxmox_virtual_environment_pool" "untrusted" {
-  pool_id = "${local.site_name}-untrusted"
+  pool_id = "${local.site_name}${local.storage_names.untrusted_pool_suffix}"
   comment = "Untrusted zones. Off the overlay, tainted, one per workload - and the machines an operator should look at first when something is wrong."
 }
 

@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 
+	"homelab/details/facts"
 	"homelab/details/vaults"
 )
 
@@ -491,19 +492,19 @@ var MemoryOf = map[MachineRole]int64{
 // WorkerPool is the hypervisor's pool of a site's workers, as the cluster
 // module names it. The storage driver's token is confined to it, so the
 // hypervisor's playbook and the test of that confinement both need the name.
-func (n *SiteNetwork) WorkerPool() string { return n.Name + "-workers" }
+func (n *SiteNetwork) WorkerPool() string { return n.Name + facts.StorageNamesWorkerPoolSuffix }
 
 // UntrustedPool is the hypervisor's pool of a site's machines in its
 // untrusted zones, as the cluster module names it. The sweeper's token is
 // confined to it: those are the machines it gives back as they were built.
-func (n *SiteNetwork) UntrustedPool() string { return n.Name + "-untrusted" }
+func (n *SiteNetwork) UntrustedPool() string { return n.Name + facts.StorageNamesUntrustedPoolSuffix }
 
 // VolumeStorage is the hypervisor storage that holds the volumes a site's
 // storage driver makes, and nothing else: named for the site's key, which is
 // already in git, and apart from the datastore every machine's own disks
 // are on - because the right to make and delete volumes in a storage is the
 // right to delete any volume in it.
-func VolumeStorage(site string) string { return site + "-volumes" }
+func VolumeStorage(site string) string { return site + facts.StorageNamesVolumeStorageSuffix }
 
 var slugInvalid = regexp.MustCompile(`[^A-Za-z0-9]+`)
 

@@ -1,7 +1,7 @@
 guard: TestTheConfigurationRulesHold
 rule: plan_pool_ids
 file: modules/infrastructure/cluster/pools.tf
-find: 'pool_id = "${local.site_name}-workers"'
+find: 'pool_id = "${local.site_name}${local.storage_names.worker_pool_suffix}"'
 replace: 'pool_id = "workers"'
 mentions: "does not include the site"
 why: >

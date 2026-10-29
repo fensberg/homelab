@@ -244,3 +244,9 @@ removed:
     reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/rules/plan_zone_dedication), as TestTheConfigurationRulesHold.AZonesMachineIsKeptForItsZoneAndCanBeSentTo.e887ce4b.yml, rewritten to the label as the module now writes it, from the fact (2026-10-29)
   - proof: TestEverySiteRootRunsItsModulesAsReleased.20b1ffa2.yml
     reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/rules/plan_released_modules), as TestTheConfigurationRulesHold.EverySiteRootRunsItsModulesAsReleased.20b1ffa2.yml, unchanged in what it breaks; how a call's source is written is now policy/semgrep/released-modules.yml (2026-10-29)
+  - proof: TestEveryDeclaredControlPlaneListenerIsDialled.1ba3a5fc.yml
+    reason: the guard is gone with the second copy it held talos.tf to. The listeners are written once, in config/facts/control-plane-listeners.json, which the cluster module opens them from and the integration tier dials from, through the generated Go TestEveryGeneratedFileIsWhatItsGeneratorMakes holds (2026-10-29)
+  - proof: TestTheBucketTableAgreesWithTheHCL.6aca1a20.yml
+    reason: the guard is gone with the second copy it held the estate's buckets to. They are written once, in config/facts/buckets.json, which the estate creates them from and the contractor's table is generated from (2026-10-29)
+  - proof: TestTheStorageDriversNamesAreTheSameWhereverTheyAreWritten.f3107710.yml
+    reason: the guard is gone with the second copy it held the pool and storage names to. They are written once, in config/facts/storage-names.json, which OpenTofu names the pools and the volume storage from and the contractor's names are generated from (2026-10-29)
