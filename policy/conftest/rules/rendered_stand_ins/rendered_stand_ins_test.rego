@@ -33,6 +33,11 @@ test_a_derived_stand_in_listed_too_is_refused if {
 	denies(rendered_stand_ins.deny, "lists NAME_APP, which is derived for applications") with input as [rendered("clusters/core", ["SITE", "NAME_APP"]), env(["SITE", "NAME_APP"])]
 }
 
+test_a_directory_that_does_not_build_is_refused if {
+	unbuilt := {"path": "/tmp/r/broken.json", "contents": {"layer": {"name": "", "path": "p", "unbuilt": "kustomize build: exit status 1"}, "documents": []}}
+	denies(rendered_stand_ins.deny, "kustomize cannot build p") with input as array.concat(good, [unbuilt])
+}
+
 test_nothing_to_read_is_refused if {
 	denies(rendered_stand_ins.deny, "declares no stand-ins") with input as []
 	denies(rendered_stand_ins.deny, "no stand-in was derived") with input as [{"path": "/tmp/r/x.json", "contents": {"layer": {"name": "l", "path": "p"}, "documents": []}}]

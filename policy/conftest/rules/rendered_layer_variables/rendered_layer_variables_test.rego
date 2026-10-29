@@ -49,6 +49,11 @@ test_an_applications_directory_with_no_layer_is_not_a_layer if {
 	count(rendered_layer_variables.deny) == 0 with input as array.concat(good, [unlayered])
 }
 
+test_a_layer_that_does_not_build_is_refused if {
+	unbuilt := {"path": "/tmp/r/broken.json", "contents": {"layer": {"file": "f.yaml", "name": "broken", "path": "p", "unbuilt": "kustomize build: exit status 1"}, "documents": []}}
+	denies(rendered_layer_variables.deny, "kustomize cannot build what the layer broken applies") with input as array.concat(good, [unbuilt])
+}
+
 test_nothing_to_read_is_refused if {
 	denies(rendered_layer_variables.deny, "no layer Flux applies was rendered") with input as []
 	denies(rendered_layer_variables.deny, "no layer names a variable") with input as [layer("configs", [], []), vars]

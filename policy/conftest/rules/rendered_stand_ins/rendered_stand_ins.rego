@@ -61,6 +61,12 @@ deny contains msg if {
 }
 
 deny contains msg if {
+	some [_, layer, _] in lib.rendered_layers
+	layer.unbuilt
+	msg := $"kustomize cannot build {layer.path}, so the variables it uses were not read: {layer.unbuilt}"
+}
+
+deny contains msg if {
 	count(declared) == 0
 	msg := "tests/flux-substitutions.env declares no stand-ins, so this checked nothing"
 }

@@ -65,10 +65,7 @@ func (r *Tree) RenderedLayers(t testing.TB, derived map[string]string) []string 
 	sort.Strings(unlayered)
 	dirs = append(dirs, unlayered...)
 	sort.Strings(dirs)
-	drawn, err := drafter.Draw(r.root, dirs)
-	if err != nil {
-		t.Fatalf("rendering what Flux applies: %v", err)
-	}
+	drawn, unbuilt := r.render(dirs)
 	out := t.TempDir()
 	var files []string
 	write := func(name string, v any) {
@@ -84,24 +81,64 @@ func (r *Tree) RenderedLayers(t testing.TB, derived map[string]string) []string 
 	}
 	for i, l := range layers {
 		for j, dir := range l.dirs {
-			documents, ok := drawn[drafter.Built+dir]
-			if !ok {
-				t.Fatalf("%s: the layer %s applies %s, and the drafter rendered nothing of it", l.File, l.Name, dir)
-			}
 			write(fmt.Sprintf("layer-%d-%d.json", i, j), renderedLayer{
-				Layer:     layerHeader{File: l.File, Name: l.Name, Namespace: l.Namespace, Path: dir, Substitute: l.Substitute, SubstituteFrom: l.SubstituteFrom, DerivedStandIns: derived},
-				Documents: documents,
+				Layer:     layerHeader{File: l.File, Name: l.Name, Namespace: l.Namespace, Path: dir, Substitute: l.Substitute, SubstituteFrom: l.SubstituteFrom, DerivedStandIns: derived, Unbuilt: unbuilt[dir]},
+				Documents: documentsOf(drawn, dir),
 			})
 		}
 	}
 	for i, dir := range unlayered {
-		documents, ok := drawn[drafter.Built+dir]
-		if !ok {
-			t.Fatalf("the drafter rendered nothing of %s", dir)
-		}
-		write(fmt.Sprintf("unlayered-%d.json", i), renderedLayer{Layer: layerHeader{Path: dir, DerivedStandIns: derived}, Documents: documents})
+		write(fmt.Sprintf("unlayered-%d.json", i), renderedLayer{Layer: layerHeader{Path: dir, DerivedStandIns: derived, Unbuilt: unbuilt[dir]}, Documents: documentsOf(drawn, dir)})
 	}
 	return files
+}
+
+// render has the drafter build every directory at once. When that fails,
+// each is built alone, so that one kustomize cannot build is known by its
+// error and the rest are still rendered: a rule over what Flux applies
+// refuses the one, and every other rule is still judged.
+func (r *Tree) render(dirs []string) (map[string]json.RawMessage, map[string]string) {
+	unbuilt := map[string]string{}
+	drawn, err := drafter.Draw(r.root, dirs)
+	if err == nil {
+		return drawn, unbuilt
+	}
+	batch := err
+	drawn = map[string]json.RawMessage{}
+	for _, dir := range dirs {
+		documents, why := r.renderOne(dir)
+		if why != "" {
+			unbuilt[dir] = why
+		} else {
+			drawn[drafter.Built+dir] = documents
+		}
+	}
+	// Every directory built alone and not together: what failed is not
+	// known, so none of it is taken as read.
+	if len(unbuilt) == 0 {
+		for _, dir := range dirs {
+			unbuilt[dir] = batch.Error()
+		}
+		drawn = map[string]json.RawMessage{}
+	}
+	return drawn, unbuilt
+}
+
+// renderOne is what one directory builds to, or why it does not build.
+func (r *Tree) renderOne(dir string) (json.RawMessage, string) {
+	one, err := drafter.Draw(r.root, []string{dir})
+	if err != nil {
+		return nil, err.Error()
+	}
+	return one[drafter.Built+dir], ""
+}
+
+// documentsOf is what a directory was built to, or none where it was not.
+func documentsOf(drawn map[string]json.RawMessage, dir string) json.RawMessage {
+	if documents, ok := drawn[drafter.Built+dir]; ok {
+		return documents
+	}
+	return json.RawMessage("[]")
 }
 
 // renderedLayer is one layer as a rule reads it.
@@ -122,6 +159,8 @@ type layerHeader struct {
 	// DerivedStandIns is what validation substitutes for what the platform
 	// hands a site's applications, by name.
 	DerivedStandIns map[string]string `json:"derived_stand_ins"`
+	// Unbuilt is why kustomize could not build the directory, or "".
+	Unbuilt string `json:"unbuilt,omitempty"`
 }
 
 // SubstituteFrom is one place a layer's variables are filled from.

@@ -98,6 +98,34 @@ func TestEveryLayerIsRenderedWithWhatItIsGiven(t *testing.T) {
 	}
 }
 
+// A directory kustomize cannot build is handed over by its error, and the
+// rest are still rendered.
+func TestADirectoryThatDoesNotBuildIsHandedOverByItsError(t *testing.T) {
+	tree := layered(t)
+	tree.Write(t, path.Join(harness.FluxTree, "somewhere", "own", applications.Kustomization), "resources: [gone.yaml]\n")
+	tree.Index(t)
+	unbuilt, built := 0, 0
+	for _, file := range tree.RenderedLayers(t, nil) {
+		body, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var r renderedLayer
+		if err := json.Unmarshal(body, &r); err != nil {
+			t.Fatal(err)
+		}
+		switch {
+		case r.Layer.Unbuilt != "" && r.Layer.Name == "own":
+			unbuilt++
+		case r.Layer.Unbuilt == "":
+			built++
+		}
+	}
+	if unbuilt != 1 || built != 2 {
+		t.Errorf("%d layer(s) handed over unbuilt and %d built; want the one that cannot build by its error, and the other two rendered", unbuilt, built)
+	}
+}
+
 func TestAListingIsReadAsStandIns(t *testing.T) {
 	got := StandIns("A=1\n  B = x\n# C=2\nnot one\n=empty\n")
 	if len(got) != 2 || got["A"] != "1" || got["B"] != "x" {

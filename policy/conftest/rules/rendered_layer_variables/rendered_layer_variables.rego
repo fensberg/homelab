@@ -92,6 +92,12 @@ deny contains msg if {
 }
 
 deny contains msg if {
+	some [layer, _] in layers
+	layer.unbuilt
+	msg := $"{layer.file}: kustomize cannot build what the layer {layer.name} applies ({layer.path}), so what it names was not read: {layer.unbuilt}"
+}
+
+deny contains msg if {
 	count(layers) == 0
 	msg := "no layer Flux applies was rendered, so nothing was held to what it is given"
 }
