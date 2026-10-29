@@ -17,6 +17,8 @@ func planned(t *testing.T) *Tree {
 	tree.Write(t, "modules/something/second.tf", "# a module\n")
 	tree.Write(t, "config/fixture.tpl.json", "{}\n")
 	tree.Write(t, "README.md", "not what a plan is made from\n")
+	tree.Write(t, "modules/infrastructure/release.json", `{"holds": ["modules/something", "elsewhere/read.env"]}`+"\n")
+	tree.Write(t, "elsewhere/read.env", "A=1\n")
 	tree.Index(t)
 	return tree
 }
@@ -45,7 +47,7 @@ func TestAPlanIsKeptByWhatItIsMadeFrom(t *testing.T) {
 	if other, err := tree.planKey(t, "site1"); err != nil || other == first {
 		t.Errorf("another site's plans were kept under this site's key (%v)", err)
 	}
-	for _, rel := range []string{"management/somewhere/first.tf", "modules/something/second.tf", "config/fixture.tpl.json"} {
+	for _, rel := range []string{"management/somewhere/first.tf", "modules/something/second.tf", "config/fixture.tpl.json", "elsewhere/read.env"} {
 		before := key()
 		tree.Write(t, rel, "# changed\n")
 		tree.Index(t)

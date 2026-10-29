@@ -20,6 +20,7 @@ import (
 	"homelab/contractor/steps"
 	"homelab/details/applications"
 	"homelab/details/asbuilt"
+	"homelab/details/platform"
 )
 
 // UnbuiltPlans is every site's roots planned from nothing, as files a policy
@@ -289,12 +290,19 @@ func readKept(dir string) ([]steps.Unbuilt, error) {
 
 // planKey is what a site's plans are made from, as one digest: every
 // tracked file under the roots, the modules, the applications and the
-// config, and the site's own list of applications, by path and content.
+// config, every file the release holds - which is every file a module reads
+// from outside its own directory - and the site's own list of applications,
+// by path and content.
 func (r *Tree) planKey(t testing.TB, site string) (string, error) {
+	release, err := platform.Read(r.root)
+	if err != nil {
+		return "", err
+	}
 	var from []string
 	for _, rel := range r.Files(t) {
 		if strings.HasPrefix(rel, "management/") || strings.HasPrefix(rel, "modules/") ||
-			strings.HasPrefix(rel, "config/") || rel == applications.SiteFilePath(site) {
+			strings.HasPrefix(rel, "config/") || rel == applications.SiteFilePath(site) ||
+			platform.Holds(release.Holds, rel) {
 			from = append(from, rel)
 		}
 	}

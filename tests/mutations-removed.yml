@@ -250,3 +250,7 @@ removed:
     reason: the guard is gone with the second copy it held the estate's buckets to. They are written once, in config/facts/buckets.json, which the estate creates them from and the contractor's table is generated from (2026-10-29)
   - proof: TestTheStorageDriversNamesAreTheSameWhereverTheyAreWritten.f3107710.yml
     reason: the guard is gone with the second copy it held the pool and storage names to. They are written once, in config/facts/storage-names.json, which OpenTofu names the pools and the volume storage from and the contractor's names are generated from (2026-10-29)
+  - proof: TestTheConfigurationRulesHold.TheSchedulerAChangeIsTriedWithIsTheOneASiteRuns.f4101645.yml
+    reason: the rule is gone with the second copy it held KUBERNETES_VERSION to. The cluster module reads the Kubernetes a site runs from that line, which delivers the scheduler a change is tried with too, so the two are one line (2026-10-29)
+  - proof: TestTheConfigurationRulesHold.a-site-on-another-kubernetes.yml
+    reason: the rule is gone with the local it held to KUBERNETES_VERSION. The cluster module reads the Kubernetes a site runs from that line, so there is no second copy to move (2026-10-29)
