@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_released_modules
+file: management/versions.json
+find: '"site0": {'
+replace: '"site9": {'
+mentions: "site0 is a site, and management/versions.json has no line"
+why: >
+  A site with no line has no release to run, so no converge of it can
+  start; and the line left behind names a site nobody has, a version
+  somebody believes is running.

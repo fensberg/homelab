@@ -45,6 +45,23 @@ test_a_fact_is_known_by_its_name_and_found_nowhere_else if {
 	read == {"a-fact": {"key": "value"}}
 }
 
+test_a_plans_module_calls_and_variables_are_read_from_its_root if {
+	plan := {"path": "/tmp/x/site/a.plan.json", "contents": {
+		"configuration": {"root_module": {
+			"module_calls": {"m": {"source": "../tree/parts/m"}},
+			"variables": {"tree": {"default": ""}, "unset": {}},
+		}},
+		"variables": {"tree": {"value": "../tree"}},
+	}}
+	calls := lib.plan_module_calls with input as [plan, {"path": "a.yaml", "contents": {"kind": "x"}}]
+	calls == {["/tmp/x/site/a.plan.json", "m", {"source": "../tree/parts/m"}]}
+	vars := lib.plan_variables with input as [plan]
+	vars == {
+		["/tmp/x/site/a.plan.json", "tree", {"default": ""}, "../tree"],
+		["/tmp/x/site/a.plan.json", "unset", {}, null],
+	}
+}
+
 test_the_pools_are_named_from_the_suppliers_list if {
 	pools := lib.pull_request_pools with input as [{"path": "scripts/approved-suppliers.yml", "contents": {"pull_request_pools": {"names": ["builds", "source"]}}}]
 	pools == {"pr-builds-${{ vars.pull_request_runners_site }}", "pr-source-${{ vars.pull_request_runners_site }}"}

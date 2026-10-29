@@ -65,6 +65,27 @@ plan_configuration contains [f.path, address, r] if {
 	address := concat(".", array.concat(calls, [r.address]))
 }
 
+# plan_module_calls is every module a plan's root calls, as [path, name,
+# call]: the call as the plan's configuration gives it, its source as it was
+# resolved for that plan.
+plan_module_calls contains [f.path, name, call] if {
+	some f in input
+	is_object(f.contents)
+	is_object(f.contents.configuration)
+	some name, call in object.get(f.contents.configuration.root_module, "module_calls", {})
+}
+
+# plan_variables is every variable a plan's root declares, as [path, name,
+# declared, given]: the declaration as the configuration has it, and the
+# value the plan was made with, or null when it was given none.
+plan_variables contains [f.path, name, declared, given] if {
+	some f in input
+	is_object(f.contents)
+	is_object(f.contents.configuration)
+	some name, declared in object.get(f.contents.configuration.root_module, "variables", {})
+	given := object.get(object.get(object.get(f.contents, "variables", {}), name, {}), "value", null)
+}
+
 # plan_scope is the scope of the root a plan is of: "site" for a site's
 # roots, "estate" for every other, as the rule harness writes each plan under
 # the directory of its scope. A node has no root of its own, so those are the

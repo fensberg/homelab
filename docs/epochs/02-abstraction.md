@@ -2148,10 +2148,11 @@ since the last. And each site runs the release its line names.
 - **Site0 moved from its pinned commit to `v2026.10.1` with a plan showing no
   change**, against its as-built record, the release fetched from the
   registry.
-- **The guard:** `TestEverySiteRootRunsItsModulesAsReleased` refuses a root
-  that reaches a module any other way than by the release's digest, a
-  default for where modules come from, a site with no line and a line that
-  is no site's.
+- **The guard:** `policy/conftest/rules/plan_released_modules` refuses a
+  site's plan whose modules come from anywhere but the tree it was handed,
+  a default for where modules come from, a site with no line and a line
+  that is no site's; `policy/semgrep/released-modules.yml` refuses a source
+  that reaches the release any other way than by its digest.
 
 **The criterion is met by the first two, and the epoch closes on them.**
 Each site names the version it runs, a change reaches one site by moving

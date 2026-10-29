@@ -250,13 +250,9 @@ unprovable:
     reason: table
   - test: TestFluxLayoutRefusesWhatIsNotCoreOrASitesOwn
     reason: table
-  - test: TestUnreleasedModulesRefusesEveryWayAroundTheRelease
-    reason: table
   - test: TestOwnerOutsideItsAddressFindsTheNameAndNotTheAddress
     reason: table
   - test: TestLockFaultsFindsEachWayALockDoesNotHold
-    reason: table
-  - test: TestUnversionedSitesWantsALineForEverySiteAndNoOther
     reason: table
   - test: TestAssertingDeclarationsAndExpectedFailuresAreReadNotMatched
     reason: table

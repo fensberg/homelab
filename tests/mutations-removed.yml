@@ -242,3 +242,5 @@ removed:
     reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/rules/plan_runner_group), as TestTheConfigurationRulesHold.EveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits.fd8d7c02.yml, unchanged in what it breaks (2026-10-29)
   - proof: TestAZonesMachineIsKeptForItsZoneAndCanBeSentTo.e887ce4b.yml
     reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/rules/plan_zone_dedication), as TestTheConfigurationRulesHold.AZonesMachineIsKeptForItsZoneAndCanBeSentTo.e887ce4b.yml, rewritten to the label as the module now writes it, from the fact (2026-10-29)
+  - proof: TestEverySiteRootRunsItsModulesAsReleased.20b1ffa2.yml
+    reason: moved with its guard to the configuration rules, judged on the plan (policy/conftest/rules/plan_released_modules), as TestTheConfigurationRulesHold.EverySiteRootRunsItsModulesAsReleased.20b1ffa2.yml, unchanged in what it breaks; how a call's source is written is now policy/semgrep/released-modules.yml (2026-10-29)

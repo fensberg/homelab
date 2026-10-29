@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_released_modules
+file: management/platform/root.tf
+find: "variable \"digest\" {\n  type        = string\n  default     = \"\"\n"
+replace: "variable \"digest\" {\n  type        = string\n  default     = \"sha256:0\"\n"
+mentions: 'gives "digest" a default of sha256:0'
+why: >
+  A root that was not told which release to run must run none. A default
+  digest is a release nobody chose, run by every converge that forgot to
+  say.
