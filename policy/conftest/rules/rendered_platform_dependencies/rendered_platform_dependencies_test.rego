@@ -12,7 +12,11 @@ tofu(type, ns, name, extra) := {"address": $"{type}.{name}", "mode": "managed", 
 
 vars := tofu("kubernetes_secret", "flux-system", "vars", {"data": {"DB_NS": "database"}})
 
-plan(scope, resources) := {"path": $"/tmp/plans/{scope}/site0-platform.plan.json", "contents": {"planned_values": {"root_module": {"resources": resources}}}}
+planned(resources) := {"planned_values": {"root_module": {"resources": resources}}}
+
+plan("site", resources) := {"path": "/tmp/plans/site/site0-platform.plan.json", "contents": planned(resources)}
+
+plan("pinned", resources) := {"path": "/tmp/plans/pinned/site0-platform.plan.json", "contents": {"pinned_plan": planned(resources)}}
 
 both(resources) := [plan("site", resources), plan("pinned", resources)]
 

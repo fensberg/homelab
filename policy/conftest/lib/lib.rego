@@ -33,34 +33,33 @@ opentofu contains f if {
 # supplies, each resource with its address, its type and the values it would
 # be made with, wherever in the plan's modules it is declared. A plan is found by what it is - what
 # `tofu show -json` writes of a saved plan - and not by where it was written.
-plan contains [path, r] if {
-	some [path, r] in planned
-	not pinned(path)
+plan contains [f.path, r] if {
+	some f in input
+	is_object(f.contents)
+	is_object(f.contents.planned_values)
+	some r in resources_of(f.contents.planned_values)
 }
 
 # pinned_plan is every resource a plan of a site's roots would make with the
 # modules of the release the site's line names, as [path, resource]: what a
 # converge of that site applies once a change merges and before its line
 # moves. Flux applies what merges at once, so what it needs of the platform
-# is held to these too. Kept apart from plan, which is what the change
-# makes, so a rule over that is not judged on each site's plans twice.
-pinned_plan contains [path, r] if {
-	some [path, r] in planned
-	pinned(path)
-}
-
-planned contains [f.path, r] if {
+# is held to these too. The harness hands each over under pinned_plan, so
+# plan and its siblings, which are what the change makes, never read one.
+pinned_plan contains [f.path, r] if {
 	some f in input
 	is_object(f.contents)
-	is_object(f.contents.planned_values)
-	walk(f.contents.planned_values, [_, r])
+	is_object(f.contents.pinned_plan.planned_values)
+	some r in resources_of(f.contents.pinned_plan.planned_values)
+}
+
+resources_of(planned) := {r |
+	walk(planned, [_, r])
 	is_object(r)
 	is_string(r.address)
 	is_string(r.type)
 	is_object(r.values)
 }
-
-pinned(path) if plan_scope(path) == "pinned"
 
 # plan_configuration is every resource as a plan's configuration declares
 # it, as [path, address, resource]: its address with the modules it is
@@ -72,7 +71,6 @@ pinned(path) if plan_scope(path) == "pinned"
 # reads as the stand-in.
 plan_configuration contains [f.path, address, r] if {
 	some f in input
-	not pinned(f.path)
 	is_object(f.contents)
 	is_object(f.contents.configuration)
 	walk(f.contents.configuration, [p, r])
@@ -89,7 +87,6 @@ plan_configuration contains [f.path, address, r] if {
 # resolved for that plan.
 plan_module_calls contains [f.path, name, call] if {
 	some f in input
-	not pinned(f.path)
 	is_object(f.contents)
 	is_object(f.contents.configuration)
 	some name, call in object.get(f.contents.configuration.root_module, "module_calls", {})
@@ -100,7 +97,6 @@ plan_module_calls contains [f.path, name, call] if {
 # references among it.
 plan_outputs contains [f.path, name, output] if {
 	some f in input
-	not pinned(f.path)
 	is_object(f.contents)
 	is_object(f.contents.configuration)
 	some name, output in object.get(f.contents.configuration.root_module, "outputs", {})
@@ -111,7 +107,6 @@ plan_outputs contains [f.path, name, output] if {
 # value the plan was made with, or null when it was given none.
 plan_variables contains [f.path, name, declared, given] if {
 	some f in input
-	not pinned(f.path)
 	is_object(f.contents)
 	is_object(f.contents.configuration)
 	some name, declared in object.get(f.contents.configuration.root_module, "variables", {})
@@ -121,14 +116,13 @@ plan_variables contains [f.path, name, declared, given] if {
 # plan_scope is the scope of the root a plan is of: "site" for a site's
 # roots, "estate" for every other, as the rule harness writes each plan under
 # the directory of its scope. A node has no root of its own, so those are the
-# two; and "pinned" for a site's roots planned with the release the site
-# runs. A plan written anywhere else has no scope, and a rule asking for one
+# two. A plan written anywhere else has no scope, and a rule asking for one
 # is told nothing.
 plan_scope(path) := scope if {
 	parts := split(path, "/")
 	count(parts) >= 2
 	scope := parts[count(parts) - 2]
-	scope in {"site", "estate", "pinned"}
+	scope in {"site", "estate"}
 }
 
 # pull_request_pools is the label a job asks for each of the pools of

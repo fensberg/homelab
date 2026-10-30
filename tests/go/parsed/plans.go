@@ -129,8 +129,11 @@ func (r *Tree) pinnedPlans(t testing.TB, out string, sites []string) []string {
 				t.Errorf("the %s root of %s does not plan from nothing with the modules of %s, the release it runs: %v", root.Root, site, pin.Version, root.Err)
 				continue
 			}
+			// Under a name of its own, so that nothing reading the plans a
+			// change makes takes it for one of them.
 			file := filepath.Join(out, pinnedScope, site+"-"+root.Root+".plan.json")
-			if err := os.WriteFile(file, root.Plan, 0o600); err != nil {
+			wrapped := append(append([]byte(`{"pinned_plan":`), root.Plan...), '}')
+			if err := os.WriteFile(file, wrapped, 0o600); err != nil {
 				t.Fatal(err)
 			}
 			files = append(files, file)

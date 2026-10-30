@@ -10,7 +10,11 @@ layer(name, from, docs) := {"path": $"/tmp/r/{name}.json", "contents": {
 
 secret(name, keys) := {"address": $"kubernetes_secret.{name}", "mode": "managed", "type": "kubernetes_secret", "values": {"metadata": [{"name": name, "namespace": "flux-system"}], "data": keys}}
 
-plan(scope, resources) := {"path": $"/tmp/plans/{scope}/site0-platform.plan.json", "contents": {"planned_values": {"root_module": {"resources": resources}}}}
+planned(resources) := {"planned_values": {"root_module": {"resources": resources}}}
+
+plan("site", resources) := {"path": "/tmp/plans/site/site0-platform.plan.json", "contents": planned(resources)}
+
+plan("pinned", resources) := {"path": "/tmp/plans/pinned/site0-platform.plan.json", "contents": {"pinned_plan": planned(resources)}}
 
 # The checkout's plan and the one made with the release the site runs, alike.
 both(resources) := [plan("site", resources), plan("pinned", resources)]

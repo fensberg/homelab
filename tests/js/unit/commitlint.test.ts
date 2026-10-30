@@ -167,9 +167,9 @@ describe("the no-self-co-authorship rule and machine accounts", () => {
   });
 
   it.each([
-    ["Removes-proof: TestA.1.yml:", "no reason"],
+    ["Removes-proof: AGuard.1.yml:", "no reason"],
     ["Removes-proof: the guard is gone", "no file"],
-    ["Removes-proof: TestA.1.txt: not a proof's file", "not a proof's file"],
+    ["Removes-proof: AGuard.1.txt: not a proof's file", "not a proof's file"],
   ])("refuses a Removes-proof trailer with %j (%s)", async (trailer) => {
     const report = await check(`test: retire a proof\n\nWhy it goes.\n\n${trailer}`);
     expect(report.valid).toBe(false);
