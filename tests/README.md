@@ -135,26 +135,35 @@ explaining the trap. Two things keep such a check honest:
    check found nothing on the day it was written — it is there for the next
    merge, in whichever of the three formats that one lands in.
 
-Why not `conftest`/OPA: it is a genuinely good tool and probably the right
-answer later, for policy over Kubernetes manifests and `tofu` plans
-("no container without resource limits"). It is the wrong shape here — a key
-written twice is a lexical property of a file, not a policy over structured
-data, and `conftest` cannot parse an env file at all. It would also add a
-fifth owner of checks, and a new language, for one assertion.
+**Rules over configuration are Conftest's.** `policy/conftest/` holds them,
+one Rego file per topic with its own `_test.rego` beside it. Conftest parses
+every file `tests/languages.yml` hands it (`parsed_by: [conftest]`) the way
+that file's own tool would, and a rule is written over the parsed structure,
+so a comment is not there to be matched. `TestTheConfigurationRulesHold` runs
+them over the tree, and `TestEveryConfigurationRuleProvesItself` runs their
+tests, so the mutation ledger proves each rule refuses what it guards exactly
+as it proves a Go guard. `conftest.toml` says how they are run, so this
+package, a lane and a terminal run them alike.
+
+This file once said Conftest was the wrong shape: one lexical assertion, and
+no parser for env files. Both were true of that day and neither is now - there
+are a hundred and more rules over workflows, manifests and HCL, and Conftest
+reads `.env`. A guard that crosses into Go source, or asks git, stays a Go
+guard here (decided 2026-10-16).
 
 ### Reaching the self-hosted runner from a pull request
 
-`repo/selfhosted_test.go` guards the one line this repository used to cross
-deliberately: a pull request's code running on the estate's runner. The plan
-of a pull request did, reading real state with real credentials, behind a fork
-guard and an environment reviewer - and a fork guard is not a same-repo-branch
-guard, so every collaborator, bot and leaked token was one branch away from
-the estate's network.
+`policy/conftest/rules/pull_request_runners/pull_request_runners.rego` guards
+the one line this repository used to cross deliberately: a pull request's code
+running on the estate's runner. The plan of a pull request did, reading real
+state with real credentials, behind a fork guard and an environment reviewer -
+and a fork guard is not a same-repo-branch guard, so every collaborator, bot and
+leaked token was one branch away from the estate's network.
 
 It no longer does. `plan-infrastructure.yml` plans each site against the
 as-built record on GitHub's runner, with no credential (#554), and the rule is
 now the plain one: no job a pull request can start runs on the management
-pool, and a runner this test cannot identify is refused. The converge, which
+pool, and a runner the rule cannot identify is refused. The converge, which
 does need the estate, runs only on a push to `main`, in
 `deploy-infrastructure.yml`.
 

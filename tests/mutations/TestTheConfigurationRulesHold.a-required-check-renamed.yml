@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_required_checks
+file: .github/workflows/pr-validation.yml
+find: "    name: \"Test (go, tofu, vitest)\"\n"
+replace: "    name: \"Tests (go, tofu, vitest)\"\n"
+mentions: 'a merge is held to a check named "Test (go, tofu, vitest)"'
+why: >
+  The rule reads every job of every workflow for the names checks report
+  under. A required check no job reports holds every pull request for ever.

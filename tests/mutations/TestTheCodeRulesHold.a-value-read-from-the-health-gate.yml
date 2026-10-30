@@ -1,0 +1,10 @@
+guard: TestTheCodeRulesHold
+rule: nothing-reads-a-value-from-the-health-gate
+file: modules/infrastructure/cluster/outputs.tf
+find: 'output "talosconfig" {'
+replace: "output \"healthy_nodes\" {\n  value = data.talos_cluster_health.this[0].control_plane_nodes\n}\n\noutput \"talosconfig\" {"
+mentions: "from the health gate. That makes it load bearing at plan time again"
+why: >
+  The health gate's only job is the dependency edges pointing at it. Reading a
+  value out of it makes it load bearing at plan time again, which is the
+  condition that made a plan that changes the machine count time out (#117).

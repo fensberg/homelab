@@ -1,9 +1,8 @@
 package repo
 
 import (
-	"regexp"
+	"slices"
 	"sort"
-	"strings"
 	"testing"
 )
 
@@ -15,7 +14,7 @@ import (
 // There is no "a plan lane declares no environment" check here, and now
 // there does not need to be: plans run on GitHub's runner against the
 // as-built record and name no environment at all (#554), and
-// TestNoPullRequestJobRunsOnTheEstatesRunner holds the reason that is safe.
+// policy/conftest/rules/pull_request_runners/pull_request_runners.rego holds the reason that is safe.
 // #158 - deployment records accumulating on a lane that never deploys -
 // closes with it.
 
@@ -36,7 +35,30 @@ func TestEveryCommentPathReplacesItselfRatherThanAppending(t *testing.T) {
 	// deploy-infrastructure.yml, and are files beside
 	// $/.github/workflows/github-script now - so this reads the files, and
 	// would read a new one the moment it existed.
+	heavy(t, "semgrep reads the shared scripts for their comment calls, a few seconds")
 	scripts := sharedScripts(t)
+
+	// Where each call is, script by script, found by Semgrep.
+	calls := map[string]any{
+		"id": "comment-calls", "languages": []string{"generic"}, "severity": "INFO",
+		"message": "$CALL", "metadata": map[string]any{"about": "calls"},
+		"pattern-regex": `(?P<CALL>issues\.createComment|listComments|body\.startsWith\(|deleteComment)`,
+	}
+	var files []string
+	nameOf := map[string]string{}
+	for name, rel := range scripts {
+		files = append(files, rel)
+		nameOf[rel] = name
+	}
+	sort.Strings(files)
+	at := map[string]map[string][]int{} // script -> call -> lines
+	for _, f := range scanText(t, repository(t), []map[string]any{calls}, files) {
+		name := nameOf[f.Path]
+		if at[name] == nil {
+			at[name] = map[string][]int{}
+		}
+		at[name][f.Text] = append(at[name][f.Text], f.Line)
+	}
 
 	total := 0
 	var names []string
@@ -45,21 +67,16 @@ func TestEveryCommentPathReplacesItselfRatherThanAppending(t *testing.T) {
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		body := scripts[name]
-		creates := regexp.MustCompile(`issues\.createComment`).FindAllStringIndex(body, -1)
+		creates := at[name]["issues.createComment"]
+		sort.Ints(creates)
 		total += len(creates)
-		for _, loc := range creates {
-			line := 1 + strings.Count(body[:loc[0]], "\n")
-			// Everything before the post, in the same script. A marker and a
+		for _, line := range creates {
+			// Everything up to the post, in the same script. A marker and a
 			// lookup have to appear before it.
-			before := body[:loc[1]]
-
-			// The PREDICATE, not the word "marker". Looking for that word
-			// matches the prose explaining the mechanism as readily as the
-			// mechanism, which is the change-detector shape this repository
-			// refuses by name - and the mutation ledger caught this check in
-			// exactly that state.
-			if !strings.Contains(before, "listComments") {
+			before := func(call string) bool {
+				return slices.ContainsFunc(at[name][call], func(l int) bool { return l <= line })
+			}
+			if !before("listComments") {
 				t.Errorf(`%s.js:%d posts a comment without looking for an earlier one.
 
 There is then nothing to find it by on the next push, so every run adds
@@ -67,14 +84,14 @@ another. That is noise of the specific kind that makes a reviewer stop reading
 the comments - on the lane that comments about changes to real infrastructure.`, name, line)
 				continue
 			}
-			if !strings.Contains(before, "body.startsWith(") {
+			if !before("body.startsWith(") {
 				t.Errorf(`%s.js:%d lists the comments and matches none of them against a
 marker.
 
 Reading the comments and then posting regardless is the same appending
 behaviour with an extra API call in front of it.`, name, line)
 			}
-			if !strings.Contains(before, "deleteComment") {
+			if !before("deleteComment") {
 				t.Errorf(`%s.js:%d finds the previous comment and does not remove it.
 
 Editing in place is the other half of this and was rejected for a stated

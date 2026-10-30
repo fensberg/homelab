@@ -5,16 +5,19 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
-	"path/filepath"
+	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 
-	"homelab/details/tofufiles"
+	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/hclsyntax"
+
+	"homelab/contractor/steps"
 	"homelab/tests/harness"
+	"homelab/tests/parsed"
 )
 
 // No test reads a root's OpenTofu by where it is.
@@ -26,8 +29,9 @@ import (
 // into modules, where a test that names a path either breaks or - worse -
 // reads a thin root that no longer holds what it is checking.
 //
-// So a test finds OpenTofu by what it declares (tofuDeclaring: "the file that
-// declares this resource", wherever it is) or reads every file (tofuSources).
+// So a test finds OpenTofu by what it declares (the tree's Declaring: "the
+// block that declares this resource", wherever it is) or reads every file
+// (the tree's OpenTofu).
 // It does not say which root. This guard reads every Go test in the
 // repository and refuses the three ways of saying it:
 //
@@ -44,15 +48,16 @@ import (
 // repository in a temporary directory is not reading this one: for tests
 // under scripts/, only a file that finds the real repository is held to it.
 func TestNoTestNamesTheRootItReads(t *testing.T) {
-	root := repoRoot(t)
-	sources := tofuSources(t)
-	roots := openTofuRoots(sources)
+	light(t)
+	tree := repository(t)
+	tofu := tree.OpenTofu(t)
+	roots := parsed.OpenTofuRoots(tofu)
 	if len(roots) < 3 {
 		t.Fatalf("found %d OpenTofu root(s), so the enumeration has stopped matching", len(roots))
 	}
 	names := map[string]bool{}
-	for rel := range sources {
-		names[filepath.Base(rel)] = true
+	for _, f := range tofu {
+		names[path.Base(f.Path)] = true
 	}
 
 	tests := tracked(t, func(rel string) bool { return strings.HasSuffix(rel, "_test.go") })
@@ -61,19 +66,13 @@ func TestNoTestNamesTheRootItReads(t *testing.T) {
 	}
 	read := 0
 	for _, rel := range tests {
-		body, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !readsTheRealRepository(rel, string(body)) {
+		fset := token.NewFileSet()
+		f := tree.Go(t, fset, rel)
+		if !readsTheRealRepository(rel, f) {
 			continue
 		}
 		read++
-		problems, err := rootsNamed(rel, body, roots, names)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, p := range problems {
+		for _, p := range rootsNamed(rel, fset, f, roots, names) {
 			t.Error(p)
 		}
 	}
@@ -84,25 +83,21 @@ func TestNoTestNamesTheRootItReads(t *testing.T) {
 
 // readsTheRealRepository says whether a test file's paths are paths in this
 // repository. Every test tier's are. A program's own test only when it finds
-// the repository: the rest build what they need in a temporary directory.
-func readsTheRealRepository(rel, body string) bool {
+// the repository, which it does by importing what finds it: the rest build
+// what they need in a temporary directory.
+func readsTheRealRepository(rel string, f *ast.File) bool {
 	if strings.HasPrefix(rel, "tests/") {
 		return true
 	}
-	return strings.Contains(body, "repopath.")
+	return slices.ContainsFunc(f.Imports, func(spec *ast.ImportSpec) bool { return spec.Path.Value == strconv.Quote("homelab/details/repopath") })
 }
 
 // rootsNamed is each place a test file names a root's files rather than
 // finding them.
-func rootsNamed(rel string, src []byte, roots []string, tofuNames map[string]bool) ([]string, error) {
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, rel, src, 0)
-	if err != nil {
-		return nil, fmt.Errorf("%s does not parse, so what it names cannot be read: %w", rel, err)
-	}
+func rootsNamed(rel string, fset *token.FileSet, f *ast.File, roots []string, tofuNames map[string]bool) []string {
 	found := map[string]bool{}
 	say := func(n ast.Node, what string) {
-		found[fmt.Sprintf("%s:%d %s Find it by what it declares (tofuDeclaring or fluxObject; tofufiles.Declaring in a program's test) or read every file (tofuSources): the next root, the module this moves into, or the site's own directory is then read without anybody editing this test.", rel, fset.Position(n.Pos()).Line, what)] = true
+		found[fmt.Sprintf("%s:%d %s Find it by what it declares (the tree's Declaring or fluxObject; tofufiles.Declaring in a program's test) or read every file (the tree's OpenTofu): the next root, the module this moves into, or the site's own directory is then read without anybody editing this test.", rel, fset.Position(n.Pos()).Line, what)] = true
 	}
 	literal := func(e ast.Expr) (string, bool) {
 		lit, ok := e.(*ast.BasicLit)
@@ -169,36 +164,81 @@ func rootsNamed(rel string, src []byte, roots []string, tofuNames map[string]boo
 		out = append(out, p)
 	}
 	sort.Strings(out)
-	return out, nil
+	return out
 }
 
-// What the guards find OpenTofu by: the declaration each is about, in the
-// words the code uses. Named once, so a rename is one edit here and every
-// guard that reads the thing follows it.
-const (
-	declMachineConfig = `data "talos_machine_configuration" "controlplane"`
-	declClusterHealth = `data "talos_cluster_health"`
-	declMachines      = `resource "proxmox_virtual_environment_vm" "talos_cp"`
-	declPools         = `resource "proxmox_virtual_environment_pool" "control_plane"`
-	declInvariants    = `resource "terraform_data" "invariants"`
+// What the guards find OpenTofu by: the declaration each is about, as its
+// kind and labels. Named once, so a rename is one edit here and every guard
+// that reads the thing follows it.
+var (
+	declClusterHealth = []string{"data", "talos_cluster_health"}
+	declMachines      = []string{"resource", steps.MachineResource, "talos_cp"}
+	declPools         = []string{"resource", "proxmox_virtual_environment_pool", "control_plane"}
+	declInvariants    = []string{"resource", "terraform_data", "invariants"}
 )
 
-// tofuAll is the code of every OpenTofu file, one after another in path
-// order, for a check that asks whether something is declared anywhere.
-func tofuAll(t *testing.T) string {
+// declaring is the one block a declaration names, through the repository's
+// reader.
+func declaring(t *testing.T, declaration []string) parsed.Block {
 	t.Helper()
-	sources := tofuSources(t)
-	paths := make([]string, 0, len(sources))
-	for p := range sources {
-		paths = append(paths, p)
+	return repository(t).Declaring(t, declaration[0], declaration[1:]...)
+}
+
+// tofuFile is the OpenTofu file at a path, parsed, as the tree reads it.
+func tofuFile(t *testing.T, rel string) parsed.OpenTofuFile {
+	t.Helper()
+	for _, f := range repository(t).OpenTofu(t) {
+		if f.Path == rel {
+			return f
+		}
 	}
-	sort.Strings(paths)
-	var b strings.Builder
-	for _, p := range paths {
-		b.WriteString(tofufiles.Code(sources[p]))
-		b.WriteString("\n")
+	t.Fatalf("%s is not an OpenTofu file the repository authored", rel)
+	return parsed.OpenTofuFile{}
+}
+
+// objectItems is every key and value written in an object anywhere in a
+// node: a yamlencode({...}) patch, a local's map, a for expression's result.
+func objectItems(n hclsyntax.Node) []hclsyntax.ObjectConsItem {
+	var out []hclsyntax.ObjectConsItem
+	_ = hclsyntax.VisitAll(n, func(n hclsyntax.Node) hcl.Diagnostics {
+		if obj, ok := n.(*hclsyntax.ObjectConsExpr); ok {
+			out = append(out, obj.Items...)
+		}
+		return nil
+	})
+	return out
+}
+
+// refersTo says whether anything in a node refers to a value by that name or
+// to a part of it: refersTo(block, "local.net") holds for local.net.pod_cidr.
+func refersTo(n hclsyntax.Node, name string) bool {
+	found := false
+	_ = hclsyntax.VisitAll(n, func(n hclsyntax.Node) hcl.Diagnostics {
+		if ref, ok := n.(*hclsyntax.ScopeTraversalExpr); ok {
+			if got := traversalName(ref.Traversal); got == name || strings.HasPrefix(got, name+".") {
+				found = true
+			}
+		}
+		return nil
+	})
+	return found
+}
+
+// traversalName is a reference as it is written, up to its first index:
+// local.net.pod_cidr, var.site.
+func traversalName(tr hcl.Traversal) string {
+	var parts []string
+	for _, step := range tr {
+		switch s := step.(type) {
+		case hcl.TraverseRoot:
+			parts = append(parts, s.Name)
+		case hcl.TraverseAttr:
+			parts = append(parts, s.Name)
+		default:
+			return strings.Join(parts, ".")
+		}
 	}
-	return b.String()
+	return strings.Join(parts, ".")
 }
 
 // The Flux tree: what each cluster reconciles. Named whole it is a scope; a
@@ -217,54 +257,24 @@ const (
 // fluxObjectPath is the one tracked manifest in the Flux tree that declares
 // an object of this kind and name, wherever in the tree it is. The reader is
 // the harness's, so every tier finds a manifest the same way.
-func fluxObjectPath(kind, name string) (string, error) {
-	return harness.FluxManifest(kind, name)
+func fluxObjectPath(t *testing.T, kind, name string) (string, error) {
+	t.Helper()
+	return repository(t).FluxObjectPath(t, kind, name)
 }
 
-// fluxObject is that manifest's path and body. The test fails if no manifest
-// declares the object or several do.
-func fluxObject(t *testing.T, kind, name string) (path, body string) {
+// fluxObject is that manifest's path and every document it holds, decoded.
+// The test fails if no manifest declares the object or several do.
+func fluxObject(t *testing.T, kind, name string) (path string, docs []any) {
 	t.Helper()
-	path, err := fluxObjectPath(kind, name)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return path, readRepoFile(t, path)
+	return repository(t).FluxObject(t, kind, name)
 }
 
 // beside is a file in the same directory as a manifest found by what it
 // declares.
 func beside(manifest, name string) string { return harness.Beside(manifest, name) }
 
-var (
-	tofuOnce  sync.Once
-	tofuFiles map[string]string
-	tofuErr   error
-)
-
-// tofuSources is every OpenTofu file the repository authored, by path: its
-// roots and its modules, and none of their tests' fixtures.
-func tofuSources(t *testing.T) map[string]string {
-	t.Helper()
-	tofuOnce.Do(func() { tofuFiles, tofuErr = tofufiles.Read(repoRoot(t)) })
-	if tofuErr != nil {
-		t.Fatal(tofuErr)
-	}
-	return tofuFiles
-}
-
-// tofuDeclaring is the one OpenTofu file that declares something, wherever it
-// is, and its body. The test fails if none does or several do.
-func tofuDeclaring(t *testing.T, declaration string) (path, body string) {
-	t.Helper()
-	path, body, err := tofufiles.Declaring(tofuSources(t), declaration)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return path, body
-}
-
 func TestRootsNamedRefusesEachWayOfNamingARoot(t *testing.T) {
+	light(t)
 	roots := []string{"ground/alpha", "ground/beta"}
 	names := map[string]bool{"widgets.tf": true}
 	file := func(body string) []byte {
@@ -294,19 +304,27 @@ func TestRootsNamedRefusesEachWayOfNamingARoot(t *testing.T) {
 		if strings.HasPrefix(body, "const") {
 			body = "_ = 0\n}\n" + body + "\nfunc g() {"
 		}
-		got, err := rootsNamed("x_test.go", file(body), roots, names)
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, "x_test.go", file(body), 0)
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
+		got := rootsNamed("x_test.go", fset, f, roots, names)
 		joined := strings.Join(got, "|")
 		if (tc.want == "") != (joined == "") || !strings.Contains(joined, tc.want) {
 			t.Errorf("%s: got %q, want %q", name, joined, tc.want)
 		}
 	}
-	if _, err := rootsNamed("x_test.go", []byte("package x\nfunc broken( {"), roots, names); err == nil {
-		t.Error("a test file that does not parse was called clean")
+	program := func(src string) *ast.File {
+		f, err := parser.ParseFile(token.NewFileSet(), "a_test.go", src, parser.ImportsOnly)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f
 	}
-	if !readsTheRealRepository("tests/go/tier/a_test.go", "") || !readsTheRealRepository("scripts/p/a_test.go", "root, _ := repopath.Root()") || readsTheRealRepository("scripts/p/a_test.go", "dir := t.TempDir()") {
+	finds := program("package p\nimport \"homelab/details/repopath\"\n")
+	makesItsOwn := program("package p\nimport \"os\"\n// repopath.Root() is not called here\n")
+	if !readsTheRealRepository("tests/go/tier/a_test.go", makesItsOwn) || !readsTheRealRepository("scripts/p/a_test.go", finds) || readsTheRealRepository("scripts/p/a_test.go", makesItsOwn) {
 		t.Error("which tests read the real repository is decided wrongly")
 	}
 }

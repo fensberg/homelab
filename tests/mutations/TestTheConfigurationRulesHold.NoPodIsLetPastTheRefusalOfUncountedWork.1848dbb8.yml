@@ -1,0 +1,11 @@
+guard: TestTheConfigurationRulesHold
+rule: uncounted_pods
+file: clusters/core/infrastructure/controllers/uncounted-pods.yaml
+find: 'validationActions: ["Deny"]'
+replace: 'validationActions: ["Warn"]'
+mentions: "told so and let in"
+why: >
+  Warn is the setting somebody reaches for when the rule has just refused
+  a pod they need, and it reads as a softer form of the same thing. It is
+  the rule switched off: every pod is admitted, and the site's sum goes
+  back to counting only the pods that chose to be counted.

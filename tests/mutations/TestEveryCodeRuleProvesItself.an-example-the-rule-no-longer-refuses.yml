@@ -1,0 +1,9 @@
+guard: TestEveryCodeRuleProvesItself
+file: policy/semgrep/opentofu-references.yml
+find: "      - pattern: data.talos_cluster_health.this[$I].$ATTR\n"
+replace: "      - pattern: data.talos_cluster_health.this[$I].nothing_reads_this\n"
+mentions: "does not refuse exactly the lines its examples mark"
+why: >
+  A rule's examples are what show it refuses anything. A rule narrowed until
+  it misses a line marked ruleid has stopped doing part of its job, and only
+  its examples can say so.

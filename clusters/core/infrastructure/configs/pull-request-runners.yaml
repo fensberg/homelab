@@ -14,8 +14,10 @@
 #     declared to need, by name, on 443, and the cluster's resolver for
 #     those names and no others: each pool's own file, beside this one.
 #
-# THREE POOLS, by what a job needs beyond the source control itself:
-# nothing, what a build downloads, and the package registries. Which job is
+# THREE KINDS OF POOL, by what a job needs beyond the source control itself:
+# nothing, what a build downloads, and the package registries. A kind may
+# have a primary pool beside it, for the job every pull request waits on
+# longest, so that job never waits for a runner. Which job is
 # of which pool, and so what each pool reaches, is declared once, in
 # scripts/approved-suppliers.yml. Each pool's policy is that, written out,
 # and TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore fails

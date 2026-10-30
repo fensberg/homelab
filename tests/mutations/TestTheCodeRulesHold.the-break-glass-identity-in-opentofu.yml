@@ -1,0 +1,10 @@
+guard: TestTheCodeRulesHold
+rule: the-break-glass-identity-is-never-referenced-by-opentofu
+file: modules/infrastructure/platform/variables.tf
+find: "  runner_system_namespace        = local.runner_namespaces.system"
+replace: "  backup_key              = local.config.state_backup.identity\n  runner_system_namespace        = local.runner_namespaces.system"
+mentions: "references the break-glass identity. It must never be an OpenTofu value"
+why: >
+  Anything OpenTofu reads it can write to state, and state is what the
+  break-glass key exists to make worthless. A state file holding the key that
+  decrypts the backups of that state protects nothing.

@@ -1,18 +1,17 @@
 package repo
 
 import (
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
 
-	"gopkg.in/yaml.v3"
-
 	"homelab/contractor/config"
 	"homelab/details/applications"
+	"homelab/tests/parsed"
 )
 
 // The Flux tree is a core every site runs, and a directory for each site
@@ -35,19 +34,24 @@ import (
 //     needs nothing written for it, and giving it work is a commit to its
 //     own directory.
 func TestTheFluxCoreIsSharedAndASiteDirectoryIsItsWork(t *testing.T) {
-	files := map[string]string{}
+	light(t)
+	tree := repository(t)
+	files := map[string][]any{}
 	for _, rel := range tracked(t, func(rel string) bool { return strings.HasPrefix(rel, fluxTree+"/") }) {
-		files[rel] = readRepoFile(t, rel)
+		files[rel] = nil
+		if ext := filepath.Ext(rel); ext == ".yaml" || ext == ".json" {
+			files[rel] = tree.YAMLDocuments(t, rel)
+		}
 	}
 	sites := declaredSites(t)
 
 	// Found by what they hold, not named: the core is where Flux's own
 	// install is, and the bootstrap is where the CNI's manifest is.
-	install, err := fluxObjectPath(fluxInstallKind, fluxInstallName)
+	install, err := fluxObjectPath(t, fluxInstallKind, fluxInstallName)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cni, err := fluxObjectPath(cniKind, cniName)
+	cni, err := fluxObjectPath(t, cniKind, cniName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,11 +61,7 @@ func TestTheFluxCoreIsSharedAndASiteDirectoryIsItsWork(t *testing.T) {
 		vendored:  filepath.ToSlash(filepath.Dir(install)) + "/",
 		sites:     sites,
 	}
-	problems, err := layout.problems(files)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, p := range problems {
+	for _, p := range layout.problems(files) {
 		t.Error(p)
 	}
 }
@@ -71,9 +71,7 @@ func TestTheFluxCoreIsSharedAndASiteDirectoryIsItsWork(t *testing.T) {
 func declaredSites(t *testing.T) []string {
 	t.Helper()
 	var tpl config.Config
-	if err := json.Unmarshal([]byte(readRepoFile(t, "config/management.tpl.json")), &tpl); err != nil {
-		t.Fatalf("config/management.tpl.json: %v", err)
-	}
+	repository(t).JSONInto(t, "config/management.tpl.json", &tpl)
 	sites := make([]string, 0, len(tpl.Sites))
 	for site := range tpl.Sites {
 		sites = append(sites, site)
@@ -103,9 +101,9 @@ type fluxLayout struct {
 	sites    []string
 }
 
-var workPath = regexp.MustCompile(`(?m)^\s*path:\s*\.?/?` + applications.Dir + `/`)
-
-func (l fluxLayout) problems(files map[string]string) ([]string, error) {
+// problems is what is wrong with the tree, given each file's documents: none
+// for a file that is not YAML or JSON, which is placed but not read.
+func (l fluxLayout) problems(files map[string][]any) []string {
 	var out []string
 	isSite := map[string]bool{}
 	for _, s := range l.sites {
@@ -124,14 +122,8 @@ func (l fluxLayout) problems(files map[string]string) ([]string, error) {
 				out = append(out, fmt.Sprintf("%s/%s has no kustomization.yaml. Flux would generate one that flattens in everything beneath it, and the platform root only points a site's Flux at a directory that has one.", fluxTree, dir))
 				continue
 			}
-			var k struct {
-				Resources []string `yaml:"resources"`
-			}
-			if err := yaml.Unmarshal([]byte(entry), &k); err != nil {
-				return nil, fmt.Errorf("%s/%s/kustomization.yaml does not parse, so what it builds on cannot be read: %w", fluxTree, dir, err)
-			}
 			builds := false
-			for _, r := range k.Resources {
+			for _, r := range resourcesOf(entry) {
 				if filepath.ToSlash(filepath.Clean(r)) == "../"+l.core {
 					builds = true
 				}
@@ -148,33 +140,42 @@ func (l fluxLayout) problems(files map[string]string) ([]string, error) {
 		if topOf(rel) != l.core || strings.HasPrefix(rel, l.vendored) && filepath.Base(rel) != applications.Kustomization && filepath.Base(rel) != "gotk-sync.yaml" {
 			continue
 		}
-		code := stripYAMLComments(body)
+		values := parsed.Scalars(body)
 		for _, site := range l.sites {
-			if regexp.MustCompile(`(^|[^A-Za-z0-9_])` + regexp.QuoteMeta(site) + `($|[^A-Za-z0-9_])`).MatchString(code) {
+			names := regexp.MustCompile(`(^|[^A-Za-z0-9_])` + regexp.QuoteMeta(site) + `($|[^A-Za-z0-9_])`).MatchString
+			// A value naming the site, or a key on the way to one.
+			if slices.ContainsFunc(values, func(v parsed.Scalar) bool { return names(v.Value) || slices.ContainsFunc(v.Path, names) }) {
 				out = append(out, fmt.Sprintf("%s names %s. The core is what every site runs, written once: what differs by site is a variable Flux fills in from the site's own cluster-vars (${SITE}), or belongs in %s/%s/.", rel, site, fluxTree, site))
 			}
 		}
-		if workPath.MatchString(code) {
+		assignsWork := func(path string) bool {
+			return strings.HasPrefix(strings.TrimPrefix(strings.TrimPrefix(path, "."), "/"), applications.Dir+"/")
+		}
+		if slices.ContainsFunc(scalarsAt(body, "path"), assignsWork) {
 			out = append(out, fmt.Sprintf("%s points Flux at a workload. The core is what a site needs to be a site, and a build waits on nothing else; work is assigned in a site's own directory.", rel))
 		}
 	}
 	sort.Strings(out)
-	return out, nil
+	return out
 }
 
-// stripYAMLComments drops whole-line comments, so prose about a site or a
-// workload is not read as naming one.
-func stripYAMLComments(body string) string {
-	lines := strings.Split(body, "\n")
-	for i, line := range lines {
-		if strings.HasPrefix(strings.TrimSpace(line), "#") {
-			lines[i] = ""
+// resourcesOf is what a kustomization's documents list under resources.
+func resourcesOf(docs []any) []string {
+	var out []string
+	for _, d := range docs {
+		m, _ := d.(map[string]any)
+		list, _ := m["resources"].([]any)
+		for _, r := range list {
+			if s, ok := r.(string); ok {
+				out = append(out, s)
+			}
 		}
 	}
-	return strings.Join(lines, "\n")
+	return out
 }
 
 func TestFluxLayoutRefusesWhatIsNotCoreOrASitesOwn(t *testing.T) {
+	light(t)
 	l := fluxLayout{core: "shared", bootstrap: "first", vendored: fluxTree + "/shared/engine/", sites: []string{"alpha", "beta"}}
 	good := map[string]string{
 		fluxTree + "/shared/kustomization.yaml":    "resources: [engine, parts.yaml]\n",
@@ -184,8 +185,15 @@ func TestFluxLayoutRefusesWhatIsNotCoreOrASitesOwn(t *testing.T) {
 		fluxTree + "/alpha/kustomization.yaml":     "resources:\n  - ../shared\n  - work.yaml\n",
 		fluxTree + "/alpha/work.yaml":              "path: ./" + applications.Dir + "/x/production\n",
 	}
-	if got, err := l.problems(good); err != nil || len(got) != 0 {
-		t.Fatalf("a core and one site's work were refused: %v, %v", got, err)
+	documents := func(files map[string]string) map[string][]any {
+		out := map[string][]any{}
+		for rel, text := range files {
+			out[rel] = fixtureDocuments(t, text)
+		}
+		return out
+	}
+	if got := l.problems(documents(good)); len(got) != 0 {
+		t.Fatalf("a core and one site's work were refused: %v", got)
 	}
 	for name, tc := range map[string]struct{ file, body, want string }{
 		"a directory nobody can place":     {fluxTree + "/gamma/kustomization.yaml", "resources: [../shared]\n", "is not the core"},
@@ -201,13 +209,9 @@ func TestFluxLayoutRefusesWhatIsNotCoreOrASitesOwn(t *testing.T) {
 				bad[k] = v
 			}
 		}
-		got, err := l.problems(bad)
-		if err != nil || len(got) != 1 || !strings.Contains(got[0], tc.want) {
-			t.Errorf("%s: got %v (%v), want one problem saying %q", name, got, err, tc.want)
+		got := l.problems(documents(bad))
+		if len(got) != 1 || !strings.Contains(got[0], tc.want) {
+			t.Errorf("%s: got %v, want one problem saying %q", name, got, tc.want)
 		}
-	}
-	unreadable := map[string]string{fluxTree + "/alpha/kustomization.yaml": "resources: [unclosed\n"}
-	if _, err := l.problems(unreadable); err == nil {
-		t.Error("a site's entry that does not parse was read as building on nothing, rather than refused")
 	}
 }

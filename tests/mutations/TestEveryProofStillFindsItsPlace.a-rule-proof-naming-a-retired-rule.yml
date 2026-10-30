@@ -1,0 +1,9 @@
+guard: TestEveryProofStillFindsItsPlace
+file: tests/mutations/TestTheConfigurationRulesHold.EveryProviderIsADeclaredSupplier.e059c08e.yml
+find: "rule: supplier_providers\n"
+replace: "rule: supplier_providers_as_they_were\n"
+mentions: "which policy/conftest does not declare"
+why: >
+  A rule renamed or retired leaves its proofs naming nothing. Found at push,
+  the proof is pointed at the rule that refuses what it breaks; found by the
+  ledger, it is a red meta lane minutes in.

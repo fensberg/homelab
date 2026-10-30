@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 
+	"homelab/details/facts"
 	"homelab/details/vaults"
 )
 
@@ -371,7 +372,7 @@ type Database struct {
 // is exactly why this one field can live where the per-site credentials cannot.
 //
 // Only the public half appears here. The private identity is deliberately
-// absent from the config contract, and tests/go/repo/breakglass_test.go
+// absent from the config contract, and policy/semgrep/breakglass-opentofu.yml
 // enforces that it never appears in OpenTofu either.
 type StateBackup struct {
 	Recipient string `json:"recipient"`
@@ -446,8 +447,11 @@ type SiteNetwork struct {
 	// Every zone's machines, flattened. AllMachineIPs and AllMachineNames are
 	// built from these, and the health gate and the teardown warning are built
 	// from those.
-	DMZIPs      []string
-	DMZNames    []string
+	DMZIPs   []string
+	DMZNames []string
+	// DMZKeys is each zone machine's key in the address plan, by its name:
+	// the key the cluster module's resources for it are under.
+	DMZKeys     map[string]string
 	Hypervisors []Node
 
 	// Machines is every machine the site is to have, with what it is given
@@ -487,26 +491,26 @@ const gibibyte = int64(1) << 30
 // to say (#615).
 var MemoryOf = map[MachineRole]int64{
 	ControlPlane: 4 * gibibyte,
-	Worker:       10 * gibibyte,
-	Untrusted:    4 * gibibyte,
+	Worker:       8 * gibibyte,
+	Untrusted:    14 * gibibyte,
 }
 
 // WorkerPool is the hypervisor's pool of a site's workers, as the cluster
 // module names it. The storage driver's token is confined to it, so the
 // hypervisor's playbook and the test of that confinement both need the name.
-func (n *SiteNetwork) WorkerPool() string { return n.Name + "-workers" }
+func (n *SiteNetwork) WorkerPool() string { return n.Name + facts.StorageNamesWorkerPoolSuffix }
 
 // UntrustedPool is the hypervisor's pool of a site's machines in its
 // untrusted zones, as the cluster module names it. The sweeper's token is
 // confined to it: those are the machines it gives back as they were built.
-func (n *SiteNetwork) UntrustedPool() string { return n.Name + "-untrusted" }
+func (n *SiteNetwork) UntrustedPool() string { return n.Name + facts.StorageNamesUntrustedPoolSuffix }
 
 // VolumeStorage is the hypervisor storage that holds the volumes a site's
 // storage driver makes, and nothing else: named for the site's key, which is
 // already in git, and apart from the datastore every machine's own disks
 // are on - because the right to make and delete volumes in a storage is the
 // right to delete any volume in it.
-func VolumeStorage(site string) string { return site + "-volumes" }
+func VolumeStorage(site string) string { return site + facts.StorageNamesVolumeStorageSuffix }
 
 var slugInvalid = regexp.MustCompile(`[^A-Za-z0-9]+`)
 
@@ -800,6 +804,7 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 	sort.Strings(zoneNames)
 	var zones []ResolvedZone
 	var dmzIPs, dmzNames []string
+	dmzKeys := map[string]string{}
 	for _, zn := range zoneNames {
 		z := plan.DMZZones[zn]
 		rz := ResolvedZone{Name: zn, CIDR: z.CIDR, Gateway: z.Gateway, VNet: z.VNet, VNI: z.VNI}
@@ -807,6 +812,7 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 		for k, m := range plan.DMZ {
 			if m.Zone == zn {
 				members[k] = m
+				dmzKeys[m.Name] = k
 			}
 		}
 		for _, m := range inHostOrder(members) {
@@ -856,6 +862,7 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 		DMZZones:          zones,
 		DMZIPs:            dmzIPs,
 		DMZNames:          dmzNames,
+		DMZKeys:           dmzKeys,
 		Hypervisors:       nodes,
 	}, nil
 }

@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: sensitive_gate_labels
+file: .github/workflows/sensitive-paths.yml
+find: "    types: [opened, synchronize, reopened]"
+replace: "    types: [opened, synchronize, reopened, labeled]"
+mentions: "the workflow still manipulates or reads labels"
+why: >
+  The acknowledgement is a conversation keyed to what changed. A label beside
+  it outlives every later push - the defect the conversation replaced - and,
+  being the easier of the two, becomes the one people use.

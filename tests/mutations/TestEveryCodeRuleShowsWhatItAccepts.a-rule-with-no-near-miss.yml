@@ -1,0 +1,9 @@
+guard: TestEveryCodeRuleShowsWhatItAccepts
+file: policy/semgrep/tests/state-backups.go
+reads_source: true
+find: "\t// ok: nothing-resolves-the-state-backups-by-hand\n"
+replace: "\t// a bucket of another kind\n"
+mentions: "nothing-resolves-the-state-backups-by-hand has no example marked"
+why: >
+  A rule shown only the lines it refuses has never been shown one it must
+  let through; a pattern that refuses everything would pass its examples.

@@ -1,0 +1,12 @@
+guard: TestTheConfigurationRulesHold
+rule: scheduled_deadlines
+file: clusters/core/infrastructure/configs/scheduled-workflows.yaml
+find: 'instance=~"deploy-infrastructure.yml|expedite.yml|security-patrol.yml"'
+replace: 'instance=~"deploy-infrastructure.yml|expedite.yml"'
+mentions: "has no deadline"
+why: >
+  A workflow is added to the watch by adding its address to a list, and the
+  deadline is a second place that has to name it. Left out of the second, it
+  is still asked about and still alerts when it fails, so nothing looks
+  missing - until it stops running, which is the one thing only the
+  deadline says.

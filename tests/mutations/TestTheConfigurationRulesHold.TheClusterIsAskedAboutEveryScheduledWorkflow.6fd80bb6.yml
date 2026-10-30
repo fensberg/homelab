@@ -1,0 +1,12 @@
+guard: TestTheConfigurationRulesHold
+rule: scheduled_allowance
+file: clusters/core/infrastructure/configs/scheduled-workflows.yaml
+find: "  scrapeInterval: 20m"
+replace: "  scrapeInterval: 5m"
+mentions: "A caller with no token is allowed 60"
+why: >
+  Twenty minutes reads as slow for an alert, and shortening it is one
+  line. At five, eight workflows are 96 questions an hour against an
+  allowance of sixty for the site's whole address, so GitHub refuses
+  some of every hour's - and anything else at the site asking with no
+  token is refused with them.

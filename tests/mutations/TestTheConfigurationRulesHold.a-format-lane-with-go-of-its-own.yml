@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+rule: format_lane_go
+file: .github/workflows/pr-validation.yml
+find: "      - name: Setup Go\n        uses: $/.github/workflows/setup-go\n\n      - name: Refuse an unapproved supplier before anything is downloaded\n"
+replace: "      - name: Refuse an unapproved supplier before anything is downloaded\n"
+mentions: "sets up Go without reading GO_VERSION"
+why: >
+  A lane that takes whatever Go the runner has validates on a toolchain the
+  estate does not pin, and agrees with the pin only by chance.

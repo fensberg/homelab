@@ -39,7 +39,7 @@ resources:
 #
 # The suppliers test still fails if a tag ever reaches the cluster unpinned, so
 # a controller with no entry here is a red build rather than a silent
-# unpinning - and TestEveryFluxControllerIsPinnedHere refuses one that the
+# unpinning - and policy/conftest/rules/flux_controllers/flux_controllers.rego refuses one that the
 # generated manifest carries and this block does not name.
 images:
   - name: ghcr.io/fluxcd/helm-controller

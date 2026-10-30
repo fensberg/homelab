@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+rule: job_checkouts
+file: .github/workflows/pr-validation.yml
+find: "      - name: Setup Go\n        uses: $/.github/workflows/setup-go\n\n      - name: Refuse an unapproved supplier before anything is downloaded\n"
+replace: "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n\n      - name: Setup Go\n        uses: $/.github/workflows/setup-go\n\n      - name: Refuse an unapproved supplier before anything is downloaded\n"
+mentions: "checks out without persist-credentials: false"
+why: >
+  A checkout written straight into a workflow's job keeps the job's token on
+  disk for every later step, as surely as one inside an action.

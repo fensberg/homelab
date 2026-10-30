@@ -1,0 +1,13 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_pool_membership
+file: modules/infrastructure/cluster/pools.tf
+find: "  for_each = local.workers\n"
+replace: "  for_each = { for k, v in local.workers : k => v if k == \"none\" }\n"
+mentions: "never placed in a pool"
+why: >
+  The pools break by addition rather than by deletion - a new class of
+  machine is written beside the others and nothing says where it belongs,
+  so the hypervisor grows an ungrouped machine and the grouping quietly
+  stops being true of everything. This mutation is the shape that failure
+  takes: the workers' membership is still there, so nothing looks missing,
+  and it places none of them.

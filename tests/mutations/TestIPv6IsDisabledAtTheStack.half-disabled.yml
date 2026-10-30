@@ -1,0 +1,9 @@
+guard: TestIPv6IsDisabledAtTheStack
+file: management/hypervisor/hypervisor-prep.yml
+find: "        - net.ipv6.conf.default.disable_ipv6"
+replace: "        - net.ipv6.conf.default.forwarding"
+mentions: "net.ipv6.conf.default.disable_ipv6 is not set to 1"
+why: >
+  IPv6 is switched off on the interfaces that exist and left on for every
+  interface made later, such as a bridge or a tunnel. That is the stack
+  enabled with no addresses on it, which clients prefer and cannot use.

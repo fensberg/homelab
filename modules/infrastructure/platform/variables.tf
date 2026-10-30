@@ -119,11 +119,14 @@ locals {
   # nothing here reads them - a local kept alive purely so a test could compare
   # against it is dead code with a test-shaped excuse, and tflint was right to
   # say so.
-  runner_system_namespace = "arc-systems"
-  runners_namespace       = "arc-runners"
-  # Runners for a pull request's own code, apart from every other runner:
-  # see runner.tf.
-  pull_request_runners_namespace = "pull-request-runners"
+  #
+  # The namespaces are the fact config/facts/runner-namespaces.json, which
+  # the runner manifests are held to. The pull-request runners' is for a
+  # pull request's own code, apart from every other runner: see runner.tf.
+  runner_namespaces              = jsondecode(file("${path.module}/../../../config/facts/runner-namespaces.json"))
+  runner_system_namespace        = local.runner_namespaces.system
+  runners_namespace              = local.runner_namespaces.runners
+  pull_request_runners_namespace = local.runner_namespaces.pull_request_runners
   runner_secret_name             = "github-app-credentials"
 
   # The scale set is registered against the organization, not the repository,

@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: dashboards_listed
+file: clusters/core/infrastructure/configs/kustomization.yaml
+find: "    files: [dashboards/where-the-time-goes.json]"
+replace: "    files: []"
+mentions: "a file and not a dashboard"
+why: >
+  A dashboard is a file and a line that lists it, in two places. The file
+  without the line is reviewed, merged and never seen in Grafana, and the
+  only sign is somebody not finding it.

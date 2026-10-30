@@ -1,16 +1,19 @@
 package repo
 
 import (
-	"os"
-	"path/filepath"
+	"homelab/tests/parsed"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
 
-	supplierslist "homelab/details/suppliers"
+	"encoding/json"
 	"homelab/details/workorders"
 )
+
+// takeDelivery is the one thing that installs a locked tool.
+const takeDelivery = "scripts/take-delivery.sh"
 
 // The image a pull request's jobs run in carries exactly what those jobs take
 // delivery of: every tool, and nothing else.
@@ -34,23 +37,75 @@ import (
 // and its Dockerfile is the one the work order of that name builds. The jobs
 // are the ones the suppliers list says are of a pool.
 
-var deliveriesTaken = regexp.MustCompile(`take-delivery\.sh((?:\s+(?:\\\n\s*)?[a-z0-9][a-z0-9-]*)+)`)
-
-// takes is every delivery a script asks take-delivery.sh for.
+// takes is every delivery a script asks take-delivery.sh for: the words
+// after it, in every command that runs it, as the shell parser reads them.
 func takes(script string) []string {
+	commands, err := parsed.WorkflowCommands("a script", script)
+	if err != nil {
+		return []string{"(a script that is not shell that can be read: " + err.Error() + ")"}
+	}
+	delivery := regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 	var out []string
-	for _, m := range deliveriesTaken.FindAllStringSubmatch(script, -1) {
-		out = append(out, strings.Fields(strings.ReplaceAll(m[1], `\`, " "))...)
+	for _, c := range commands {
+		at := slices.IndexFunc(c.Words, func(w string) bool { return strings.HasSuffix(w, "take-delivery.sh") })
+		if at < 0 {
+			continue
+		}
+		for _, w := range c.Words[at+1:] {
+			if delivery.MatchString(w) {
+				out = append(out, w)
+			}
+		}
 	}
 	return out
 }
 
-// instructions is a Dockerfile without its comments, which may say anything.
-func instructions(dockerfile string) string {
+// dockerInstruction is one instruction of a Dockerfile as Conftest's parser
+// reads it: the command, its flags, and its arguments.
+type dockerInstruction struct {
+	Cmd   string   `json:"Cmd"`
+	Flags []string `json:"Flags"`
+	Value []string `json:"Value"`
+}
+
+// String is the instruction as it would be written, for a message.
+func (i dockerInstruction) String() string {
+	return strings.TrimSpace(strings.ToUpper(i.Cmd) + " " + strings.Join(append(append([]string{}, i.Flags...), i.Value...), " "))
+}
+
+// dockerfile is every instruction of a Dockerfile, without its comments, which
+// may say anything.
+func dockerfile(t *testing.T, rel string) []dockerInstruction {
+	t.Helper()
+	return dockerfileIn(t, repository(t), rel)
+}
+
+// dockerfileIn is dockerfile, of a file of the given tree.
+func dockerfileIn(t *testing.T, tree *parsed.Tree, rel string) []dockerInstruction {
+	t.Helper()
+	var all []dockerInstruction
+	encoded, err := json.Marshal(tree.Conftest(t, rel, "dockerfile"))
+	if err == nil {
+		err = json.Unmarshal(encoded, &all)
+	}
+	if err != nil {
+		t.Fatalf("%s is not a Dockerfile that can be read: %v", rel, err)
+	}
+	var out []dockerInstruction
+	for _, i := range all {
+		if i.Cmd != "comment" {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// runs is what a Dockerfile's RUN instructions run, as one script.
+func runs(instructions []dockerInstruction) string {
 	var b strings.Builder
-	for _, line := range strings.Split(dockerfile, "\n") {
-		if !strings.HasPrefix(strings.TrimSpace(line), "#") {
-			b.WriteString(line + "\n")
+	for _, i := range instructions {
+		if i.Cmd == "run" {
+			b.WriteString(strings.Join(i.Value, " ") + "\n")
 		}
 	}
 	return b.String()
@@ -64,15 +119,15 @@ func pullRequestRunnerOrder(t *testing.T) workorders.Order {
 	images := map[string]bool{}
 	for _, release := range runnerSets(t) {
 		_, manifest := fluxObject(t, kindHelmRelease, release)
-		set := regexp.MustCompile(`(?m)^\s*runnerScaleSetName:\s*(\S+)`).FindStringSubmatch(manifest)
-		if set == nil || !pullRequestPools[strings.ReplaceAll(set[1], "${SITE}", "${{ vars.pull_request_runners_site }}")] {
+		set, ok := scalarAt(manifest, "runnerScaleSetName")
+		if !ok || !pullRequestPools[strings.ReplaceAll(set, "${SITE}", "${{ vars.pull_request_runners_site }}")] {
 			continue
 		}
-		m := scaleSetImage.FindStringSubmatch(manifest)
-		if m == nil {
+		named, ok := scalarAt(manifest, "image")
+		if !ok {
 			t.Fatalf("the pool %s names no image", release)
 		}
-		image, _, _ := strings.Cut(m[1], "@")
+		image, _, _ := strings.Cut(named, "@")
 		images[image] = true
 	}
 	if len(images) != 1 {
@@ -94,14 +149,11 @@ func pullRequestRunnerOrder(t *testing.T) workorders.Order {
 }
 
 func TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake(t *testing.T) {
-	root := repoRoot(t)
+	light(t)
+	tree := repository(t)
 	order := pullRequestRunnerOrder(t)
 	rel := order.Context + "/Dockerfile"
-	body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	built := instructions(string(body))
+	built := runs(dockerfile(t, rel))
 
 	carried := map[string]bool{}
 	for _, name := range takes(built) {
@@ -111,14 +163,7 @@ func TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake(t *testing.T) {
 		t.Fatalf("%s takes no delivery at all, so it is a bare runner and every job installs everything", rel)
 	}
 
-	list, err := os.ReadFile(filepath.Join(root, supplierslist.Path))
-	if err != nil {
-		t.Fatal(err)
-	}
-	egress, err := supplierslist.EgressOf(list)
-	if err != nil {
-		t.Fatal(err)
-	}
+	egress := tree.Egress(t)
 	jobs, asked := 0, 0
 	missing := map[string][]string{}
 	for _, e := range egress {

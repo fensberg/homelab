@@ -1,0 +1,11 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_one_machine_list
+file: modules/infrastructure/cluster/talos.tf
+find: "  # cluster's network as every machine's kubelet needs it (#578).\n  config_patches = concat([local.cluster_network_patch], local.machine_patches[each.key])"
+replace: "  # cluster's network as every machine's kubelet needs it (#578).\n  config_patches = concat([local.cluster_network_patch], local.dmz_dedication_patches[each.key])"
+mentions: "is not configured from local.machine_patches"
+why: >
+  A zone's machine given only what is the zone's own is a machine with a
+  taint and a label and no hostname, no volume and no address in its
+  configuration. It reads as tidy, and it is the list of its own the
+  zone had before.

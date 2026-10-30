@@ -3,8 +3,6 @@ package repo
 import (
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 // Where an alert lands is decided by the route tree in kube-prometheus-stack's
@@ -14,6 +12,7 @@ import (
 // route that still says InfoInhibitor but sits after a catch-all would pass a
 // spelling check and page Slack every hour (#532).
 func TestAlertsLandWhereTheEstateDecided(t *testing.T) {
+	light(t)
 	route := alertRoute(t)
 	for _, c := range []struct {
 		labels map[string]string
@@ -84,8 +83,7 @@ func matches(matchers []string, labels map[string]string) bool {
 func alertRoute(t *testing.T) amRoute {
 	t.Helper()
 	file, stack := fluxObject(t, kindHelmRelease, "kube-prometheus-stack")
-	dec := yaml.NewDecoder(strings.NewReader(stack))
-	for {
+	for _, decoded := range stack {
 		var doc struct {
 			Kind string `yaml:"kind"`
 			Spec struct {
@@ -98,8 +96,8 @@ func alertRoute(t *testing.T) amRoute {
 				} `yaml:"values"`
 			} `yaml:"spec"`
 		}
-		if dec.Decode(&doc) != nil {
-			break
+		if as(decoded, &doc) != nil {
+			continue
 		}
 		if doc.Kind == "HelmRelease" && doc.Spec.Values.Alertmanager.Config.Route.Receiver != "" {
 			return doc.Spec.Values.Alertmanager.Config.Route

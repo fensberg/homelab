@@ -1,0 +1,12 @@
+guard: TestTheConfigurationRulesHold
+rule: sensitive_gate_keys
+file: .github/workflows/sensitive-paths.yml
+find: "            -topic keys \\"
+replace: "            -topic sensitive \\"
+mentions: "under the same topic"
+why: >
+  A pull request can be asked two questions at once: that it touches a
+  sensitive path, and that it hands out a key. Under one topic each
+  conversation reads the other as its own question about content that is
+  gone and withdraws it, so whichever step runs last leaves the only
+  conversation, and the other question is never answered.

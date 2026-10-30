@@ -3,17 +3,14 @@ package repo
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 
-	"gopkg.in/yaml.v3"
-
 	"homelab/details/applications"
+	"homelab/tests/parsed"
+	"path"
 )
 
 // An application's own tests are run with everything else.
@@ -40,13 +37,9 @@ const applicationTestsDir = "tests"
 
 func TestEveryApplicationsOwnTestsPass(t *testing.T) {
 	heavy(t, "compiles and runs each application's own test module, whole seconds apiece")
-	root := repoRoot(t)
-	apps, err := applications.Read(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, a := range apps {
-		if err := runApplicationTests(t, root, a); err != nil {
+	tree := repository(t)
+	for _, a := range tree.Applications(t) {
+		if err := runApplicationTests(t, tree, a); err != nil {
 			t.Error(err)
 		}
 	}
@@ -54,92 +47,53 @@ func TestEveryApplicationsOwnTestsPass(t *testing.T) {
 
 // runApplicationTests vets and runs one application's own tests, and says how
 // they failed. An application with no tests has none to fail.
-func runApplicationTests(t *testing.T, root string, a applications.Application) error {
+func runApplicationTests(t *testing.T, tree *parsed.Tree, a applications.Application) error {
 	t.Helper()
-	dir := filepath.Join(root, filepath.FromSlash(a.Root), applicationTestsDir)
-	_, err := os.Stat(filepath.Join(dir, "go.mod"))
-	switch {
-	case os.IsNotExist(err):
-		tests, err := filepath.Glob(filepath.Join(dir, "*_test.go"))
-		if err != nil {
-			return err
-		}
-		if len(tests) > 0 {
-			return fmt.Errorf("%s/%s holds tests and no go.mod, so nothing can run them. An application's tests are a Go module of their own.", a.Root, applicationTestsDir)
+	dir := a.Root + "/" + applicationTestsDir
+	if !tree.Exists(dir + "/go.mod") {
+		for _, rel := range tree.Files(t) {
+			if path.Dir(rel) == dir && strings.HasSuffix(rel, "_test.go") {
+				return fmt.Errorf("%s holds tests and no go.mod, so nothing can run them. An application's tests are a Go module of their own.", dir)
+			}
 		}
 		return nil
-	case err != nil:
-		return err
 	}
-	manifests, err := applicationManifests(t, root, a)
-	if err != nil {
-		return fmt.Errorf("%s: its manifests could not be read for its tests: %w", a.Name, err)
-	}
+	manifests := applicationManifests(t, tree, a)
 	for _, args := range [][]string{{"vet", "./..."}, {"test", "-count=1", "./..."}} {
-		cmd := exec.Command("go", args...)
-		cmd.Dir = dir
 		// The module is the application's own and nothing else's: no
 		// workspace above it and no flags inherited from whoever runs this.
-		cmd.Env = append(os.Environ(), applications.ManifestsEnv+"="+manifests, "GOWORK=off", "GOFLAGS=")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("%s's own tests do not pass (go %s in %s/%s):\n\n%s", a.Name, strings.Join(args, " "), a.Root, applicationTestsDir, out)
+		stdout, stderr, err := tree.Invoke(parsed.Run{Dir: dir, Env: []string{applications.ManifestsEnv + "=" + manifests, "GOWORK=off", "GOFLAGS="}}, "go", args...)
+		if err != nil {
+			return fmt.Errorf("%s's own tests do not pass (go %s in %s):\n\n%s%s", a.Name, strings.Join(args, " "), dir, stdout, stderr)
 		}
 	}
 	return nil
 }
 
 // applicationManifests writes every YAML file of an application as JSON, and
-// returns the directory holding them.
-func applicationManifests(t *testing.T, root string, a applications.Application) (string, error) {
+// returns the directory holding them: a directory of the test's own, so what
+// the application's tests are handed is a copy and never the tree.
+func applicationManifests(t *testing.T, tree *parsed.Tree, a applications.Application) string {
 	t.Helper()
 	out := t.TempDir()
-	base := filepath.Join(root, filepath.FromSlash(a.Root))
-	var found []string
-	err := filepath.WalkDir(base, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
+	for _, rel := range tree.Files(t) {
+		inside, ok := strings.CutPrefix(rel, a.Root+"/")
+		if ext := path.Ext(rel); !ok || (ext != ".yaml" && ext != ".yml") {
+			continue
 		}
-		if ext := filepath.Ext(path); ext == ".yaml" || ext == ".yml" {
-			found = append(found, path)
-		}
-		return nil
-	})
-	if err != nil {
-		return "", err
-	}
-	sort.Strings(found)
-	for _, path := range found {
-		body, err := os.ReadFile(path)
+		encoded, err := json.Marshal(append([]any{}, tree.YAMLDocuments(t, rel)...))
 		if err != nil {
-			return "", err
+			t.Fatalf("%s: %v", rel, err)
 		}
-		docs := []any{}
-		dec := yaml.NewDecoder(strings.NewReader(string(body)))
-		for {
-			var doc any
-			if err := dec.Decode(&doc); err == io.EOF {
-				break
-			} else if err != nil {
-				return "", fmt.Errorf("%s: %w", path, err)
-			}
-			if doc != nil {
-				docs = append(docs, doc)
-			}
-		}
-		encoded, err := json.Marshal(docs)
-		if err != nil {
-			return "", fmt.Errorf("%s: %w", path, err)
-		}
-		rel, _ := filepath.Rel(base, path)
-		dst := filepath.Join(out, strings.TrimSuffix(rel, filepath.Ext(rel))+".json")
+		dst := filepath.Join(out, filepath.FromSlash(strings.TrimSuffix(inside, path.Ext(inside))+".json"))
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			return "", err
+			t.Fatal(err)
 		}
 		if err := os.WriteFile(dst, encoded, 0o644); err != nil {
-			return "", err
+			t.Fatal(err)
 		}
 	}
-	return out, nil
+	return out
 }
 
 // The runner is held to what it claims, against applications written here: it
@@ -148,15 +102,9 @@ func applicationManifests(t *testing.T, root string, a applications.Application)
 // its application's manifests, and passes over an application with no tests.
 func TestRunApplicationTestsReportsExactlyTheFailing(t *testing.T) {
 	heavy(t, "compiles three small test modules")
-	root := t.TempDir()
+	tree := parsed.Empty(t)
 	write := func(rel, body string) {
-		path := filepath.Join(root, filepath.FromSlash(applications.Dir), filepath.FromSlash(rel))
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		tree.Write(t, applications.Dir+"/"+rel, body)
 	}
 	module := func(app, test string) {
 		write(app+"/"+applications.Declaration, "{}")
@@ -170,16 +118,14 @@ func TestRunApplicationTestsReportsExactlyTheFailing(t *testing.T) {
 	write("unrunnable/"+applications.Declaration, "{}")
 	write("unrunnable/tests/it_test.go", "package tests\n")
 
-	apps, err := applications.Read(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	tree.Index(t)
+	apps := tree.Applications(t)
 	// What each application's tests came to, "<nil>" for those that passed
 	// or had none.
 	got := map[string]string{}
 	failed := 0
 	for _, a := range apps {
-		got[a.Name] = fmt.Sprint(runApplicationTests(t, root, a))
+		got[a.Name] = fmt.Sprint(runApplicationTests(t, tree, a))
 		if got[a.Name] != "<nil>" {
 			failed++
 		}

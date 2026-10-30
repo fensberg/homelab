@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: client_skew
+file: scripts/versions.env
+find: "TALOS_VERSION=v1.13.9\n"
+replace: "TALOS_VERSION=v1.10.0\n"
+mentions: "and the cluster runs Talos v1.10.0"
+why: >
+  The cluster's Talos is moved on its own line, which the cluster module
+  reads, and talosctl on another. A client two minors from its cluster is
+  where commands start to fail.

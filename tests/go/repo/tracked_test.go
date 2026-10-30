@@ -1,7 +1,6 @@
 package repo
 
 import (
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -33,47 +32,12 @@ import (
 // the failure it was built to prevent, wearing the walk's clothes. Filter the
 // result by what you are asserting about; never narrow where you looked.
 
-// A repository this size cannot plausibly have fewer tracked files, so a count
-// below it means the enumeration broke rather than that the tree shrank. Without
-// this, a failed listing is an empty list, and every guard downstream passes by
-// examining nothing.
-const fewestPlausibleTrackedFiles = 100
-
-// trackedFiles lists every file git tracks, relative to the repository root.
+// trackedFiles lists every file git tracks, relative to the repository root,
+// as tests/parsed lists them - with the floor below which a listing has
+// broken rather than the tree shrunk.
 func trackedFiles(t *testing.T) []string {
 	t.Helper()
-	return trackedFilesIn(t, repoRoot(t))
-}
-
-// trackedFilesIn lists the tracked files of a tree other than the repository
-// itself - the scratch tree a guard judges when patches are outstanding.
-func trackedFilesIn(t *testing.T, root string) []string {
-	t.Helper()
-
-	out, err := exec.Command("git", "-C", root, "ls-files", "-z").Output()
-	if err != nil {
-		t.Fatalf(`listing tracked files in %s: %v
-
-Every guard in this package enumerates from here, so this is not a failure of
-one check - nothing downstream can see its subjects. If this is the mutation
-ledger's scratch tree, scratchRepo is meant to have run `+"`git init`"+` in it.`, root, err)
-	}
-
-	var files []string
-	for _, rel := range strings.Split(strings.TrimRight(string(out), "\x00"), "\x00") {
-		if rel != "" {
-			files = append(files, rel)
-		}
-	}
-	if len(files) < fewestPlausibleTrackedFiles {
-		t.Fatalf(`git ls-files returned %d file(s) in %s, and this repository has
-many more than that.
-
-The enumeration has broken. Left alone it would report an empty universe, and
-every guard reading it would pass by examining nothing - which looks exactly
-like everything being correct.`, len(files), root)
-	}
-	return files
+	return repository(t).Files(t)
 }
 
 // trackedMatching is trackedFiles filtered by what the caller asserts about.
@@ -100,17 +64,16 @@ func trackedMatching(t *testing.T, keep func(rel string) bool) []string {
 // about where to look, so naming paths in it is correct. A new entry is a
 // decision somebody makes once; a missing entry produces noise, not silence,
 // which is the direction this should fail in.
-var notAuthoredHere = unauthored()
-
 // unauthored is the list, with the one entry that is a place rather than a
 // file name found by what is in it: Flux's own install is wherever the
 // manifest declaring its controllers is, and that directory moves when the
 // Flux tree does. If it cannot be found the entry is the empty prefix's
 // opposite - a path nothing has - and TestEveryUnauthoredPathStillExists
 // says so.
-func unauthored() []string {
+func unauthored(t *testing.T) []string {
+	t.Helper()
 	fluxInstall := "the Flux install, which no manifest declares/"
-	if path, err := fluxObjectPath(fluxInstallKind, fluxInstallName); err == nil {
+	if path, err := fluxObjectPath(t, fluxInstallKind, fluxInstallName); err == nil {
 		fluxInstall = filepath.ToSlash(filepath.Dir(path)) + "/"
 	}
 	return append([]string{fluxInstall}, unauthoredNames...)
@@ -125,8 +88,9 @@ var unauthoredNames = []string{
 }
 
 // authoredHere reports whether a tracked path is this repository's own work.
-func authoredHere(rel string) bool {
-	for _, skip := range notAuthoredHere {
+func authoredHere(t *testing.T, rel string) bool {
+	t.Helper()
+	for _, skip := range unauthored(t) {
 		if strings.HasSuffix(skip, "/") {
 			if strings.HasPrefix(rel, skip) {
 				return false
@@ -147,6 +111,7 @@ func authoredHere(rel string) bool {
 // a plausible number, and it returns paths relative to the root rather than
 // absolute ones, which is what every caller assumes when it matches on prefixes.
 func TestTheTrackedEnumerationSeesTheWholeRepository(t *testing.T) {
+	light(t)
 	files := trackedFiles(t)
 
 	for _, rel := range files {
@@ -187,9 +152,10 @@ whole repository.`, dir)
 // An entry for something that no longer exists makes the excluded set look
 // larger than it is, and hides that a guard stopped covering something real.
 func TestEveryUnauthoredPathStillExists(t *testing.T) {
+	light(t)
 	files := trackedFiles(t)
 
-	for _, skip := range notAuthoredHere {
+	for _, skip := range unauthored(t) {
 		found := false
 		for _, rel := range files {
 			if strings.HasSuffix(skip, "/") {
@@ -223,7 +189,7 @@ exemption without anybody choosing it.`, skip)
 func openTofuSources(t *testing.T) []string {
 	t.Helper()
 	sources := trackedMatching(t, func(rel string) bool {
-		return authoredHere(rel) &&
+		return authoredHere(t, rel) &&
 			(strings.HasSuffix(rel, ".tf") || strings.HasSuffix(rel, ".tftest.hcl"))
 	})
 

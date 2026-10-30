@@ -1,0 +1,11 @@
+guard: TestNoGuardReadsAFileAsText
+file: tests/go/repo/application_tests_test.go
+reads_source: true
+find: "\theavy(t, \"compiles and runs each application's own test module, whole seconds apiece\")\n\ttree := repository(t)\n"
+replace: "\theavy(t, \"compiles and runs each application's own test module, whole seconds apiece\")\n\ttree, _ := repository(t), os.ReadFile(\"CLAUDE.md\")\n"
+mentions: 'os.ReadFile is given "CLAUDE.md", a path relative to where the test runs'
+why: >
+  A guard reads a file of the repository as text, by a path relative to
+  wherever the test happens to run. It reads the real checkout when the
+  ledger meant a broken copy, and a guard proved against that copy passes
+  on the tree it was not given.

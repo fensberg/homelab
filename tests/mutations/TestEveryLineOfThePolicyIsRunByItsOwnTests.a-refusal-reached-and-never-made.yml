@@ -1,0 +1,8 @@
+guard: TestEveryLineOfThePolicyIsRunByItsOwnTests
+file: policy/conftest/rules/workflow_tmpdir/workflow_tmpdir_test.rego
+find: "test_no_workflow_is_refused if {\n\tsome msg in workflow_tmpdir.deny with input as []\n\tcontains(msg, \"found no workflows\")\n}\n"
+replace: "test_no_workflow_is_refused if {\n\tcount(workflow_tmpdir.deny) >= 0 with input as [wf(base)]\n}\n"
+mentions: "workflow_tmpdir/workflow_tmpdir.rego: rows"
+why: >
+  A test that runs every condition of a refusal and satisfies none has made
+  no refusal. Its head is the line left unrun, so the floor still sees it.

@@ -1,0 +1,18 @@
+guard: TestTheConfigurationRulesHold
+rule: privileged_workspace
+file: .github/workflows/zz-privileged-fetch.yml
+create: |
+  name: planted
+  on: [workflow_run]
+  jobs:
+    planted:
+      runs-on: ubuntu-latest
+      timeout-minutes: 1
+      steps:
+        - name: Fetch the change
+          run: git fetch origin refs/pull/1/head
+mentions: "without its own worktree"
+why: >
+  In a run holding secrets a pull request is data, and a worktree of its
+  own is what keeps it apart from where things execute. A fetch that does
+  not make one leaves the next step one checkout away from #409.

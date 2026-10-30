@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_restated_facts
+file: modules/infrastructure/cluster/compute.tf
+find: "servers = local.dns_resolvers\n    }\n\n    ip_config {\n      ipv4 {\n        address = \"${each.value.ip}/24\"\n        gateway = local.dmz_zones"
+replace: "servers = [\"1.1.1.1\", \"1.0.0.1\"]\n    }\n\n    ip_config {\n      ipv4 {\n        address = \"${each.value.ip}/24\"\n        gateway = local.dmz_zones"
+mentions: 'writes "1.1.1.1" as a constant'
+why: >
+  A machine class given the resolvers written out keeps them when the fact
+  changes: every other machine moves to the new resolvers and this one goes
+  on asking the old ones, which is the drift #360 found four copies of.

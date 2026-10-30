@@ -1,8 +1,8 @@
 package repo
 
 import (
-	"regexp"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -17,11 +17,11 @@ import (
 // action's metadata at the path it names, and a misspelt one is found at a
 // push and not when a job tries to start.
 func TestEverySelfRepositoryReferenceNamesAnActionThatIsHere(t *testing.T) {
+	light(t)
 	tracked := map[string]bool{}
 	for _, rel := range trackedFiles(t) {
 		tracked[rel] = true
 	}
-	reference := regexp.MustCompile(`(?m)^\s*(?:- )?uses:\s*["']?\$/([A-Za-z0-9_./-]+)`)
 
 	var missing []string
 	found := 0
@@ -29,10 +29,14 @@ func TestEverySelfRepositoryReferenceNamesAnActionThatIsHere(t *testing.T) {
 		if !runnable(rel) {
 			continue
 		}
-		for _, m := range reference.FindAllStringSubmatch(stripYAMLComments(readRepoFile(t, rel)), -1) {
+		for _, uses := range scalarsAt(repository(t).YAMLDocuments(t, rel), "uses") {
+			dir, ours := strings.CutPrefix(uses, "$/")
+			if !ours {
+				continue
+			}
 			found++
-			if !tracked[m[1]+"/action.yml"] && !tracked[m[1]+"/action.yaml"] {
-				missing = append(missing, rel+" uses $/"+m[1]+", and there is no action there")
+			if !tracked[dir+"/action.yml"] && !tracked[dir+"/action.yaml"] {
+				missing = append(missing, rel+" uses $/"+dir+", and there is no action there")
 			}
 		}
 	}

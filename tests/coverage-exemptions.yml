@@ -92,7 +92,7 @@ files:
     uncovered: 4
     covered_by: e2e
   - path: contractor/internal/run/exec.go
-    uncovered: 13
+    uncovered: 12
     covered_by: e2e
   - path: contractor/internal/run/net.go
     uncovered: 1
@@ -112,7 +112,7 @@ files:
   # the rendered config and the vault, and the kubeconfig written from the
   # cluster root's state.
   - path: contractor/internal/phases/untrustedclean.go
-    uncovered: 2
+    uncovered: 1
     covered_by: nothing
   - path: contractor/internal/phases/health_etcd.go
     uncovered: 2
@@ -181,6 +181,13 @@ files:
     covered_by: not-worth-testing
   - path: contractor/main.go
     uncovered: 8
+    covered_by: not-worth-testing
+  # The fact generator's door: two arguments in, an exit status out. What it
+  # writes and refuses is write and render, both covered beside it, and that
+  # the committed files are what it makes is held by
+  # TestEveryGeneratedFileIsWhatItsGeneratorMakes.
+  - path: details/facts/generate/main.go
+    uncovered: 1
     covered_by: not-worth-testing
 
   # --- the other six programs ------------------------------------------

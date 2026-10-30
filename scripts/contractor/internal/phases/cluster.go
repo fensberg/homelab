@@ -62,13 +62,23 @@ func applySteps(ctx *run.Context, phase string, has siteHas) error {
 		// A new untrusted worker joins closed to work only if the node it
 		// joins as is new too, so what its predecessor left is removed
 		// before it is configured. A build has no predecessors.
+		//
+		// And a new one is given its configuration whatever its plan says.
+		// It was built in an earlier step, so by this one nothing shows it
+		// changing, and the configuration that replacing it ought to send
+		// again is planned as already sent: the machine waits unconfigured
+		// and never joins. It happened, on a rebuild that changed only its
+		// size, and the cluster's health check waited out its ten minutes
+		// for a node that could not come.
+		var replace []string
 		if ctx.TakenOverOK && configuresZones(st) {
-			if err := forgetReplacedUntrustedWorkers(ctx); err != nil {
+			var err error
+			if replace, err = forgetReplacedUntrustedWorkers(ctx); err != nil {
 				return err
 			}
 		}
 		run.Info(st.Say)
-		if err := run.TofuApply(in, "tofu apply ("+st.Label+")", st.Targets...); err != nil {
+		if err := run.TofuApplyReplacing(in, "tofu apply ("+st.Label+")", replace, st.Targets...); err != nil {
 			return err
 		}
 		// The cluster root is finished and every node is ready: a new

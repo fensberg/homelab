@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_runner_group
+file: clusters/core/infrastructure/configs/pull-requests-source.yaml
+find: "    runnerGroup: pull-requests\n"
+replace: "    runnerGroup: homelab\n"
+mentions: "would wait for a runner for ever"
+why: >
+  The estate's own group takes only named workflows as they are on the
+  default branch. A pull-request pool put in it is given no job at all,
+  and says so only by every pull request's job never starting.

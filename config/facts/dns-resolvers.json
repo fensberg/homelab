@@ -1,0 +1,13 @@
+{
+  "_comment": [
+    "The resolvers every machine the estate builds asks: the cloud-init of",
+    "each machine class and Talos's ResolverConfig read them from here,",
+    "through the cluster module. Why these, and the path for a fork on a",
+    "network with its own resolvers - change this list - are beside",
+    "dns_resolvers in modules/infrastructure/cluster/variables.tf.",
+    "",
+    "policy/conftest/rules/dns_resolvers refuses a resolver written anywhere",
+    "in OpenTofu, and plan_restated_facts one restated in a plan."
+  ],
+  "servers": ["1.1.1.1", "1.0.0.1"]
+}

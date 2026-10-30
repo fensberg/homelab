@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"homelab/details/facts"
 )
 
 // Object is one thing a cluster holds, as Kubernetes writes it.
@@ -520,11 +522,12 @@ func Unmarshal(raw []byte) (Snapshot, error) {
 // Unschedulable is the field of a node that says it takes no new work, and
 // UntrustedZone the label and taint every machine in an untrusted zone
 // carries, whose value is the zone. Both are the cluster's words, read here
-// and by whatever marks or finds such a machine.
+// and by whatever marks or finds such a machine; the zone's are the fact
+// config/facts/untrusted-zone.json, which the machine is made from too.
 const (
 	Unschedulable = "unschedulable"
-	UntrustedZone = "untrusted-zone"
+	UntrustedZone = facts.UntrustedZoneKey
 	// NotYetClean is the taint a machine in an untrusted zone joins with
 	// and keeps until its clean snapshot has been taken.
-	NotYetClean = UntrustedZone + "/not-yet-clean"
+	NotYetClean = facts.UntrustedZoneNotYetClean
 )

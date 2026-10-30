@@ -1,9 +1,0 @@
-guard: TestEverySupplierGivesAReason
-file: scripts/approved-suppliers.yml
-find: "    reason: The operator running the state database."
-replace: '    reason: ""'
-mentions: "no reason given"
-why: >
-  An entry with no reason is the supply chain widened without anybody
-  saying why. The list stops being a decision and becomes a record of
-  whatever was convenient.

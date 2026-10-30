@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_zone_dedication
+file: config/facts/untrusted-zone.json
+find: '"not_yet_clean": "untrusted-zone/not-yet-clean"'
+replace: '"not_yet_clean": "untrusted-zone"'
+mentions: "would lift what keeps other work off the machine too"
+why: >
+  The not-yet-clean taint is lifted by its key once the machine is clean.
+  Given the zone's own key, that lifts the dedication with it, and the
+  machine takes any work from then on.

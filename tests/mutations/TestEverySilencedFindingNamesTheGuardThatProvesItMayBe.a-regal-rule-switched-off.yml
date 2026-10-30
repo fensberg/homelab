@@ -1,0 +1,9 @@
+guard: TestEverySilencedFindingNamesTheGuardThatProvesItMayBe
+file: .regal/config.yaml
+find: "      max-line-length: 645\n"
+replace: "      max-line-length: 645\n  bugs:\n    rule-shadows-builtin:\n      level: ignore\n"
+mentions: "names no guard"
+why: >
+  Regal switches a rule off by giving it a level of ignore, not by setting
+  it to false. A guard that only knew the second would let the linter be
+  turned off rule by rule, quietly, with no reason anyone has to prove.

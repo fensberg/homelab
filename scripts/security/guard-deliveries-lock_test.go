@@ -100,6 +100,12 @@ func TestEveryWayALockDriftsIsRefused(t *testing.T) {
 		"one name declared as two kinds": {
 			strings.Replace(lockSuppliers, "\nhooks:", "  - source: somebody/checkov\n    version: CHECKOV_VERSION\n    fetch: https://example.com/checkov\n\nhooks:", 1),
 			lockVersions, goodLock, "checkov is declared as both"},
+		"a package two tools lock apart": {
+			lockSuppliers, lockVersions, strings.Replace(goodLock, "pre-commit==4.6.2 --hash=sha256:"+hashC+"\n", "pre-commit==4.6.2 --hash=sha256:"+hashC+"\npyyaml==6.0.2 --hash=sha256:"+hashD+"\n", 1),
+			"pyyaml is locked differently by tools installed together (6.0.2 for pre-commit; 6.0.3 for checkov)"},
+		"a package two tools lock at one version with other hashes": {
+			lockSuppliers, lockVersions, strings.Replace(goodLock, "pre-commit==4.6.2 --hash=sha256:"+hashC+"\n", "pre-commit==4.6.2 --hash=sha256:"+hashC+"\npyyaml==6.0.3 --hash=sha256:"+hashD+"\n", 1),
+			"pyyaml is locked differently"},
 		"a section never closed": {
 			lockSuppliers, lockVersions, strings.TrimSuffix(goodLock, "# [end]\n"), "never closed"},
 		"no lock at all": {
@@ -144,18 +150,6 @@ func TestPythonNamesAreNormalisedTheWayTheLockWritesThem(t *testing.T) {
 func TestTheExplanationSaysHowToOrderAgain(t *testing.T) {
 	if !strings.Contains(explainDeliveriesLock([]string{"x"}), "task order-deliveries") {
 		t.Fatal("the refusal must name the command that fixes it")
-	}
-}
-
-func TestParsingRefusesAMalformedLock(t *testing.T) {
-	for _, body := range []string{
-		"# [end]\n",
-		"# [pypi: a A_VERSION=1]\n# [pypi: b B_VERSION=1]\n",
-		"# [pypi: a A_VERSION=1]\na==1 --hash=sha256:x\n# [end]\n# [pypi: a A_VERSION=1]\n# [end]\n",
-	} {
-		if _, err := parseDeliveriesLock(body); err == nil {
-			t.Errorf("want a refusal for:\n%s", body)
-		}
 	}
 }
 

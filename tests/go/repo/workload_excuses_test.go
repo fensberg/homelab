@@ -1,9 +1,8 @@
 package repo
 
 import (
-	"errors"
-	"io"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -17,42 +16,6 @@ import (
 // silencing gives a reason about the workloads. A reason about a workload
 // stops being true when the workload changes, and nothing reads the reason
 // when it does. These read the workloads instead.
-
-// A connection string written in the code carries no credential of its own.
-//
-// A secrets scanner reads `scheme://user:password@host` as a credential, and
-// is told not to where the string is a format: every part filled in when it
-// runs, from a value that came out of the vault. So wherever a connection
-// string with a user part is written, the user part is placeholders and
-// nothing else.
-func TestAConnectionStringInTheCodeCarriesNoCredentialOfItsOwn(t *testing.T) {
-	written := regexp.MustCompile(`[a-z][a-z0-9+.-]*://([^/"'\s@]+)@`)
-	placeholder := regexp.MustCompile(`^(%[sdvq]|\$\{[^}]+\})(:(%[sdvq]|\$\{[^}]+\}))?$`)
-	found := 0
-	for _, rel := range trackedFiles(t) {
-		if !strings.HasSuffix(rel, ".tf") && !strings.HasSuffix(rel, ".go") || strings.HasSuffix(rel, "_test.go") {
-			continue
-		}
-		for i, line := range strings.Split(readRepoFile(t, rel), "\n") {
-			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "//") {
-				continue
-			}
-			for _, m := range written.FindAllStringSubmatch(line, -1) {
-				found++
-				if !placeholder.MatchString(m[1]) {
-					t.Errorf("%s:%d writes a connection string whose user part is not a placeholder.\n\n"+
-						"A secrets scanner is silenced on strings of this shape on the ground that they are "+
-						"formats. One with a name or a password written into it is the thing the scanner is for.",
-						rel, i+1)
-				}
-			}
-		}
-	}
-	if found == 0 {
-		t.Fatal("found no connection string with a user part, so nothing was checked and a silencing rests on nothing")
-	}
-}
 
 // workload is one container of one workload this repository's own manifests
 // declare.
@@ -73,19 +36,7 @@ func ourWorkloads(t *testing.T) (containers []workloadContainer, selectors []map
 		if vendored[rel] || !strings.HasSuffix(rel, ".yaml") && !strings.HasSuffix(rel, ".yml") || strings.HasPrefix(rel, ".github/") || testMaterial.MatchString(rel) {
 			continue
 		}
-		dec := yaml.NewDecoder(strings.NewReader(readRepoFile(t, rel)))
-		for {
-			var doc yaml.Node
-			err := dec.Decode(&doc)
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			if err != nil {
-				t.Fatalf("%s does not parse as YAML, so the workloads in it were not read: %v", rel, err)
-			}
-			if len(doc.Content) == 0 {
-				continue
-			}
+		for _, doc := range repository(t).YAMLNodes(t, rel) {
 			root := doc.Content[0]
 			kind := mappingValue(root, "kind")
 			if kind == nil {
@@ -144,6 +95,7 @@ func stringMap(n *yaml.Node) map[string]string {
 // is a neighbour evicted. So where there is no CPU limit, those two are
 // there.
 func TestAContainerWithNoCPULimitReservesCPUAndIsLimitedInMemory(t *testing.T) {
+	light(t)
 	containers, _ := ourWorkloads(t)
 	var failures []string
 	for _, c := range containers {
@@ -175,16 +127,25 @@ func TestAContainerWithNoCPULimitReservesCPUAndIsLimitedInMemory(t *testing.T) {
 // repository's own is a Secret: every one a workload names is written into
 // the cluster by OpenTofu, from the vault.
 func TestNoSecretIsWrittenInTheTree(t *testing.T) {
-	tracked := trackedFiles(t)
+	light(t)
+	tree := repository(t)
+	tracked := tree.Files(t)
 	vendored := vendoredFiles(t, tracked)
-	kind := regexp.MustCompile(`(?m)^kind:\s*Secret\s*$`)
 	read := 0
 	for _, rel := range tracked {
 		if vendored[rel] || !strings.HasSuffix(rel, ".yaml") && !strings.HasSuffix(rel, ".yml") || testMaterial.MatchString(rel) {
 			continue
 		}
 		read++
-		if kind.MatchString(readRepoFile(t, rel)) {
+		docs, isYAML := tree.MaybeYAML(t, rel)
+		if !isYAML {
+			continue // not a manifest at all; the YAML lint owns that
+		}
+		isSecret := slices.ContainsFunc(docs, func(d any) bool {
+			m, _ := d.(map[string]any)
+			return m["kind"] == "Secret"
+		})
+		if isSecret {
 			t.Errorf("%s is a Secret, written in the repository.\n\n"+
 				"A secret a workload reads comes from the vault, through a Secret OpenTofu writes. "+
 				"One in git is public, and a scanner is silenced about how secrets reach a workload "+
@@ -206,11 +167,15 @@ func TestNoSecretIsWrittenInTheTree(t *testing.T) {
 // this repository cannot see, and may be somewhere a HEALTHCHECK is all there
 // is.
 func TestEveryImageBuiltHereIsRunByAManifestHere(t *testing.T) {
-	tracked := trackedFiles(t)
-	var manifests strings.Builder
+	light(t)
+	tree := repository(t)
+	tracked := tree.Files(t)
+	var images []string
 	for _, rel := range tracked {
 		if (strings.HasSuffix(rel, ".yaml") || strings.HasSuffix(rel, ".yml")) && !strings.HasPrefix(rel, ".github/") && !testMaterial.MatchString(rel) {
-			manifests.WriteString(stripYAMLComments(readRepoFile(t, rel)))
+			if docs, isYAML := tree.MaybeYAML(t, rel); isYAML {
+				images = append(images, scalarsAt(docs, "image")...)
+			}
 		}
 	}
 
@@ -229,7 +194,7 @@ func TestEveryImageBuiltHereIsRunByAManifestHere(t *testing.T) {
 			name = parent[strings.LastIndex(parent, "/")+1:]
 		}
 		name = strings.TrimSuffix(name, "-image")
-		if !regexp.MustCompile(`image:\s*\S*-` + regexp.QuoteMeta(name) + `[@:]`).MatchString(manifests.String()) {
+		if !slices.ContainsFunc(images, regexp.MustCompile(`^\S*-`+regexp.QuoteMeta(name)+`[@:]`).MatchString) {
 			t.Errorf("%s builds an image named for %q, and no manifest here runs one.\n\n"+
 				"Checkov is told not to ask for a HEALTHCHECK because everything built here runs under "+
 				"Kubernetes, whose probes are in the manifest. An image nothing here runs is not known to.",

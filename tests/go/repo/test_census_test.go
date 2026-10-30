@@ -1,10 +1,11 @@
 package repo
 
 import (
-	"encoding/json"
 	"fmt"
+	"github.com/hashicorp/hcl/v2/hclsyntax"
+	"go/ast"
+	"go/token"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -40,25 +41,31 @@ import (
 // count; that is a decision worth writing down rather than a failure. What the
 // floor makes impossible is the count dropping and nobody noticing.
 
-var testDeclaration = regexp.MustCompile(`(?m)^func (Test|Benchmark)[A-Z_]`)
+var testDeclaration = regexp.MustCompile(`^(Test|Benchmark)[A-Z_]`)
 
 // Fuzz targets are counted as their own tier rather than folded into the one
 // they happen to live in. They answer a different question - what happens on
 // input nobody thought of - and their number is exactly the kind that goes
 // quietly to zero, because deleting a fuzz target looks like tidying up a test
 // that never fails.
-var fuzzDeclaration = regexp.MustCompile(`(?m)^func Fuzz[A-Z_]`)
+var fuzzDeclaration = regexp.MustCompile(`^Fuzz[A-Z_]`)
 
-var buildTag = regexp.MustCompile(`(?m)^//go:build\s+([a-z0-9_]+)`)
+var buildTag = regexp.MustCompile(`^//go:build\s+([a-z0-9_]+)`)
 
 // tier decides which tier a Go test file belongs to. A build tag wins, because
 // that is what actually decides whether the file compiles into a run.
-func tierOf(rel string, body []byte) string {
-	if m := buildTag.FindSubmatch(body); m != nil {
-		tag := string(m[1])
-		switch tag {
-		case "integration", "api", "e2e":
-			return tag
+func tierOf(rel string, f *ast.File) string {
+	for _, g := range f.Comments {
+		if g.Pos() > f.Package {
+			break // a build constraint comes before the package clause
+		}
+		for _, c := range g.List {
+			if m := buildTag.FindStringSubmatch(c.Text); m != nil {
+				switch m[1] {
+				case "integration", "api", "e2e":
+					return m[1]
+				}
+			}
 		}
 	}
 	if strings.HasPrefix(rel, "scripts/") {
@@ -72,59 +79,66 @@ func tierOf(rel string, body []byte) string {
 
 func census(t *testing.T) map[string]int {
 	t.Helper()
-	root := repoRoot(t)
+	tree := repository(t)
 	counts := map[string]int{}
 
 	for _, rel := range tracked(t, func(rel string) bool {
 		return strings.HasSuffix(rel, "_test.go")
 	}) {
-		body, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatalf("reading %s: %v", rel, err)
+		f := tree.Go(t, token.NewFileSet(), rel)
+		tier := tierOf(rel, f)
+		for _, d := range f.Decls {
+			fn, ok := d.(*ast.FuncDecl)
+			if !ok || fn.Recv != nil {
+				continue
+			}
+			if tier != "" && testDeclaration.MatchString(fn.Name.Name) {
+				counts[tier]++
+			}
+			// Wherever it lives. A fuzz target beside the unit tests is still a
+			// fuzz target, and the interesting number is how many exist at all.
+			if fuzzDeclaration.MatchString(fn.Name.Name) {
+				counts["fuzz"]++
+			}
 		}
-		if tier := tierOf(rel, body); tier != "" {
-			counts[tier] += len(testDeclaration.FindAll(body, -1))
-		}
-		// Wherever it lives. A fuzz target beside the unit tests is still a
-		// fuzz target, and the interesting number is how many exist at all.
-		counts["fuzz"] += len(fuzzDeclaration.FindAll(body, -1))
 	}
 
-	// JavaScript, where a test is an `it(` or a `test(` call.
-	jsCase := regexp.MustCompile(`(?m)^\s*(it|test)\s*\(`)
-	for _, rel := range tracked(t, func(rel string) bool {
+	// JavaScript, where a test is an `it(` or a `test(` call, found by Semgrep.
+	js := tracked(t, func(rel string) bool {
 		return strings.HasPrefix(rel, "tests/js/") &&
 			(strings.HasSuffix(rel, ".test.ts") || strings.HasSuffix(rel, ".spec.ts"))
-	}) {
-		body, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatalf("reading %s: %v", rel, err)
-		}
-		counts["js"] += len(jsCase.FindAll(body, -1))
+	})
+	cases := map[string]any{
+		"id": "a-case", "languages": []string{"generic"}, "severity": "INFO",
+		"message": "case", "metadata": map[string]any{"about": "case"},
+		"pattern-regex": `(?m)^[ \t]*(?:it|test)[ \t]*\(`,
 	}
+	counts["js"] += len(scanText(t, tree, []map[string]any{cases}, js))
 
 	// OpenTofu, where a test is a run block.
-	runBlock := regexp.MustCompile(`(?m)^run\s+"`)
 	for _, rel := range tracked(t, func(rel string) bool {
 		return strings.HasSuffix(rel, ".tftest.hcl")
 	}) {
-		body, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatalf("reading %s: %v", rel, err)
+		body, ok := tree.HCL(t, rel).Body.(*hclsyntax.Body)
+		if !ok {
+			t.Fatalf("%s is not native HCL syntax", rel)
 		}
-		counts["tofu"] += len(runBlock.FindAll(body, -1))
+		for _, b := range body.Blocks {
+			if b.Type == "run" {
+				counts["tofu"]++
+			}
+		}
 	}
 
 	return counts
 }
 
 func TestNoTierQuietlyLosesTests(t *testing.T) {
+	heavy(t, "the census asks semgrep for the JavaScript cases, a few seconds")
 	var baseline struct {
 		Tiers map[string]int `json:"tiers"`
 	}
-	if err := json.Unmarshal([]byte(readRepoFile(t, "tests/coverage-baseline.json")), &baseline); err != nil {
-		t.Fatalf("parsing tests/coverage-baseline.json: %v", err)
-	}
+	repository(t).JSONInto(t, "tests/coverage-baseline.json", &baseline)
 	if len(baseline.Tiers) == 0 {
 		t.Fatal(`tests/coverage-baseline.json declares no tier floors, so nothing stops a whole tier being deleted`)
 	}
@@ -198,13 +212,18 @@ tier that is hard to write quietly stops being written.`, tier, counts[tier], fl
 // will produce them. What this makes impossible is a pillar that exists and is
 // not written down, which is the half that is mechanisable.
 func TestTheDeclaredTiersAreTheMeasuredOnes(t *testing.T) {
-	readme := readRepoFile(t, "tests/README.md")
-
+	heavy(t, "the census asks semgrep for the JavaScript cases, a few seconds")
 	// The bold name in the first column of the tiers table.
-	rows := regexp.MustCompile(`(?m)^\|\s*\*\*([a-z0-9-]+)\*\*\s*\|`).FindAllStringSubmatch(readme, -1)
+	bold := regexp.MustCompile(`^\*\*([a-z0-9-]+)\*\*$`)
 	declared := map[string]bool{}
-	for _, m := range rows {
-		declared[m[1]] = true
+	for _, table := range repository(t).MarkdownTables(t, "tests/README.md") {
+		for _, row := range table {
+			if len(row) > 0 {
+				if m := bold.FindStringSubmatch(row[0]); m != nil {
+					declared[m[1]] = true
+				}
+			}
+		}
 	}
 
 	const atLeastFiveTiers = 5
@@ -220,9 +239,7 @@ claims to check - which looks exactly like a repository whose tiers all agree.`,
 	var baseline struct {
 		Tiers map[string]int `json:"tiers"`
 	}
-	if err := json.Unmarshal([]byte(readRepoFile(t, "tests/coverage-baseline.json")), &baseline); err != nil {
-		t.Fatalf("parsing tests/coverage-baseline.json: %v", err)
-	}
+	repository(t).JSONInto(t, "tests/coverage-baseline.json", &baseline)
 
 	counts := census(t)
 

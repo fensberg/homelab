@@ -1,0 +1,17 @@
+guard: TestOnlyTheSelectorsReadTheInput
+file: policy/conftest/planted.rego
+create: |
+  package rules.planted
+
+  import rego.v1
+
+  deny contains msg if {
+  	some f in input
+  	f.path == "taskfile.yml"
+  	msg := "planted"
+  }
+mentions: "names the input 1 time(s)"
+why: >
+  A rule that picks its own files by path reads a place no selector names, so
+  no proof can show it reads what it was written for, and a rule narrowed by
+  accident goes on passing.

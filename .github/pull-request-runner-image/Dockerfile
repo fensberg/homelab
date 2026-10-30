@@ -70,7 +70,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # Unpinned for the reason .github/runner-image/Dockerfile gives - the archive
 # keeps only the current version of a package - and on a base that cannot
 # move.
-# proved by TestAnImageThatInstallsUnpinnedPackagesStartsFromAPinnedBase
+# proved by TestTheConfigurationRulesHold (policy/conftest/rules/image_bases/image_bases.rego)
 # hadolint ignore=DL3008
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -127,7 +127,7 @@ RUN --mount=type=bind,from=reads,target=/reads \
         kubectl kubernetes kustomize kwokctl opentofu pre-commit pre-commit-hooks shellcheck zizmor
 
 # Each one runs, as the account a job runs as, before the image is published.
-RUN for b in go node git envsubst tofu checkov codespell etcd hadolint kube-apiserver kube-scheduler \
-        kubeconform kubectl kustomize kwokctl pre-commit shellcheck zizmor; do \
+RUN for b in go node git envsubst tofu checkov codespell conftest etcd hadolint kube-apiserver kube-scheduler \
+        kubeconform kubectl kustomize kwokctl opa pre-commit regal semgrep shellcheck zizmor; do \
         command -v "$b" >/dev/null || { echo "missing: $b"; exit 1; }; \
     done

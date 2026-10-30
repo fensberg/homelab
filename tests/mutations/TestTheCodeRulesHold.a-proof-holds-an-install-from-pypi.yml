@@ -1,0 +1,9 @@
+guard: TestTheCodeRulesHold
+rule: nothing-installs-from-pypi-outside-take-delivery
+file: policy/semgrep/deliveries.yml
+find: "        - /scripts/take-delivery.sh\n        - /tests/mutations/\n"
+replace: "        - /scripts/take-delivery.sh\n"
+mentions: "installs from a Python package index outside scripts/take-delivery.sh"
+why: >
+  The ledger's proofs hold the broken forms of what guards refuse, installs
+  from the index among them; without the exclusion the rule refuses them.

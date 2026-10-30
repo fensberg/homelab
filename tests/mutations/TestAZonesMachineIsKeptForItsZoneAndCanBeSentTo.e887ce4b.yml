@@ -1,9 +1,0 @@
-guard: TestAZonesMachineIsKeptForItsZoneAndCanBeSentTo
-file: modules/infrastructure/cluster/talos.tf
-find: 'labels = { "untrusted-zone" = v.zone }'
-replace: 'labels = { "zone" = v.zone }'
-mentions: "cannot be sent there"
-why: >
-  Work meant for an untrusted zone selects the zone's machine by this
-  label. Without it a pod that tolerates the taint lands wherever there
-  is room, which is a machine the estate trusts.

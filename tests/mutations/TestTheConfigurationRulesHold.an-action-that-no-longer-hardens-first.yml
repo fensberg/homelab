@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+rule: job_hardening
+file: .github/workflows/mobilize/action.yml
+find: "      uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1\n"
+replace: "      uses: step-security/harden-runner-fork@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1\n"
+mentions: "whose own first step is"
+why: >
+  A job that begins with the shared action is hardened only while the action
+  begins with harden-runner; the action is where that is kept.

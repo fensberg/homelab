@@ -43,7 +43,9 @@ concurrency:
 
 # GitHub's default shell for `run:` is `bash -e {0}`, which has no pipefail: in
 # `a | b` only b's exit status counts, so a failing command feeding a working
-# one is a green step. tests/go/repo/pipefail_test.go asserts this is present.
+# one is a green step.
+# policy/conftest/rules/workflow_pipefail/workflow_pipefail.rego asserts this
+# is present.
 defaults:
   run:
     shell: bash
@@ -51,7 +53,7 @@ defaults:
 jobs:
   tally:
     name: What this change takes away
-    runs-on: ubuntu-latest
+    runs-on: pr-packages-${{ vars.pull_request_runners_site }}
     timeout-minutes: 5
     steps:
       # Full history: the tally compares two commits, and a shallow clone has

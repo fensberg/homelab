@@ -1,0 +1,9 @@
+guard: TestEveryCoverageFloorIsOneALaneMeasures
+file: .github/workflows/pr-validation.yml
+find: 'bash scripts/coverage-gate.sh "go/tests-helpers" "$pct"'
+replace: 'echo "go/tests-helpers $pct"'
+mentions: 'holds a floor for "go/tests-helpers", and no workflow step hands it'
+why: >
+  A floor no lane measures holds what it names to nothing, and its absence
+  looks like health: the guards' helpers sat unmeasured in CI this way
+  (#792).

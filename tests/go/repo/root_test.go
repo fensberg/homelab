@@ -2,14 +2,11 @@ package repo
 
 import (
 	list "homelab/details/suppliers"
-	"os"
 	"path"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 // Every job says whether it keeps root, and no job claims a protection its
@@ -42,31 +39,22 @@ type egressRoot struct {
 }
 
 func TestEveryJobSaysWhetherItKeepsRoot(t *testing.T) {
-	root := repoRoot(t)
+	light(t)
+	tree := repository(t)
 
-	selfHosted := selfHostedLabels(t, root)
+	selfHosted := selfHostedLabels(t)
 
 	var suppliers egressRoot
-	body, err := os.ReadFile(filepath.Join(root, "scripts", "approved-suppliers.yml"))
-	if err != nil {
-		t.Fatalf("reading scripts/approved-suppliers.yml: %v", err)
-	}
-	if err := yaml.Unmarshal(body, &suppliers); err != nil {
-		t.Fatalf("parsing scripts/approved-suppliers.yml: %v", err)
-	}
+	tree.YAMLInto(t, "scripts/approved-suppliers.yml", &suppliers)
 	declared := map[string]struct{ policy, root string }{}
 	for _, e := range suppliers.Egress {
 		declared[e.Job] = struct{ policy, root string }{e.Policy, strings.TrimSpace(e.Root)}
 	}
 
 	jobs, disabled := 0, 0
-	for _, rel := range trackedFilesIn(t, root) {
-		if !authoredHere(rel) || !runnable(rel) || filepath.Base(rel) == "action.yml" {
+	for _, rel := range tree.Files(t) {
+		if !authoredHere(t, rel) || !runnable(rel) || filepath.Base(rel) == "action.yml" {
 			continue
-		}
-		wf, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatalf("reading %s: %v", rel, err)
 		}
 		var doc struct {
 			Jobs map[string]struct {
@@ -75,9 +63,7 @@ func TestEveryJobSaysWhetherItKeepsRoot(t *testing.T) {
 				Steps     []map[string]any `yaml:"steps"`
 			} `yaml:"jobs"`
 		}
-		if err := yaml.Unmarshal(wf, &doc); err != nil {
-			t.Fatalf("parsing %s: %v", rel, err)
-		}
+		tree.YAMLInto(t, rel, &doc)
 		var names []string
 		for n := range doc.Jobs {
 			names = append(names, n)
@@ -176,20 +162,14 @@ disable-sudo-and-containers: "true".`, key)
 }
 
 // selfHostedLabels reads the runner labels .github/actionlint.yaml declares.
-func selfHostedLabels(t *testing.T, root string) map[string]bool {
+func selfHostedLabels(t *testing.T) map[string]bool {
 	t.Helper()
-	body, err := os.ReadFile(filepath.Join(root, ".github", "actionlint.yaml"))
-	if err != nil {
-		t.Fatalf("reading .github/actionlint.yaml: %v", err)
-	}
 	var doc struct {
 		SelfHosted struct {
 			Labels []string `yaml:"labels"`
 		} `yaml:"self-hosted-runner"`
 	}
-	if err := yaml.Unmarshal(body, &doc); err != nil {
-		t.Fatalf("parsing .github/actionlint.yaml: %v", err)
-	}
+	repository(t).YAMLInto(t, ".github/actionlint.yaml", &doc)
 	if len(doc.SelfHosted.Labels) == 0 {
 		t.Fatal(".github/actionlint.yaml declares no self-hosted runner, and the deploy jobs use one - the read has stopped matching")
 	}

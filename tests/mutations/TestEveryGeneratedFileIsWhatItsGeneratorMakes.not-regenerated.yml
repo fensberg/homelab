@@ -1,0 +1,9 @@
+guard: TestEveryGeneratedFileIsWhatItsGeneratorMakes
+file: config/facts/untrusted-zone.json
+find: '"key": "untrusted-zone"'
+replace: '"key": "zone"'
+mentions: "does not give what is committed"
+why: >
+  A fact changed and not regenerated leaves the Go saying the old value
+  while OpenTofu reads the new: the machine is tainted with one key and
+  the program that lifts its taint looks for another.

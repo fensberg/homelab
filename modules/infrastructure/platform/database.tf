@@ -57,6 +57,12 @@ resource "kubernetes_secret" "object_storage_credentials" {
   }
 }
 
+locals {
+  # The keys a machine in an untrusted zone is known by, written once for
+  # every language that names them.
+  untrusted_zone = jsondecode(file("${path.module}/../../../config/facts/untrusted-zone.json"))
+}
+
 # Non-secret-but-not-in-git values that the Flux Kustomizations substitute into
 # the manifests at reconcile time (postBuild.substituteFrom). This is how the
 # bucket name and account-specific endpoint stay out of the repository.
@@ -84,6 +90,10 @@ resource "kubernetes_secret" "cluster_vars" {
     # in it that differs by site is one of these.
     SITE        = var.site
     GITOPS_PATH = local.gitops_path
+
+    # The key a machine in an untrusted zone is labelled and tainted by, for
+    # the queries that tell such a machine from the estate's own.
+    UNTRUSTED_ZONE = local.untrusted_zone.key
 
     OBJECT_STORAGE_BUCKET   = local.object_storage.database.bucket
     OBJECT_STORAGE_ENDPOINT = local.object_storage_endpoint
@@ -127,7 +137,7 @@ output "state_conn_str" {
   # scanner looks one line back, not at the enclosing block, which is why the
   # first attempt at this was ignored.
   value = format(
-    # checkov:skip=CKV_SECRET_4:a format, proved by TestAConnectionStringInTheCodeCarriesNoCredentialOfItsOwn
+    # checkov:skip=CKV_SECRET_4:a format, proved by TestTheCodeRulesHold (policy/semgrep/credentials.yml)
     "postgres://%s:%s@%s:%d/%s?sslmode=require",
     local.state_db_owner,
     urlencode(local.site_database.password),

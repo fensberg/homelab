@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+rule: supplier_images
+file: scripts/approved-suppliers.yml
+find: "  - host: ghcr.io\n"
+replace: "  - host: ghcr.example\n"
+mentions: 'comes from "ghcr.io", which is not an approved supplier'
+why: >
+  An image is only taken from a registry the list declares. One taken off it
+  and still pulled from is a supplier nobody approved.

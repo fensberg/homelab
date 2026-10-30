@@ -1,0 +1,41 @@
+# Terratest never prints the estate's outputs.
+#
+# Terratest's default logger prints the output of every command it runs. The
+# estate's OpenTofu root is the estate, so its outputs are estate values -
+# kubeconfigs, connection strings, addresses - and the integration tier runs in
+# a public repository's Actions log. On 2026-09-21 the tier published a
+# cluster-admin kubeconfig and the state database's connection string with
+# its password (#491). Nobody chose to print them: the options simply did not
+# set a Logger, and the default prints.
+#
+# Two properties, because either alone is escapable: the options are built in
+# one place, tests/go/harness, and that place silences the logger.
+rules:
+  - id: terraform-options-are-built-in-the-harness
+    languages: [go]
+    severity: ERROR
+    message: >-
+      builds its own terraform.Options. They are built in tests/go/harness so
+      that one place decides the logger, and Terratest's default prints every
+      command's output - which is how a cluster-admin kubeconfig and the state
+      database password reached a public Actions log (#491). Use
+      harness.TofuOptions.
+    pattern: terraform.Options{...}
+    paths:
+      include: [/tests/go/]
+      exclude: [/tests/go/harness/]
+
+  - id: the-harness-silences-terratests-logger
+    languages: [go]
+    severity: INFO
+    message: the harness's options discard Terratest's log
+    metadata:
+      presence: >-
+        tests/go/harness/tofu.go does not set Logger: logger.Discard on the
+        options it builds, and Terratest's default logger prints the output of
+        every command - this root's outputs include the cluster kubeconfig and the
+        state database connection string (#491)
+    pattern: |
+      terraform.Options{..., Logger: logger.Discard, ...}
+    paths:
+      include: [/tests/go/harness/tofu.go]

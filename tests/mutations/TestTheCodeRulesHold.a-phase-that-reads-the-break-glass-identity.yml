@@ -1,0 +1,10 @@
+guard: TestTheCodeRulesHold
+rule: the-break-glass-identity-is-read-only-by-the-restore-path
+file: scripts/contractor/internal/phases/hardware.go
+reads_source: true
+find: "	authority, err := onepassword.Read(hypervisorapi.AuthorityRef(ctx.Site))"
+replace: "	authority, err := onepassword.Read(BackupIdentityRef)"
+mentions: "reads the break-glass identity from the vault. Nothing here may"
+why: >
+  A phase of the ignition sequence that holds the private half could decrypt
+  the backups it is writing. The restore path takes it on stdin, from the person restoring; nothing reads it from a vault.

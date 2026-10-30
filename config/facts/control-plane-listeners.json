@@ -1,0 +1,40 @@
+{
+  "_comment": [
+    "Every listener the machine configuration opens off a control plane,",
+    "and how the integration tier confirms it is open. The cluster module",
+    "gives each component the argument with the value; the tier dials the",
+    "port, the component's own default, and where the endpoint serves",
+    "without a credential reads the metric. A listener declared and not",
+    "dialled is how etcd's metrics port sat unopened while the repository",
+    "said otherwise (#493): written once here, the two cannot disagree.",
+    "",
+    "metric is empty where the endpoint authenticates, so reaching the port",
+    "is all the tier can check."
+  ],
+  "opened": [
+    {
+      "component": "etcd",
+      "argument": "listen-metrics-urls",
+      "value": "http://0.0.0.0:2381",
+      "port": "2381",
+      "what": "etcd's metrics listener",
+      "metric": "etcd_server_has_leader"
+    },
+    {
+      "component": "scheduler",
+      "argument": "bind-address",
+      "value": "0.0.0.0",
+      "port": "10259",
+      "what": "the scheduler's metrics listener",
+      "metric": ""
+    },
+    {
+      "component": "controllerManager",
+      "argument": "bind-address",
+      "value": "0.0.0.0",
+      "port": "10257",
+      "what": "the controller-manager's metrics listener",
+      "metric": ""
+    }
+  ]
+}

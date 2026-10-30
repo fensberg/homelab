@@ -155,4 +155,23 @@ describe("the no-self-co-authorship rule and machine accounts", () => {
     expect(report.valid, JSON.stringify(report.errors)).toBe(false);
     expect(report.errors.map((e) => e.name)).toContain("no-self-co-authorship");
   });
+
+  // A proof removed from the ledger is said to be by a trailer on its commit
+  // (#814), and a proof's file name can be most of a line on its own.
+  it("lets a Removes-proof trailer run past the footer limit, and no other footer line", async () => {
+    const name = "TestTheConfigurationRulesHold." + "AVeryLongGuardNameThatTakesMostOfALine".repeat(2) + ".abcd1234.yml";
+    const said = await check(`test: retire a proof\n\nWhy it goes.\n\nRemoves-proof: ${name}: the guard it proved is gone`);
+    expect(said.errors, JSON.stringify(said.errors)).toHaveLength(0);
+    const long = await check(`test: retire a proof\n\nWhy it goes.\n\nRefs: ${"x".repeat(120)}`);
+    expect(long.valid).toBe(false);
+  });
+
+  it.each([
+    ["Removes-proof: AGuard.1.yml:", "no reason"],
+    ["Removes-proof: the guard is gone", "no file"],
+    ["Removes-proof: AGuard.1.txt: not a proof's file", "not a proof's file"],
+  ])("refuses a Removes-proof trailer with %j (%s)", async (trailer) => {
+    const report = await check(`test: retire a proof\n\nWhy it goes.\n\n${trailer}`);
+    expect(report.valid).toBe(false);
+  });
 });

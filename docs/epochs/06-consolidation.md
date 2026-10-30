@@ -234,6 +234,26 @@ Explicitly out of scope (and which epoch owns it instead):
    them, pinned, as a lane of its own, and what its first run finds taken
    out. **The test is a change:** a function added and never called fails
    a pull request.
+6. **No shell is left, and the language is retired with every check that
+   exists for it.** The operator, 2026-10-29: "Ideally there is no shell
+   left in the repo after this and we can deprecate that language and all
+   of its checks." Measured that day: 16 shell files (2,152 lines, the
+   bootstrap, the git hooks and an application image's scripts among them),
+   145 workflow `run:` steps (94 of them more than one line), 83 task
+   commands, 24 Dockerfile `RUN`s, 16 Ansible `shell:` and 76 `command:`
+   tasks, and one `sh -c` in a manifest. Each becomes Go - a verb of an
+   existing program, or a small program of its own - or the shell-free form
+   of its tool: an exec-form `RUN`, an Ansible module or a `command` with
+   `argv`, pre-commit's own hooks calling Go, the workstation's Ansible
+   installing Go in place of the bootstrap stub. Then the Shell Lint lane,
+   `shfmt`, `.shellcheckrc`, the shell reader in `tests/go/parsed` and the
+   guards that read shell text go, and `.sh` is refused in
+   `tests/languages.yml`. The refusal of whole-value string matching in the
+   configuration rules lands with it, since what those rules match today is
+   text inside shell. Open: how a workflow step is free of shell when GitHub
+   runs every `run:` with bash - a one-line call with bash only launching
+   it, or a `shell:` of the estate's own. **The test is a change:** a shell
+   file, or a step or task that is a shell script, fails a pull request.
 
 ### The contractor gives way to standard tools
 
@@ -656,7 +676,15 @@ operator, and is #688.
 
 ### A candidate: one versions file that everything reads, and Renovate driving it
 
-**Not decided.** From [ionfury/homelab](https://github.com/ionfury/homelab),
+**Decided against, 2026-10-29.** One file of every version is not a
+standard: each ecosystem keeps its own manifest, Renovate updates each where
+it is, and a value repeated inside one tool is said once by that tool's own
+mechanism. The operator: "drop the custom file, and use each tool's own
+mechanism." What repeats today is #842. `scripts/versions.env` stays the
+tools file, read by Renovate through its annotations. The note below is
+kept as it was read.
+
+**Not decided** (as read on 2026-09-11). From [ionfury/homelab](https://github.com/ionfury/homelab),
 read at `150097e` on 2026-09-11.
 
 Their `versions.env` is genuinely single: their OpenTofu reads it for Talos,

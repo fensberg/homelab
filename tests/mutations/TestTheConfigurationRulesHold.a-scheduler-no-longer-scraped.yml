@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_control_plane_metrics
+file: clusters/core/infrastructure/controllers/kube-prometheus-stack.yaml
+find: "    kubeScheduler:\n      enabled: true\n"
+replace: "    kubeScheduler:\n      enabled: false\n"
+mentions: "and the chart does not scrape kubeScheduler"
+why: >
+  The rule reads the monitoring stack's HelmRelease, wherever it lives, by
+  what it is. A scrape switched off leaves a port open on every control-
+  plane node with nothing reading it.

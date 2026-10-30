@@ -1,8 +1,0 @@
-guard: TestEveryMachineIsToldTheClustersNetwork
-file: modules/infrastructure/cluster/talos.tf
-find: "  # not `allowSchedulingOnControlPlanes`, which only a control plane reads.\n  config_patches = concat([local.cluster_network_patch], local.machine_patches[each.key])"
-replace: "  # not `allowSchedulingOnControlPlanes`, which only a control plane reads.\n  config_patches = local.machine_patches[each.key]"
-mentions: "is not given local.cluster_network_patch"
-why: >
-  A worker without the cluster's network points its pods at Talos's default
-  DNS address, and nothing on it can resolve a name (#578).

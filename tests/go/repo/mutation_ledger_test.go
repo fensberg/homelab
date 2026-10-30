@@ -1,17 +1,18 @@
 package repo
 
 import (
+	"flag"
+	"fmt"
+	"hash/fnv"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"sort"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 
-	"gopkg.in/yaml.v3"
-
-	"homelab/details/applications"
+	"homelab/tests/parsed"
 )
 
 // Proof, committed, that each guard fails when the thing it guards is broken.
@@ -36,40 +37,13 @@ import (
 // See the header of tests/mutations.yml. If one of these fails, the answer is
 // almost never to edit the ledger.
 
-type mutation struct {
-	Guard string `yaml:"guard"`
-	File  string `yaml:"file"`
-	// Test is, in an application's own ledger, which of the application's
-	// tests must be the one that failed: the guard there is the one that
-	// runs them all.
-	Test     string `yaml:"test"`
-	Find     string `yaml:"find"`
-	Replace  string `yaml:"replace"`
-	Create   string `yaml:"create"`
-	Mentions string `yaml:"mentions"`
-	Why      string `yaml:"why"`
-	// ReadsSource opts a Go target in, for the one kind of guard the blanket
-	// refusal below gets wrong. See the refusal for why the default stays no.
-	ReadsSource bool `yaml:"reads_source"`
-}
-
-// creates reports whether the entry proves a guard by adding a file rather
-// than by editing one.
-//
-// Some guards only have anything to say when something is present - the
-// outstanding-patch check is the example, and it skips entirely when no patch
-// is outstanding, which is the normal state. A substitution cannot reach that:
-// there is nothing in the tree to substitute. So an entry may instead plant
-// the thing the guard exists to catch.
-func (m mutation) creates() bool { return strings.TrimSpace(m.Create) != "" }
+// mutation is a ledger's proof, as parsed reads it: only a proof read from a
+// ledger may be placed in a file or applied to a copy.
+type mutation = parsed.Proof
 
 type ledger struct {
-	Floor            int        `yaml:"floor"`
-	Mutations        []mutation `yaml:"mutations"`
-	CommentDependent []struct {
-		Test   string `yaml:"test"`
-		Reason string `yaml:"reason"`
-	} `yaml:"comment_dependent"`
+	Floor     int        `yaml:"floor"`
+	Mutations []mutation `yaml:"mutations"`
 }
 
 // applicationLedger is where an application keeps the proofs that are about
@@ -86,25 +60,16 @@ const applicationLedger = applicationTestsDir + "/mutations.yml"
 // directory would vanish with the application and take the proof with it.
 func applicationMutations(t *testing.T) []mutation {
 	t.Helper()
-	root := repoRoot(t)
-	apps, err := applications.Read(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	tree := repository(t)
 	var out []mutation
-	for _, a := range apps {
+	for _, a := range tree.Applications(t) {
 		rel := a.Root + "/" + applicationLedger
-		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
-		if os.IsNotExist(err) {
+		if !tree.Exists(rel) {
 			continue // an application with no proofs of its own
 		}
-		if err != nil {
-			t.Fatalf("reading %s: %v", rel, err)
-		}
 		var l ledger
-		if err := yaml.Unmarshal(body, &l); err != nil {
-			t.Fatalf("parsing %s: %v", rel, err)
-		}
+		tree.YAMLInto(t, rel, &l)
+		l.Mutations = tree.ProofsIn(t, rel)
 		if len(l.Mutations) < l.Floor {
 			t.Fatalf("%s holds %d entries and its floor is %d. An entry was removed; "+
 				"if a proof genuinely no longer applies, lower the floor in the same diff "+
@@ -146,34 +111,19 @@ func isLedger(rel string) bool {
 
 func readLedger(t *testing.T) ledger {
 	t.Helper()
-	root := repoRoot(t)
-	body, err := os.ReadFile(filepath.Join(root, "tests", "mutations.yml"))
-	if err != nil {
-		t.Fatalf("reading tests/mutations.yml: %v", err)
-	}
+	tree := repository(t)
 	var l ledger
-	if err := yaml.Unmarshal(body, &l); err != nil {
-		t.Fatalf("parsing tests/mutations.yml: %v", err)
-	}
+	tree.YAMLInto(t, ledgerEntries+".yml", &l)
 	if len(l.Mutations) > 0 {
 		t.Fatalf("tests/mutations.yml holds %d proof(s) under mutations:. Each is a file of its own under %s, named for its guard, so that two changes adding one never meet.", len(l.Mutations), ledgerEntries)
 	}
-	files, err := filepath.Glob(filepath.Join(root, filepath.FromSlash(ledgerEntries), "*.yml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	sort.Strings(files)
-	for _, file := range files {
-		raw, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatalf("reading %s: %v", file, err)
+	for _, rel := range tree.Files(t) {
+		if filepath.Dir(rel) != ledgerEntries || filepath.Ext(rel) != ".yml" {
+			continue
 		}
-		var m mutation
-		if err := yaml.Unmarshal(raw, &m); err != nil {
-			t.Fatalf("parsing %s/%s: %v", ledgerEntries, filepath.Base(file), err)
-		}
-		if m.Guard == "" || !strings.HasPrefix(filepath.Base(file), m.Guard+".") {
-			t.Fatalf("%s/%s proves the guard %q and is not named for it. A proof is found by its guard's name, so name the file <guard>.<anything>.yml.", ledgerEntries, filepath.Base(file), m.Guard)
+		m := tree.Proof(t, rel)
+		if m.Guard == "" || !strings.HasPrefix(m.Source, m.Guard+".") {
+			t.Fatalf("%s proves the guard %q and is not named for it. A proof is found by its guard's name, so name the file <guard>.<anything>.yml.", rel, m.Guard)
 		}
 		l.Mutations = append(l.Mutations, m)
 	}
@@ -183,12 +133,12 @@ func readLedger(t *testing.T) ledger {
 	return l
 }
 
-// The inner runs set repoRootEnv. Everything in this file shells out to the
+// An inner run is the harness's own (parsed.Inner). Everything in this file shells out to the
 // test binary, so without this the runner would run itself, recursively,
 // once per entry.
 func skipIfInner(t *testing.T) {
 	t.Helper()
-	if os.Getenv(repoRootEnv) != "" {
+	if parsed.Inner() {
 		t.Skip("inner run: this is the harness, not a guard under test")
 	}
 }
@@ -199,63 +149,9 @@ func skipIfInner(t *testing.T) {
 // node_modules and .git without needing a list of things to skip, and it is
 // the same set a reviewer sees. Anything untracked is by definition not what a
 // guard is asserting about the repository.
-func scratchRepo(t *testing.T) string {
+func scratchRepo(t *testing.T) *parsed.Tree {
 	t.Helper()
-	root := repoRoot(t)
-
-	out, err := exec.Command("git", "-C", root, "ls-files", "-z").Output()
-	if err != nil {
-		t.Fatalf("listing tracked files: %v", err)
-	}
-	files := strings.Split(strings.TrimRight(string(out), "\x00"), "\x00")
-	if len(files) < 100 {
-		t.Fatalf("git ls-files returned %d files, which is not this repository", len(files))
-	}
-
-	dir := t.TempDir()
-	for _, rel := range files {
-		if rel == "" {
-			continue
-		}
-		src := filepath.Join(root, rel)
-		info, err := os.Lstat(src)
-		if err != nil || !info.Mode().IsRegular() {
-			continue // a deleted or non-regular tracked path is not our business
-		}
-		body, err := os.ReadFile(src)
-		if err != nil {
-			t.Fatalf("reading %s: %v", rel, err)
-		}
-		dst := filepath.Join(dir, rel)
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			t.Fatalf("preparing %s: %v", rel, err)
-		}
-		if err := os.WriteFile(dst, body, info.Mode().Perm()); err != nil {
-			t.Fatalf("writing %s: %v", rel, err)
-		}
-	}
-
-	// And then the copy becomes a git repository, so that the guards being
-	// proved can enumerate it the same way they enumerate the real tree.
-	//
-	// This is what lets trackedFiles be the single enumeration primitive. Before
-	// it, `git ls-files` here exited 128 - "not a git repository" - so guards
-	// that needed to run under the ledger had to walk from the root with a
-	// hand-written skip list instead, and that list was the stale artifact the
-	// walk was supposed to avoid.
-	//
-	// After the patches, not before: a patch may add or remove files, and the
-	// index has to describe the tree the guards are actually judged against.
-	//
-	// No commit and no user identity are needed - `git ls-files` reads the
-	// index.
-	cmd := exec.Command("git", "init", "-q")
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git init in the scratch tree: %v\n%s", err, out)
-	}
-	indexScratchTree(t, dir)
-	return dir
+	return repository(t).Copy(t)
 }
 
 // indexScratchTree makes `git ls-files` in the scratch tree describe the tree
@@ -270,13 +166,9 @@ func scratchRepo(t *testing.T) string {
 //
 // -f because a tracked file is tracked even if .gitignore matches it, and
 // dropping one would quietly shrink the universe under test.
-func indexScratchTree(t *testing.T, dir string) {
+func indexScratchTree(t *testing.T, scratch *parsed.Tree) {
 	t.Helper()
-	cmd := exec.Command("git", "add", "-A", "-f")
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("indexing the scratch tree: %v\n%s", err, out)
-	}
+	scratch.Index(t)
 }
 
 var (
@@ -297,12 +189,10 @@ func testBinary(t *testing.T) string {
 			return
 		}
 		binPath = filepath.Join(dir, "repo.test")
-		cmd := exec.Command("go", "test", "-C", filepath.Join(repoRoot(t), "tests", "go"),
-			"-o", binPath, "-c", "./repo/")
-		if out, err := cmd.CombinedOutput(); err != nil {
+		if _, errs, err := repository(t).Invoke(parsed.Run{Dir: "tests/go"}, "go", "test", "-o", binPath, "-c", "./repo/"); err != nil {
 			binErr = err
 			binPath = ""
-			t.Logf("compiling the repo test package: %v\n%s", err, out)
+			t.Logf("compiling the repo test package: %v\n%s", err, errs)
 		}
 	})
 	if binErr != nil || binPath == "" {
@@ -312,13 +202,12 @@ func testBinary(t *testing.T) string {
 }
 
 // runGuard runs exactly one test against a given tree.
-func runGuard(t *testing.T, bin, root, name string) (passed bool, output string) {
+func runGuard(t *testing.T, bin string, tree *parsed.Tree, name string) (passed bool, output string) {
 	t.Helper()
-	cmd := exec.Command(bin, "-test.run", "^"+name+"$", "-test.v")
-	cmd.Dir = root
-	cmd.Env = append(os.Environ(), repoRootEnv+"="+root)
-	out, err := cmd.CombinedOutput()
-	text := string(out)
+	// Judging the tree, and started outside it, so that nothing the guard
+	// names relative to where it starts is a file of the tree.
+	stdout, stderr, err := tree.InvokeBinary(parsed.Run{Judged: true, Outside: true}, bin, "-test.run", "^"+name+"$", "-test.v")
+	text := string(stdout) + string(stderr)
 	// A -run pattern matching nothing exits 0 and is not a passing guard; it
 	// is a guard that has been renamed out from under the ledger.
 	if !strings.Contains(text, "RUN   "+name) {
@@ -328,14 +217,43 @@ func runGuard(t *testing.T, bin, root, name string) (passed bool, output string)
 }
 
 func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
-	skipIfInner(t)
 	heavy(t, "a check on the checks: it copies the repository and runs a guard per mutation, side by side")
+	skipIfInner(t)
+
+	part := readMetaPartOrFail(t)
 
 	l := readLedger(t)
 
+	var entries []mutation
+	for _, m := range append(append([]mutation{}, l.Mutations...), applicationMutations(t)...) {
+		if part.proves(m.Source) {
+			entries = append(entries, m)
+		}
+	}
+	if len(entries) == 0 {
+		t.Fatalf("part %d of %d of the meta lane holds no proof, so it proves nothing; the ledger was read as %d proofs", part.index, part.total, len(l.Mutations))
+	}
+
 	bin := testBinary(t)
 
-	for _, m := range append(append([]mutation{}, l.Mutations...), applicationMutations(t)...) {
+	// Passing first, once for each guard. Every proof's copy is the same
+	// unbroken tree until its mutation lands, so a guard's answer on it is
+	// one answer, and asking it once per proof was asking it again: 168 of
+	// the ledger's 644 guard runs, 135 of them a whole Conftest or Semgrep
+	// scan, and the meta lane past its ten minutes (#779). The first proof
+	// of a guard asks, in its own copy, and the rest wait for that answer.
+	var mu sync.Mutex
+	unbroken := map[string]*unbrokenRun{}
+	unbrokenOf := func(guard string) *unbrokenRun {
+		mu.Lock()
+		defer mu.Unlock()
+		if unbroken[guard] == nil {
+			unbroken[guard] = &unbrokenRun{}
+		}
+		return unbroken[guard]
+	}
+
+	for _, m := range entries {
 		name := m.Guard
 		if m.Test != "" {
 			name += "/" + m.Test
@@ -346,117 +264,25 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 			// does can be seen by another - and one after another, two
 			// hundred of them were four minutes of every pull request.
 			t.Parallel()
-			required := []struct{ field, value string }{
-				{"guard", m.Guard}, {"file", m.File},
-				{"mentions", m.Mentions}, {"why", m.Why},
-			}
-			if m.creates() {
-				if m.Find != "" || m.Replace != "" {
-					t.Fatal("this entry both creates a file and substitutes in one; " +
-						"it can only prove one thing, so say which")
-				}
-			} else {
-				required = append(required,
-					struct{ field, value string }{"find", m.Find},
-					struct{ field, value string }{"replace", m.Replace})
-			}
-			for _, missing := range required {
-				if strings.TrimSpace(missing.value) == "" {
-					t.Fatalf("this entry has no %s, so it proves nothing", missing.field)
-				}
-			}
-
-			// A Go target usually proves nothing. The guards are run from a
-			// binary compiled once from the real tree, so editing Go source
-			// in the scratch copy changes no behaviour and the entry would
-			// "fail to fail" for a reason that has nothing to do with the
-			// guard. Refuse it rather than let it look like coverage.
-			//
-			// EXCEPT WHERE THE GUARD READS THE SOURCE AS DATA, which this
-			// refusal used to state as a property of the ledger when it is
-			// really a property of the guard. runGuard sets the repo-root
-			// environment variable to the scratch tree and repoRoot honours
-			// it, so a guard that opens .go files and inspects their text sees
-			// the mutation in full. Only guards asserting COMPILED BEHAVIOUR
-			// are blind to it.
-			//
-			// So the opt-in is explicit and narrow rather than the default
-			// being loosened: `reads_source: true` says "this guard reads the
-			// named file, it does not execute it". Getting that wrong makes an
-			// entry that cannot fail, which is why it has to be claimed rather
-			// than inferred.
-			if strings.HasSuffix(m.File, ".go") && !m.ReadsSource {
-				t.Fatalf("this entry mutates %s, and the ledger cannot judge Go source.\n\n"+
-					"The guards run from a binary compiled once from the real tree, so a "+
-					"change to Go source in the scratch copy has no effect - the entry "+
-					"would pass or fail for reasons unrelated to what it claims.\n\n"+
-					"Guards over Go behaviour belong in that program's own package tests, "+
-					"beside the code, where a counterexample is an ordinary table entry.\n\n"+
-					"If this guard READS the file as data rather than executing it, say so "+
-					"with `reads_source: true` - the scratch tree does reach a guard that "+
-					"opens source and inspects its text.",
-					m.File)
-			}
-
 			// A copy of the tree to break. The entry's target is read from
 			// the copy, so what is counted and what is broken are one file.
 			scratch := scratchRepo(t)
-
-			if m.creates() {
-				if _, err := os.Stat(filepath.Join(scratch, m.File)); err == nil {
-					t.Fatalf("this entry plants %s, and that file already exists in the "+
-						"repository. Planting it would overwrite something real, and the "+
-						"guard would be judged against the wrong thing.", m.File)
-				}
-			}
-
-			var original []byte
-			if !m.creates() {
-				var err error
-				original, err = os.ReadFile(filepath.Join(scratch, m.File))
-				if err != nil {
-					t.Fatalf("the ledger names %s, which cannot be read: %v\n\n"+
-						"The file moved or was deleted. Point the entry at where it went; "+
-						"do not delete the entry.", m.File, err)
-				}
-			}
-			if n := strings.Count(string(original), m.Find); !m.creates() && n != 1 {
-				t.Fatalf("`find` appears %d times in %s, and an entry that is not "+
-					"exactly one place is ambiguous.\n\n"+
-					"Widen `find` until it names one spot. Guessing which of %d it "+
-					"meant is how a ledger entry ends up proving something other than "+
-					"what it says.", n, m.File, n)
+			if problems := placeProblems(t, scratch, m); len(problems) > 0 {
+				t.Fatal(problems[0])
 			}
 
 			// Passing first. A guard that is already broken would satisfy
 			// "fails after the mutation" for free, and prove nothing at all.
-			if ok, out := runGuard(t, bin, scratch, m.Guard); !ok {
+			u := unbrokenOf(m.Guard)
+			u.once.Do(func() { u.passed, u.output = runGuard(t, bin, scratch, m.Guard) })
+			if !u.passed {
 				t.Fatalf("%s already fails on an unmutated copy, so this entry cannot "+
-					"prove anything about it.\n\nFix the guard first.\n\n%s", m.Guard, out)
+					"prove anything about it.\n\nFix the guard first.\n\n%s", m.Guard, u.output)
 			}
 
-			target := filepath.Join(scratch, m.File)
-			if m.creates() {
-				if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-					t.Fatalf("preparing %s: %v", m.File, err)
-				}
-				if err := os.WriteFile(target, []byte(m.Create), 0o644); err != nil {
-					t.Fatalf("planting %s: %v", m.File, err)
-				}
-			} else {
-				body, err := os.ReadFile(target)
-				if err != nil {
-					t.Fatalf("reading the copy of %s: %v", m.File, err)
-				}
-				mutated := strings.Replace(string(body), m.Find, m.Replace, 1)
-				if mutated == string(body) {
-					t.Fatalf("the mutation changed nothing in the copy of %s", m.File)
-				}
-				if err := os.WriteFile(target, []byte(mutated), 0o644); err != nil {
-					t.Fatalf("writing the mutated %s: %v", m.File, err)
-				}
+			if !scratch.Apply(t, m) {
+				t.Fatalf("the mutation changed nothing in the copy of %s", m.File)
 			}
-			indexScratchTree(t, scratch)
 
 			ok, out := runGuard(t, bin, scratch, m.Guard)
 			if ok {
@@ -469,6 +295,11 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 					"checking anything.",
 					m.Guard, m.File, strings.TrimSpace(m.Find), strings.TrimSpace(m.Why))
 				return
+			}
+			if m.Rule != "" && !refusedBy(out, m.Guard, m.Rule) {
+				t.Errorf("%s failed, but %s is not among the rules that refused, and this entry "+
+					"names it.\n\nA proof of one rule that another satisfies shows nothing about "+
+					"the one it names.\n\n%s", m.Guard, m.Rule, out)
 			}
 			if !strings.Contains(out, m.Mentions) {
 				t.Errorf("%s failed, but not for the reason this entry claims: its "+
@@ -486,105 +317,250 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 	}
 }
 
-// Nothing may be satisfied by a comment.
-//
-// A guard that matches a string anywhere in a file can be satisfied by the
-// prose explaining the thing rather than by the thing. That has happened twice
-// here - most recently a tripwire check satisfied by the comment ABOVE the step
-// it was meant to be asserting, so deleting the step passed.
-//
-// This strips every whole-line comment from the configuration and workflows the
-// guards read, and requires every test that passed to still pass. Only
-// whole-line comments: a `#` inside a quoted value is not a comment, and
-// stripping it would break the file rather than test anything.
-func TestNoTestIsSatisfiedByAComment(t *testing.T) {
-	skipIfInner(t)
-	heavy(t, "a check on the checks: it re-runs the whole package with comments stripped, about a minute")
+// The harnesses that run many rules at once, and where each keeps them.
+const (
+	codeRulesHarness          = "TestTheCodeRulesHold"
+	configurationRulesHarness = "TestTheConfigurationRulesHold"
+)
 
-	l := readLedger(t)
-	exempt := map[string]string{}
-	for _, e := range l.CommentDependent {
-		if strings.TrimSpace(e.Reason) == "" {
-			t.Errorf("%s is exempt from the comment check with no reason given", e.Test)
-		}
-		exempt[e.Test] = e.Reason
+// ruleHarness is where the rules a guard runs are kept, or "" when the guard
+// runs none.
+func ruleHarness(guard string) string {
+	switch guard {
+	case codeRulesHarness:
+		return semgrepRules
+	case configurationRulesHarness:
+		return conftestRules
 	}
-
-	bin := testBinary(t)
-	// scratchRepo materialises the tree as it will be and removes the
-	// patches, which matters twice over here: an outstanding patch's context
-	// lines include comments, so it would not apply to a comment-stripped file
-	// and every workflow guard would fail for that reason instead of the one
-	// being tested.
-	before := scratchRepo(t)
-	baseline := runAll(t, bin, before)
-
-	after := scratchRepo(t)
-	stripped := stripComments(t, after)
-	if stripped == 0 {
-		t.Fatal("no comment was stripped from anything, so this test compared a tree " +
-			"with itself and proved nothing")
-	}
-
-	for _, name := range satisfiedByProse(baseline, runAll(t, bin, after), exempt) {
-		t.Errorf("%s passes with comments and fails without them, so a comment "+
-			"was satisfying it rather than the thing it is meant to be "+
-			"asserting.\n\n"+
-			"Anchor the assertion to structure a comment cannot reach - "+
-			"indentation, a parsed key, a resolved path. If it genuinely means to "+
-			"read prose, say so in comment_dependent: in tests/mutations.yml with "+
-			"a reason.", name)
-	}
+	return ""
 }
 
-// satisfiedByProse names the tests that flipped from passing to failing when
-// the comments went.
-//
-// Split out from the plumbing so it can be shown saying no as well as yes -
-// the same split scripts/attestation makes, for the same reason. A decision
-// that only ever runs against the real repository has never been demonstrated
-// to reject anything.
-//
-// Only a pass -> fail flip counts. A test already failing on the unmodified
-// tree is failing for some other reason, and reporting it here would blame a
-// comment for it.
-func satisfiedByProse(baseline, stripped map[string]bool, exempt map[string]string) []string {
-	var out []string
-	for name, passedBefore := range baseline {
-		if !passedBefore {
-			continue
-		}
-		passedAfter, ran := stripped[name]
-		if !ran || passedAfter {
-			continue
-		}
-		if _, ok := exempt[name]; ok {
-			continue
-		}
-		out = append(out, name)
-	}
-	sort.Strings(out)
-	return out
-}
-
-// runAll returns each test's verdict, by name.
-func runAll(t *testing.T, bin, root string) map[string]bool {
+// rulesDeclaredIn is every rule a tree declares in one harness's directory,
+// by the name a proof gives it: a Semgrep rule's id, or a Conftest rule's
+// package under rules.
+func rulesDeclaredIn(t *testing.T, tree *parsed.Tree, dir string) map[string]bool {
 	t.Helper()
-	verdicts, out := allVerdicts(bin, root)
-	if len(verdicts) == 0 {
-		t.Fatalf("no test verdict was parsed from the run in %s:\n%s", root, out)
+	declared := map[string]bool{}
+	for _, rel := range tree.Files(t) {
+		// The code rules are the files of their directory; the
+		// configuration rules are every policy file beneath theirs, each
+		// package in a directory of its own.
+		inDir, under := filepath.Dir(rel) == dir, strings.HasPrefix(rel, dir+"/")
+		switch {
+		case strings.HasSuffix(rel, ".yml") && inDir:
+			var doc struct {
+				Rules []struct {
+					ID string `yaml:"id"`
+				} `yaml:"rules"`
+			}
+			tree.YAMLInto(t, rel, &doc)
+			for _, r := range doc.Rules {
+				declared[r.ID] = true
+			}
+		case strings.HasSuffix(rel, ".rego") && under:
+			if name, ok := strings.CutPrefix(regoPackage(tree.Rego(t, rel)), "rules."); ok && !isTestPackage(name) {
+				declared[name] = true
+			}
+		}
 	}
-	return verdicts
+	if len(declared) == 0 {
+		t.Fatalf("no rule was read from %s, so no proof's rule can be found there", dir)
+	}
+	return declared
+}
+
+// refusedBy reports whether a rule harness's report says the named rule
+// refused. Each harness writes a refusal with the rule's name in a place of
+// its own: the code rules as `<file>:<line>: <id>: <message>`, or as
+// `<id> found nothing` for a rule whose finds are expected; the configuration
+// rules as Conftest's `FAIL - <file> - main - <package>: <message>`.
+func refusedBy(out, guard, rule string) bool {
+	r := regexp.QuoteMeta(rule)
+	var forms []string
+	switch guard {
+	case codeRulesHarness:
+		forms = []string{`(?m)^\s+\S+:\d+: ` + r + `: `, `(?m)^\s+\S+:\d+: ` + r + ` found nothing, `}
+	case configurationRulesHarness:
+		forms = []string{`(?m)^\s*FAIL - .* - main - ` + r + `: `}
+	}
+	for _, f := range forms {
+		if regexp.MustCompile(f).MatchString(out) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestRefusedByReadsTheRuleFromEachHarnesssReport(t *testing.T) {
+	light(t)
+	semgrep := "    code_rules_test.go:169: a code rule refuses the repository:\n\n" +
+		"          taskfile.yml:130: no-workflow-or-task-picks-a-site-by-name: names a site as a value.\n" +
+		"    code_rules_test.go:154: the-teardown-resolves-the-bucket found nothing, and teardown.go does not\n"
+	conftest := "    configuration_rules_test.go:101: a configuration rule refuses the repository:\n\n" +
+		"          FAIL - Combined - main - suppliers: clusters/x.yaml: chart source is not an approved supplier\n"
+	for _, c := range []struct {
+		out, guard, rule string
+		want             bool
+	}{
+		{semgrep, codeRulesHarness, "no-workflow-or-task-picks-a-site-by-name", true},
+		{semgrep, codeRulesHarness, "the-teardown-resolves-the-bucket", true},
+		{semgrep, codeRulesHarness, "no-program-picks-a-site-by-name", false},
+		{semgrep, codeRulesHarness, "site", false},
+		{conftest, configurationRulesHarness, "suppliers", true},
+		{conftest, configurationRulesHarness, "flux_source_secret", false},
+		{conftest, configurationRulesHarness, "approved", false},
+		{conftest, codeRulesHarness, "suppliers", false},
+		{semgrep, "TestSomethingElse", "no-workflow-or-task-picks-a-site-by-name", false},
+	} {
+		if got := refusedBy(c.out, c.guard, c.rule); got != c.want {
+			t.Errorf("refusedBy(%s, %q) = %v, want %v", c.guard, c.rule, got, c.want)
+		}
+	}
+}
+
+// metaPartEnv says which of the meta lane's jobs this is, as "<index>/<total>"
+// - GitHub's own count of the jobs it made from one definition, so no number
+// is written down that could stop matching how many there are. The parts
+// share the ledger's proofs. Unset, as at a terminal, one run is all of them.
+const metaPartEnv = "META_PART"
+
+// metaPart is which part of the meta lane a run is. The zero value is the
+// whole of it.
+type metaPart struct{ index, total int }
+
+func readMetaPart(value string) (metaPart, error) {
+	if value == "" {
+		return metaPart{}, nil
+	}
+	i, n, ok := strings.Cut(value, "/")
+	index, errI := strconv.Atoi(i)
+	total, errN := strconv.Atoi(n)
+	if !ok || errI != nil || errN != nil || total < 2 || index < 0 || index >= total {
+		return metaPart{}, fmt.Errorf("%s is %q, which is not a part of the meta lane: it is <index>/<total>, with at least two parts", metaPartEnv, value)
+	}
+	return metaPart{index, total}, nil
+}
+
+// readMetaPartOrFail is this run's part. A part it cannot read fails rather
+// than running everything or nothing: either would say the ledger was proved.
+func readMetaPartOrFail(t *testing.T) metaPart {
+	t.Helper()
+	part, err := readMetaPart(os.Getenv(metaPartEnv))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return part
+}
+
+func (p metaPart) whole() bool { return p.total == 0 }
+
+// proves reports whether this part proves the proof written at source. Each
+// proof falls in exactly one part, by a hash of where it is written, so a
+// proof added or removed moves no other.
+func (p metaPart) proves(source string) bool {
+	if p.whole() {
+		return true
+	}
+	h := fnv.New32a()
+	h.Write([]byte(source))
+	return int(h.Sum32()%uint32(p.total)) == p.index
+}
+
+// A copy is handed the skips this run was given, and nothing when it was
+// given none. Read from the pattern rather than by setting the flag: the
+// flag is the whole binary's, and a guard running beside this one reads it.
+func TestACopyIsSkippedWhatTheLaneSkips(t *testing.T) {
+	light(t)
+	if flag.Lookup("test.skip") == nil {
+		t.Fatal("the test binary has no -test.skip flag to read")
+	}
+	if got := skipsFor(""); got != nil {
+		t.Errorf("with nothing skipped, a copy was handed %v", got)
+	}
+	if got := skipsFor("^(TestElsewhere)$"); len(got) != 2 || got[0] != "-test.skip" || got[1] != "^(TestElsewhere)$" {
+		t.Errorf("a copy was handed %v, want the lane's own skip", got)
+	}
+}
+
+func TestReadMetaPartTakesOnlyAPartItCanPlace(t *testing.T) {
+	light(t)
+	for _, c := range []struct {
+		value string
+		want  metaPart
+		ok    bool
+	}{
+		{"", metaPart{}, true},
+		{"0/17", metaPart{0, 17}, true},
+		{"16/17", metaPart{16, 17}, true},
+		{"17/17", metaPart{}, false},
+		{"0/1", metaPart{}, false},
+		{"-1/3", metaPart{}, false},
+		{"3", metaPart{}, false},
+		{"a/b", metaPart{}, false},
+	} {
+		got, err := readMetaPart(c.value)
+		if (err == nil) != c.ok || got != c.want {
+			t.Errorf("readMetaPart(%q) = %v, %v", c.value, got, err)
+		}
+	}
+}
+
+func TestEveryProofFallsInExactlyOnePartOfTheLedger(t *testing.T) {
+	light(t)
+	sources := []string{"TestA.1.yml", "TestA.2.yml", "TestB.x.yml", "modules/applications/a/tests/mutations.yml#0", "", "TestC.long-name-of-a-proof.yml"}
+	for _, total := range []int{2, 4, 17} {
+		for _, s := range sources {
+			held := 0
+			for i := 0; i < total; i++ {
+				if (metaPart{i, total}).proves(s) {
+					held++
+				}
+			}
+			if held != 1 {
+				t.Errorf("%q falls in %d of the %d ledger parts, not one", s, held, total)
+			}
+		}
+	}
+	if !(metaPart{}).proves("TestA.1.yml") {
+		t.Error("the whole of the meta lane does not prove everything")
+	}
+}
+
+// unbrokenRun is a guard's answer on the unbroken tree, asked once.
+type unbrokenRun struct {
+	once   sync.Once
+	passed bool
+	output string
+}
+
+// laneSkips is the -test.skip this run was given, to hand to a run against a
+// copy: the copy is judged by the guards this lane judges, and a guard the
+// lane leaves to another (the coverage guard, which the Go modules lane runs
+// on the profiles it measured) is left there too. Twice per application it
+// was most of the removal guard's time, and past the lane's limit (#815).
+func laneSkips() []string {
+	f := flag.Lookup("test.skip")
+	if f == nil {
+		return nil
+	}
+	return skipsFor(f.Value.String())
+}
+
+// skipsFor is the arguments that hand a copy the skip pattern given, or
+// nothing for none.
+func skipsFor(pattern string) []string {
+	if pattern == "" {
+		return nil
+	}
+	return []string{"-test.skip", pattern}
 }
 
 // allVerdicts is runAll with nothing of the test in it, so that two runs
 // can be made side by side: a test may only be failed from its own
 // goroutine.
-func allVerdicts(bin, root string) (map[string]bool, []byte) {
-	cmd := exec.Command(bin, "-test.v")
-	cmd.Dir = root
-	cmd.Env = append(os.Environ(), repoRootEnv+"="+root)
-	out, _ := cmd.CombinedOutput()
+func allVerdicts(bin string, tree *parsed.Tree) (map[string]bool, []byte) {
+	stdout, stderr, _ := tree.InvokeBinary(parsed.Run{Judged: true, Outside: true}, bin, append([]string{"-test.v"}, laneSkips()...)...)
+	out := append(stdout, stderr...)
 
 	verdicts := map[string]bool{}
 	for _, line := range strings.Split(string(out), "\n") {
@@ -599,6 +575,70 @@ func allVerdicts(bin, root string) (map[string]bool, []byte) {
 	return verdicts, out
 }
 
+// outputOf is what one test said in a verbose run of many. Tests that run
+// beside each other are interleaved, and Go says whose each stretch is with a
+// line of its own - === RUN, CONT, NAME or PAUSE, and the verdict - so a line
+// belongs to the test the last such line named, or to one of its subtests.
+func outputOf(out []byte, name string) string {
+	var said []string
+	current := ""
+	for _, line := range strings.Split(string(out), "\n") {
+		if named, ok := testNamedBy(strings.TrimSpace(line)); ok {
+			current = named
+		}
+		if current == name || strings.HasPrefix(current, name+"/") {
+			said = append(said, line)
+		}
+	}
+	return strings.Join(said, "\n")
+}
+
+// testNamedBy is the test a line of Go's verbose output hands the stretch
+// after it to, if it is such a line.
+func testNamedBy(line string) (string, bool) {
+	for _, marker := range []string{"=== RUN", "=== CONT", "=== NAME", "=== PAUSE", "--- FAIL:", "--- PASS:", "--- SKIP:"} {
+		if rest, ok := strings.CutPrefix(line, marker); ok {
+			name, _, _ := strings.Cut(strings.TrimSpace(rest), " ")
+			return name, name != ""
+		}
+	}
+	return "", false
+}
+
+func TestOutputOfKeepsOneTestsLinesFromAnInterleavedRun(t *testing.T) {
+	light(t)
+	out := []byte(strings.Join([]string{
+		"=== RUN   TestA",
+		"=== PAUSE TestA",
+		"=== RUN   TestB",
+		"    b_test.go:1: from B",
+		"=== CONT  TestA",
+		"    a_test.go:1: from A",
+		"=== RUN   TestA/sub",
+		"    a_test.go:2: from A's subtest",
+		"=== NAME  TestB",
+		"    b_test.go:2: from B again",
+		"--- FAIL: TestA (0.01s)",
+		"    --- FAIL: TestA/sub (0.00s)",
+		"--- PASS: TestB (0.02s)",
+		"FAIL",
+	}, "\n"))
+	got := outputOf(out, "TestA")
+	for _, want := range []string{"from A", "from A's subtest", "--- FAIL: TestA (0.01s)", "--- FAIL: TestA/sub"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("TestA's lines lack %q:\n%s", want, got)
+		}
+	}
+	for _, not := range []string{"from B", "--- PASS: TestB"} {
+		if strings.Contains(got, not) {
+			t.Errorf("TestA's lines hold TestB's %q:\n%s", not, got)
+		}
+	}
+	if outputOf(out, "TestC") != "" {
+		t.Error("a test that never ran said something")
+	}
+}
+
 func field(line, prefix string) string {
 	rest := strings.TrimPrefix(line, prefix)
 	if i := strings.Index(rest, " "); i > 0 {
@@ -607,105 +647,126 @@ func field(line, prefix string) string {
 	return rest
 }
 
-// stripComments removes whole-line `#` comments from the files the guards read,
-// and reports how many lines went.
-func stripComments(t *testing.T, root string) int {
+// placeProblems is everything wrong with a ledger entry that can be told
+// without running its guard: a field it lacks, Go source it may not judge, a
+// file that is not where it says or already is where it would plant one, and
+// a `find` that is not exactly one place. The ledger refuses an entry for any
+// of these before it runs anything, and TestEveryProofStillFindsItsPlace asks
+// the same of every entry at push, so a proof left behind by a change is found
+// in milliseconds rather than eight minutes into the meta lane.
+func placeProblems(t *testing.T, tree *parsed.Tree, m mutation) []string {
 	t.Helper()
-
-	var targets []string
-	for _, dir := range []string{filepath.Join(".github", "workflows"), "scripts"} {
-		_ = filepath.WalkDir(filepath.Join(root, dir), func(p string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return nil
-			}
-			if ext := filepath.Ext(p); ext == ".yml" || ext == ".yaml" {
-				targets = append(targets, p)
-			}
-			return nil
-		})
+	required := []struct{ field, value string }{
+		{"guard", m.Guard}, {"file", m.File},
+		{"mentions", m.Mentions}, {"why", m.Why},
 	}
-	targets = append(targets,
-		filepath.Join(root, ".pre-commit-config.yaml"),
-		filepath.Join(root, "taskfile.yml"),
-	)
-
-	removed := 0
-	for _, p := range targets {
-		body, err := os.ReadFile(p)
-		if err != nil {
-			continue
+	if m.Creates() {
+		if m.Find != "" || m.Replace != "" {
+			return []string{"this entry both creates a file and substitutes in one; " +
+				"it can only prove one thing, so say which"}
 		}
-		var kept []string
-		for _, line := range strings.Split(string(body), "\n") {
-			if strings.HasPrefix(strings.TrimSpace(line), "#") {
-				removed++
-				continue
-			}
-			kept = append(kept, line)
-		}
-		if err := os.WriteFile(p, []byte(strings.Join(kept, "\n")), 0o644); err != nil {
-			t.Fatalf("writing the comment-stripped %s: %v", p, err)
+	} else {
+		required = append(required,
+			struct{ field, value string }{"find", m.Find},
+			struct{ field, value string }{"replace", m.Replace})
+	}
+	harness := ruleHarness(m.Guard)
+	if harness != "" {
+		required = append(required, struct{ field, value string }{"rule", m.Rule})
+	} else if m.Rule != "" {
+		return []string{fmt.Sprintf("this entry names the rule %s, and %s runs no rules; only a proof of %s or %s names one",
+			m.Rule, m.Guard, codeRulesHarness, configurationRulesHarness)}
+	}
+	for _, missing := range required {
+		if strings.TrimSpace(missing.value) == "" {
+			return []string{fmt.Sprintf("this entry has no %s, so it proves nothing", missing.field)}
 		}
 	}
-	return removed
+
+	// A Go target usually proves nothing. The guards are run from a
+	// binary compiled once from the real tree, so editing Go source
+	// in the scratch copy changes no behaviour and the entry would
+	// "fail to fail" for a reason that has nothing to do with the
+	// guard. Refuse it rather than let it look like coverage.
+	//
+	// EXCEPT WHERE THE GUARD READS THE SOURCE AS DATA, which this
+	// refusal used to state as a property of the ledger when it is
+	// really a property of the guard. runGuard sets the repo-root
+	// environment variable to the scratch tree and repoRoot honours
+	// it, so a guard that opens .go files and inspects their text sees
+	// the mutation in full. Only guards asserting COMPILED BEHAVIOUR
+	// are blind to it.
+	//
+	// So the opt-in is explicit and narrow rather than the default
+	// being loosened: `reads_source: true` says "this guard reads the
+	// named file, it does not execute it". Getting that wrong makes an
+	// entry that cannot fail, which is why it has to be claimed rather
+	// than inferred.
+	if strings.HasSuffix(m.File, ".go") && !m.ReadsSource {
+		return []string{fmt.Sprintf("this entry mutates %s, and the ledger cannot judge Go source.\n\n"+
+			"The guards run from a binary compiled once from the real tree, so a "+
+			"change to Go source in the scratch copy has no effect - the entry "+
+			"would pass or fail for reasons unrelated to what it claims.\n\n"+
+			"Guards over Go behaviour belong in that program's own package tests, "+
+			"beside the code, where a counterexample is an ordinary table entry.\n\n"+
+			"If this guard READS the file as data rather than executing it, say so "+
+			"with `reads_source: true` - the scratch tree does reach a guard that "+
+			"opens source and inspects its text.",
+			m.File)}
+	}
+
+	if harness != "" {
+		declared := rulesDeclaredIn(t, tree, harness)
+		if !declared[m.Rule] {
+			return []string{fmt.Sprintf("this entry names the rule %s, which %s does not declare. "+
+				"A rule renamed or retired leaves its proofs naming nothing: point each at the rule that refuses "+
+				"what it breaks.", m.Rule, harness)}
+		}
+	}
+
+	if m.Creates() {
+		if tree.Exists(m.File) {
+			return []string{fmt.Sprintf("this entry plants %s, and that file already exists in the "+
+				"repository. Planting it would overwrite something real, and the "+
+				"guard would be judged against the wrong thing.", m.File)}
+		}
+		return nil
+	}
+	n := tree.Places(t, m)
+	if n < 0 {
+		return []string{fmt.Sprintf("the ledger names %s, which is not there.\n\n"+
+			"The file moved or was deleted. Point the entry at where it went; "+
+			"do not delete the entry.", m.File)}
+	}
+	if n != 1 {
+		return []string{fmt.Sprintf("`find` appears %d times in %s, and an entry that is not "+
+			"exactly one place is ambiguous.\n\n"+
+			"Widen `find` until it names one spot. Guessing which of %d it "+
+			"meant is how a ledger entry ends up proving something other than "+
+			"what it says.", n, m.File, n)}
+	}
+	return nil
 }
 
-// The comment check's decision, shown saying no as well as yes.
-//
-// Running it only against the real repository demonstrates that it does not
-// fire today, which is not the same as demonstrating it would.
-func TestSatisfiedByProseOnlyNamesAPassToFailFlip(t *testing.T) {
-	cases := []struct {
-		name     string
-		baseline map[string]bool
-		stripped map[string]bool
-		exempt   map[string]string
-		want     []string
-	}{
-		{
-			name:     "a test satisfied by a comment flips and is named",
-			baseline: map[string]bool{"TestReadsProse": true},
-			stripped: map[string]bool{"TestReadsProse": false},
-			want:     []string{"TestReadsProse"},
-		},
-		{
-			name:     "a test that was already failing is not blamed on a comment",
-			baseline: map[string]bool{"TestBroken": false},
-			stripped: map[string]bool{"TestBroken": false},
-			want:     nil,
-		},
-		{
-			name:     "a test that passes either way is not named",
-			baseline: map[string]bool{"TestAnchored": true},
-			stripped: map[string]bool{"TestAnchored": true},
-			want:     nil,
-		},
-		{
-			name:     "an exempt test is not named",
-			baseline: map[string]bool{"TestReadsProse": true},
-			stripped: map[string]bool{"TestReadsProse": false},
-			exempt:   map[string]string{"TestReadsProse": "it asserts a documented reason"},
-			want:     nil,
-		},
-		{
-			name:     "a test that did not run in the second pass is not named",
-			baseline: map[string]bool{"TestVanished": true},
-			stripped: map[string]bool{},
-			want:     nil,
-		},
+// Every proof still finds its place, checked at push. A change that moves,
+// deletes or rewrites what a proof breaks leaves the proof pointing at
+// nothing, and the ledger only says so when it runs - on the pull request,
+// minutes in. Nothing here runs a guard: it reads each entry and the file it
+// names, which is the part of the ledger's judgement that costs nothing.
+func TestEveryProofStillFindsItsPlace(t *testing.T) {
+	light(t)
+	tree := repository(t)
+	entries := append(append([]mutation{}, readLedger(t).Mutations...), applicationMutations(t)...)
+	if len(entries) < 100 {
+		t.Fatalf("only %d proofs were read, which is not this ledger - the reader has stopped matching", len(entries))
 	}
-
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			got := satisfiedByProse(c.baseline, c.stripped, c.exempt)
-			if len(got) != len(c.want) {
-				t.Fatalf("got %v, want %v", got, c.want)
+	for _, m := range entries {
+		for _, p := range placeProblems(t, tree, m) {
+			name := m.Guard
+			if m.Test != "" {
+				name += "/" + m.Test
 			}
-			for i := range got {
-				if got[i] != c.want[i] {
-					t.Errorf("got %v, want %v", got, c.want)
-				}
-			}
-		})
+			t.Errorf("%s (%s): %s", name, m.File, p)
+		}
 	}
 }

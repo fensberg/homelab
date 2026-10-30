@@ -1,0 +1,14 @@
+guard: TestTheConfigurationRulesHold
+rule: flux_controllers
+file: clusters/core/flux-system/kustomization.yaml
+find: "  - name: ghcr.io/fluxcd/source-controller"
+replace: "  - name: ghcr.io/fluxcd/source-controller-was-here"
+mentions: "does not pin it"
+why: >
+  kustomize's image transformer matches on image NAME, so a controller the
+  overlay does not name keeps the mutable tag the generated manifest carries
+  - on the component that applies everything else in the cluster. The
+  overlay still builds, `task validate` still passes, and nothing else
+  objects. gotk-components.yaml is rewritten wholesale by `flux bootstrap`,
+  so a controller added or renamed upstream arrives without anybody editing
+  this file, which is exactly when a hand-maintained list stops matching.

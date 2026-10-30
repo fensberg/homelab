@@ -1,14 +1,13 @@
 package repo
 
 import (
-	"os"
+	"homelab/tests/parsed"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 // Everything a local hook enforces is enforced again where nobody can skip it.
@@ -43,26 +42,20 @@ var taskInvocation = regexp.MustCompile(`\btask\s+([a-z][a-z0-9:-]*)`)
 // with whether it runs at the pre-commit stage.
 func localTasks(t *testing.T) map[string]bool {
 	t.Helper()
-	root := repoRoot(t)
+	tree := repository(t)
 	atPreCommitStage := map[string]bool{}
 
 	// The hook shims in githooks/ invoke tasks directly. None of these is at
 	// the pre-commit stage in the pre-commit sense - they are the shims that
 	// run before it.
-	shims, err := os.ReadDir(filepath.Join(root, "githooks"))
-	if err != nil {
-		t.Fatalf("reading githooks/: %v", err)
-	}
-	for _, e := range shims {
-		if e.IsDir() {
+	for _, rel := range tree.Files(t) {
+		if filepath.Dir(rel) != "githooks" {
 			continue
 		}
-		body, readErr := os.ReadFile(filepath.Join(root, "githooks", e.Name()))
-		if readErr != nil {
-			t.Fatalf("reading githooks/%s: %v", e.Name(), readErr)
-		}
-		for _, m := range taskInvocation.FindAllStringSubmatch(string(body), -1) {
-			atPreCommitStage[m[1]] = false
+		for _, c := range parsed.Commands(tree.Shell(t, rel)) {
+			if task, ok := taskRun(c); ok {
+				atPreCommitStage[task] = false
+			}
 		}
 	}
 
@@ -77,9 +70,7 @@ func localTasks(t *testing.T) map[string]bool {
 			} `yaml:"hooks"`
 		} `yaml:"repos"`
 	}
-	if err := yaml.Unmarshal([]byte(readRepoFile(t, ".pre-commit-config.yaml")), &config); err != nil {
-		t.Fatalf("parsing .pre-commit-config.yaml: %v", err)
-	}
+	tree.YAMLInto(t, ".pre-commit-config.yaml", &config)
 	defaultIsPreCommit := len(config.DefaultStages) == 1 && config.DefaultStages[0] == "pre-commit"
 	for _, repo := range config.Repos {
 		for _, hook := range repo.Hooks {
@@ -106,64 +97,80 @@ func localTasks(t *testing.T) map[string]bool {
 	return atPreCommitStage
 }
 
-// runsTask reports whether a workflow actually invokes the task, rather than
-// mentioning it.
+// taskRun is the task a command runs, when it runs one: a workflow that
+// actually invokes it, rather than mentions it.
 //
 // Two mistakes are easy here and this file made both on its first run. A plain
 // substring match counted `task test:e2e` as `task test`, so a lane that runs
 // neither looked like it ran one; and it counted the mention inside a comment,
 // which is the same "reading is not running" error the coverage regime exists
-// to refuse. So the name is bounded and comment lines are skipped.
-func runsTask(workflows, task string) bool {
-	bounded := regexp.MustCompile(`\btask\s+` + regexp.QuoteMeta(task) + `(?:[^a-z0-9:_-]|$)`)
-	for _, line := range strings.Split(workflows, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "#") {
-			continue
-		}
-		if bounded.MatchString(line) {
-			return true
+// to refuse. So the task is the command's own word, and a comment is no command.
+func taskRun(c parsed.Command) (string, bool) {
+	if len(c.Words) < 2 || c.Words[0] != "task" {
+		return "", false
+	}
+	for _, w := range c.Words[1:] {
+		if !strings.HasPrefix(w, "-") {
+			return w, true
 		}
 	}
-	return false
+	return "", false
 }
 
-func workflowBodies(t *testing.T) string {
+// workflowCommands is every command every workflow's steps run.
+func workflowCommands(t *testing.T) []parsed.Command {
 	t.Helper()
-	root := repoRoot(t)
-	entries, err := os.ReadDir(filepath.Join(root, ".github", "workflows"))
-	if err != nil {
-		t.Fatalf("reading .github/workflows: %v", err)
-	}
-	var all strings.Builder
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yml") {
+	tree := repository(t)
+	var all []parsed.Command
+	for _, rel := range tree.Files(t) {
+		if filepath.Dir(rel) != ".github/workflows" || !strings.HasSuffix(rel, ".yml") {
 			continue
 		}
-		body, readErr := os.ReadFile(filepath.Join(root, ".github", "workflows", e.Name()))
-		if readErr != nil {
-			t.Fatalf("reading %s: %v", e.Name(), readErr)
+		var wf struct {
+			Jobs map[string]struct {
+				Steps []struct {
+					Run string `yaml:"run"`
+				} `yaml:"steps"`
+			} `yaml:"jobs"`
 		}
-		all.Write(body)
-		all.WriteString("\n")
+		tree.YAMLInto(t, rel, &wf)
+		for _, job := range wf.Jobs {
+			for _, step := range job.Steps {
+				commands, err := parsed.WorkflowCommands(rel, step.Run)
+				if err != nil {
+					t.Fatalf("a step of %s is not shell that can be read: %v", rel, err)
+				}
+				all = append(all, commands...)
+			}
+		}
 	}
-	if all.Len() == 0 {
-		t.Fatal("found no workflows, so every local guard would look uncovered")
+	if len(all) == 0 {
+		t.Fatal("found no workflow steps, so every local guard would look uncovered")
 	}
-	return all.String()
+	return all
 }
 
 func TestEveryLocalGuardIsAlsoEnforcedInCI(t *testing.T) {
-	workflows := workflowBodies(t)
-	// The one invocation that covers a whole class: run against the same
-	// config file the hook uses, so the tools and their versions cannot differ.
-	formatLaneRunsTheConfig := strings.Contains(workflows, "pre-commit run --all-files")
+	light(t)
+	workflows := workflowCommands(t)
+	ran := map[string]bool{}
+	formatLaneRunsTheConfig := false
+	for _, c := range workflows {
+		if task, ok := taskRun(c); ok {
+			ran[task] = true
+		}
+		// The one invocation that covers a whole class: run against the same
+		// config file the hook uses, so the tools and their versions cannot differ.
+		formatLaneRunsTheConfig = formatLaneRunsTheConfig ||
+			len(c.Words) >= 3 && slices.Equal(c.Words[:3], []string{"pre-commit", "run", "--all-files"})
+	}
 
 	blocked := blocklistEntries(t)
 
 	var unenforced []string
 	for task, preCommitStage := range localTasks(t) {
 		unit := "ci:task " + task
-		covered := runsTask(workflows, task) ||
+		covered := ran[task] ||
 			(preCommitStage && formatLaneRunsTheConfig)
 		switch {
 		case covered && blocked[unit]:

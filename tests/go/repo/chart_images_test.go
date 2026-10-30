@@ -1,24 +1,18 @@
 package repo
 
 import (
-	"os"
-	"path/filepath"
-	"regexp"
+	"slices"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
-
-	"homelab/details/applications"
 )
 
 // Every chart's images are either governed here or declared as not governed.
 //
 // THE GAP THIS CLOSES. `scripts/approved-suppliers.yml` opens its registries
 // section by saying an image must come from an approved registry AND be pinned
-// by digest. `TestClusterImagesComeFromApprovedRegistriesAndArePinned` enforces
-// that for image references WRITTEN IN THIS REPOSITORY, which is not the same
-// set: an image a chart pulls by its own default has no reference here to read.
+// by digest. The image rule in policy/conftest/rules/supplier_images/supplier_images.rego enforces that for
+// image references WRITTEN IN THIS REPOSITORY, which is not the same set: an
+// image a chart pulls by its own default has no reference here to read.
 //
 // So the OpenEBS localpv provisioner - the component handing out the volumes
 // this estate's own OpenTofu state database sits on - is pulled from docker.io
@@ -46,19 +40,12 @@ type supplierChartGaps struct {
 	} `yaml:"chart_images_not_governed_here"`
 }
 
-var (
-	helmChartName = regexp.MustCompile(`(?m)^[^\S\n]*chart:[^\S\n]+(\S+)[^\S\n]*$`)
-	imageInValues = regexp.MustCompile(`(?m)^\s*(?:image|repository|registry):\s*\S`)
-)
-
 func TestEveryChartsImagesAreGovernedOrDeclared(t *testing.T) {
-	root := repoRoot(t)
+	light(t)
+	tree := repository(t)
 
 	var declared supplierChartGaps
-	body := readRepoFile(t, "scripts/approved-suppliers.yml")
-	if err := yaml.Unmarshal([]byte(body), &declared); err != nil {
-		t.Fatalf("parsing scripts/approved-suppliers.yml: %v", err)
-	}
+	tree.YAMLInto(t, "scripts/approved-suppliers.yml", &declared)
 	ungoverned := map[string]bool{}
 	for _, g := range declared.Gaps {
 		if g.Chart == "" {
@@ -77,27 +64,21 @@ block list and an allow list.`, g.Chart)
 	}
 
 	// Every chart the estate installs, discovered rather than listed.
-	charts := map[string]string{} // chart -> the file that installs it
-	err := filepath.WalkDir(filepath.Join(root, "clusters"), func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".yaml") {
-			return err
+	charts := map[string]string{}  // chart -> the file that installs it
+	releases := map[string][]any{} // the file -> its releases
+	for _, rel := range tree.Files(t) {
+		if !strings.HasPrefix(rel, "clusters/") || !strings.HasSuffix(rel, ".yaml") {
+			continue
 		}
-		manifest, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return readErr
+		for _, doc := range tree.YAMLDocuments(t, rel) {
+			if m, _ := doc.(map[string]any); m["kind"] != kindHelmRelease {
+				continue
+			}
+			releases[rel] = append(releases[rel], doc)
+			for _, chart := range scalarsAt(doc, "chart") {
+				charts[chart] = rel
+			}
 		}
-		text := string(manifest)
-		if !strings.Contains(text, "kind: HelmRelease") {
-			return nil
-		}
-		rel, _ := filepath.Rel(root, path)
-		for _, m := range helmChartName.FindAllStringSubmatch(text, -1) {
-			charts[m[1]] = rel
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking clusters/ for HelmReleases: %v", err)
 	}
 
 	const atLeastFourCharts = 4
@@ -114,8 +95,7 @@ silently stopped asking about.`, len(charts))
 		if ungoverned[chart] {
 			continue
 		}
-		manifest := readRepoFile(t, where)
-		if imageInValues.MatchString(manifest) {
+		if holdsAny(releases[where], "image", "repository", "registry") {
 			continue // Its images are set here, so the walk-based check covers them.
 		}
 		t.Errorf(`%s installs the chart %q, which neither pins its images in this
@@ -124,7 +104,7 @@ repository nor appears in chart_images_not_governed_here.
 So nothing here knows what it pulls or from where, and the registries section
 of scripts/approved-suppliers.yml reads as though it did. Either set the image
 registry and digest in the HelmRelease's own values - which brings them into
-TestClusterImagesComeFromApprovedRegistriesAndArePinned with no new machinery,
+the image rule (policy/conftest/rules/supplier_images/supplier_images.rego) with no new machinery,
 and is what the estate already does for the runner image - or declare the gap
 with what it pulls and what would close it.`, where, chart)
 	}
@@ -141,49 +121,25 @@ a number that makes the gap look larger than it is.`, chart)
 	}
 }
 
-// Every Flux controller the generated manifest ships is pinned by this overlay.
-//
-// `gotk-components.yaml` is written wholesale by `flux bootstrap` and pins its
-// controllers by TAG. The kustomization beside it replaces each tag with a
-// digest, and the transformer matches on image NAME - so a controller the
-// overlay does not name keeps its tag and runs unpinned.
-//
-// `task render-flux-digests` now reads the tags out of the generated manifest
-// rather than a list, so a new controller is picked up automatically (#104).
-// This is the half that fails when it is not: a controller added upstream, or
-// one renamed, goes from pinned to mutable with the manifest still building and
-// every other check still green.
-func TestEveryFluxControllerIsPinnedHere(t *testing.T) {
-	install, components := fluxObject(t, fluxInstallKind, fluxInstallName)
-	overlay := readRepoFile(t, beside(install, applications.Kustomization))
-
-	shipped := map[string]bool{}
-	for _, m := range regexp.MustCompile(`ghcr\.io/fluxcd/([a-z-]+):v[0-9.]+`).
-		FindAllStringSubmatch(components, -1) {
-		shipped[m[1]] = true
-	}
-
-	const atLeastFourControllers = 4
-	if len(shipped) < atLeastFourControllers {
-		t.Fatalf(`found %d controller image(s) in gotk-components.yaml, and Flux ships
-at least four.
-
-The parse has stopped matching, so a controller running unpinned would be
-invisible to this - which is the same green as everything being pinned.`, len(shipped))
-	}
-
-	for name := range shipped {
-		if !strings.Contains(overlay, "ghcr.io/fluxcd/"+name+"\n") &&
-			!strings.Contains(overlay, "ghcr.io/fluxcd/"+name+" ") {
-			t.Errorf(`gotk-components.yaml ships ghcr.io/fluxcd/%s and the kustomization
-does not pin it.
-
-kustomize's image transformer matches on NAME, so a controller it does not name
-keeps the mutable tag the generated manifest carries - on the component that
-applies everything else in the cluster. The overlay still builds and nothing
-else objects.
-
-Run: task render-flux-digests`, name)
+// holdsAny reports whether any of the keys holds a value anywhere in parsed
+// documents.
+func holdsAny(node any, keys ...string) bool {
+	switch v := node.(type) {
+	case []any:
+		for _, x := range v {
+			if holdsAny(x, keys...) {
+				return true
+			}
+		}
+	case map[string]any:
+		for k, x := range v {
+			if x != nil && x != "" && slices.Contains(keys, k) {
+				return true
+			}
+			if holdsAny(x, keys...) {
+				return true
+			}
 		}
 	}
+	return false
 }

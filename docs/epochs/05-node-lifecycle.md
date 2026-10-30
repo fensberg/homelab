@@ -502,6 +502,30 @@ site.
   expression entirely, which is one more argument for evaluating it before
   patching it. Trigger: a second hypervisor, or this epoch.
 
+## Ideas
+
+- **The primary pool follows the longest lane (2026-10-23).** A pool has a
+  primary pool beside it for the job every pull request waits on longest, so
+  that job never waits for a runner. Which job that is was read by hand, once.
+  Two pieces would keep it true:
+  1. **A job that measures the lanes and opens a pull request.** On a
+     schedule, it reads what each lane on the pools took over its recent
+     successful runs - the reading `TestAJobOnTheEstatesRunnersTakesAsLongAsItSays`
+     in `tests/go/api` already makes - and opens a pull request moving each
+     `takes:` in `scripts/approved-suppliers.yml` to what was measured, rather
+     than failing. Open: which runner reads the run history, given it holds a
+     token that can open a pull request; how many runs make a reading; and
+     whether it merges itself, as the site pin does (epoch 08), or waits for
+     the operator.
+  2. **A guard that the primary is the longest.** Of the jobs a merge waits
+     on, the one with the longest `takes:` is the one in a primary pool, and
+     no other job is. A lane that grows past it fails until its `runs-on` and
+     its `pool:` move, and the pull request in 1 is where that first shows.
+
+  The guard makes `takes:` decide where work runs, which is why the
+  measuring job comes with it: a duration written by hand and never read
+  again would be deciding it.
+
 ## Gotchas
 
 ### An image change cannot be delivered by a converge

@@ -1,0 +1,12 @@
+guard: TestTheConfigurationRulesHold
+rule: runner_names
+file: .github/workflows/deploy-infrastructure.yml
+find: "    # named for the site it is in (clusters/core, runner-scale-set.yaml).\n    runs-on: homelab-${{ matrix.site }}\n"
+replace: "    # named for the site it is in (clusters/core, runner-scale-set.yaml).\n    runs-on: homelab-production\n"
+mentions: "names the site it runs for with an expression"
+why:
+  "The estate's runners are registered per site. A job that asks for a name no site registers
+  waits for a runner that never appears, and one that names a site by hand is right for that
+  site and wrong for the next.
+
+  "

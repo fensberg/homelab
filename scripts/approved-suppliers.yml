@@ -37,7 +37,7 @@
 # Read this before trusting it.
 #
 #   Catches:      an unapproved registry or an unpinned image COMMITTED to this
-#                 repository. tests/go/repo/suppliers_test.go fails the build.
+#                 repository. policy/conftest/rules/suppliers/suppliers.rego fails the build.
 #   Catches:      a workflow inventing its own egress endpoint instead of
 #                 declaring it here.
 #   DOES NOT      a command pasted into a terminal. Nothing in CI can see that.
@@ -54,8 +54,8 @@
 # software with the same name, and nothing in git records that it moved.
 #
 # WHAT THIS GOVERNS, AND WHAT IT DOES NOT. This covers image references WRITTEN
-# IN THIS REPOSITORY. `TestClusterImagesComeFromApprovedRegistriesAndArePinned`
-# walks clusters/** and modules/** and checks what it finds spelled out there.
+# IN THIS REPOSITORY. The image rule in policy/conftest/rules/suppliers/suppliers.rego walks
+# clusters/** and checks what it finds spelled out there.
 #
 # It does not cover an image a Helm chart pulls by its own default, because
 # there is no reference here to read - the chart carries it. That gap is not
@@ -401,7 +401,7 @@ charts:
 # arrangement as a container image pinned by digest at its point of use. This
 # file answers the other half: who the estate takes delivery from.
 #
-# tests/go/repo/suppliers_test.go asserts the two agree in both directions, so
+# policy/conftest/rules/suppliers/suppliers.rego asserts the two agree in both directions, so
 # a provider cannot be added in one place and be invisible in the other.
 providers:
   - source: bpg/proxmox
@@ -644,6 +644,7 @@ pull_request_pools:
   names:
     - source
     - builds
+    - builds-primary
     - packages
   every_runner_reaches:
     - github.com:443
@@ -995,6 +996,18 @@ egress:
       - github.com:443
       - proxy.golang.org:443
 
+  - job: pr-validation.yml/pool-builds-primary
+    pool: builds-primary
+    policy: block
+    reason: >-
+      Tries the pool from inside: that it takes work, reaches what is
+      declared for it, and is refused a host nobody declared, the cluster's
+      own API and any token of the cluster's.
+    hosts:
+      - api.github.com:443
+      - github.com:443
+      - proxy.golang.org:443
+
   - job: pr-validation.yml/pool-packages
     pool: packages
     policy: block
@@ -1087,7 +1100,7 @@ egress:
       - sum.golang.org:443
 
   - job: pr-validation.yml/invariants
-    pool: builds
+    pool: builds-primary
     policy: block
     hosts:
       - api.github.com:443
@@ -1344,6 +1357,17 @@ tools:
       finding nothing else caught - CKV_GHA_7, on the expedite workflow's dispatch
       input. Its configuration is .checkov.yaml at the repository root, which
       predates this and carries the reasoning for every exclusion in it.
+  - source: semgrep/semgrep
+    version: SEMGREP_VERSION
+    pypi: semgrep
+    reason: >-
+      Code scanning. The Logic Scan lane runs the publisher's own rules over
+      every pull request, and the code rules in policy/semgrep are the
+      estate's: what a guard used to find by matching a file's text, Semgrep
+      finds by parsing it in its own language, so a comment is not code.
+      Taken from PyPI like the other Python tools, so the lane, the guards'
+      harness (TestTheCodeRulesHold) and a workstation all run the one
+      version pinned here.
   - source: cloudflare/cloudflared
     version: CLOUDFLARED_VERSION
     fetch: https://github.com/cloudflare/cloudflared/releases/download/{version}/cloudflared-linux-amd64
@@ -1354,6 +1378,38 @@ tools:
       be reached when a cluster cannot (workstation/tunnel.sh). Taken as a
       single static binary from the publisher's own release, the version the
       clusters run, and installed only if its SHA256 matches the lock.
+  - source: open-policy-agent/conftest
+    version: CONFTEST_VERSION
+    fetch: https://github.com/open-policy-agent/conftest/releases/download/v{version}/conftest_{version}_Linux_x86_64.tar.gz
+    reason: >-
+      Runs the repository's configuration rules (policy/conftest): Open Policy
+      Agent's Rego over the parsed workflows, manifests, OpenTofu, the
+      suppliers list, the pins and the other configuration this estate keeps.
+      The industry's policy-as-code tool for configuration, chosen on
+      2026-10-16 over guards that matched text in Go; each rule carries its own
+      tests, run by `conftest verify`.
+  - source: open-policy-agent/opa
+    version: OPA_VERSION
+    fetch: https://github.com/open-policy-agent/opa/releases/download/v{version}/opa_linux_amd64_static
+    reason: >-
+      Reads the configuration rules themselves: `opa parse` gives each rule's
+      syntax tree, so a guard can tell which of the selectors in
+      policy/conftest/lib/lib.rego a rule reads its files through, and refuse one
+      that reads the input any other way; `opa eval` asks a selector which
+      files it picks, with the same engine Conftest runs them on. The engine
+      Conftest embeds, from the same publisher, at the version it embeds.
+      Agreed 2026-10-18, over OPA's Go library in the tests module and over
+      selectors written as globs.
+  - source: open-policy-agent/regal
+    version: REGAL_VERSION
+    fetch: https://github.com/open-policy-agent/regal/releases/download/v{version}/regal_Linux_x86_64
+    reason: >-
+      Lints the configuration rules themselves: Rego that is correct and
+      still badly written - a rule that judges by matching text, a variable
+      that shadows another, a test that asserts nothing - which the rules'
+      own tests and the mutation ledger cannot see. Open Policy Agent's own
+      linter for Rego, from the publisher of OPA and Conftest. Agreed
+      2026-10-24 for PR 3 of the guard migration.
   - source: kubernetes-sigs/kwok
     version: KWOK_VERSION
     binary: kwokctl
@@ -1487,9 +1543,9 @@ tools:
     version: TRUFFLEHOG_VERSION
     fetch: https://github.com/trufflesecurity/trufflehog/releases/download/v{version}/trufflehog_{version}_linux_amd64.tar.gz
     reason: >-
-      Secret scanning, in the Secrets lane - the one lane that runs audit rather
-      than block, because verifying a leaked key means calling whichever vendor
-      issued it. Taken from the release archive rather than the marketplace
+      Secret scanning, before every push and in the Secrets lane, both by
+      security guard-secrets - the one lane that runs audit rather than block,
+      because verifying a leaked key means calling whichever vendor issued it. Taken from the release archive rather than the marketplace
       action, which runs a container at `latest`. Already in use and never
       written down here.
   - source: kubernetes-sigs/kustomize
@@ -1586,7 +1642,7 @@ tools:
 # was is what surfaced this.
 #
 # A hook must be listed here AND pinned by rev in .pre-commit-config.yaml.
-# tests/go/repo/suppliers_test.go fails the build when one is not.
+# policy/conftest/rules/suppliers/suppliers.rego fails the build when one is not.
 #
 # Audit the cache against this list with:
 #   for d in ~/.cache/pre-commit/repo*/; do git -C "$d" remote get-url origin; done
@@ -1680,6 +1736,10 @@ work:
     kind: cannot-wait
     takes: 1m
 
+  - job: pr-validation.yml/pool-builds-primary
+    kind: cannot-wait
+    takes: 1m
+
   - job: pr-validation.yml/pool-packages
     kind: cannot-wait
     takes: 1m
@@ -1732,9 +1792,9 @@ work:
     kind: cannot-wait
     takes: 1m
 
-  # The heavy lanes, on the pools by night only (the nightly form in
-  # pr-validation.yml). Each takes what it took on GitHub's runners on
-  # 2026-10-15, rounded up; the nights say what they take on the pools.
+  # The heavy lanes, on the pools since #800. Each says what it took on
+  # GitHub's runners on 2026-10-15, rounded up, until tests/go/api reads what
+  # it takes on the pools and says where the two have parted.
 
   - job: pr-validation.yml/validate
     kind: cannot-wait
@@ -1750,12 +1810,32 @@ work:
 
   - job: pr-validation.yml/invariants
     kind: cannot-wait
-    takes: 7m
+    # What it took on the pools when #808 was merged (2026-10-23): eighteen
+    # minutes, and seventeen in the queue, rounded up.
+    takes: 19m
 
   - job: pr-validation.yml/meta
     kind: cannot-wait
-    takes: 6m
+    # A quarter of the ledger each, in the builds pool (2026-10-22); read
+    # again from what the parts take there.
+    takes: 10m
 
   - job: pr-validation.yml/test-js
+    kind: cannot-wait
+    takes: 1m
+
+  - job: pr-validation.yml/already-tested
+    kind: cannot-wait
+    takes: 1m
+
+  - job: pr-validation.yml/test
+    kind: cannot-wait
+    takes: 1m
+
+  - job: sensitive-paths.yml/tripwire
+    kind: cannot-wait
+    takes: 1m
+
+  - job: inspector.yml/tally
     kind: cannot-wait
     takes: 1m

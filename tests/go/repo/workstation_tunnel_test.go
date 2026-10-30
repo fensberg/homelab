@@ -1,7 +1,7 @@
 package repo
 
 import (
-	"os/exec"
+	"homelab/tests/parsed"
 	"regexp"
 	"strings"
 	"testing"
@@ -14,9 +14,8 @@ import (
 // covers: shell:workstation/tunnel.sh
 func lockRules(t *testing.T, args ...string) (string, error) {
 	t.Helper()
-	root := repoRoot(t)
-	out, err := exec.Command("bash", append([]string{root + "/workstation/tunnel.sh", "rules"}, args...)...).CombinedOutput()
-	return string(out), err
+	stdout, stderr, err := repository(t).Invoke(parsed.Run{Outside: true}, "bash", append([]string{parsed.Here("workstation/tunnel.sh"), "rules"}, args...)...)
+	return string(stdout) + string(stderr), err
 }
 
 var (
@@ -44,6 +43,7 @@ var (
 // anything public is allowed; what is public is the vendor's edge ports; and
 // what is left is refused.
 func TestTheWorkstationsConnectorIsHeldToItsOwnSSHPort(t *testing.T) {
+	light(t)
 	const address, uid, resolver = "192.0.2.10", "4321", "127.0.0.53"
 	body, err := lockRules(t, address, uid, resolver)
 	if err != nil {
@@ -136,6 +136,7 @@ func lockFaults(body, address, uid, resolver string) []string {
 }
 
 func TestLockFaultsFindsEachWayALockDoesNotHold(t *testing.T) {
+	light(t)
 	const address, uid, resolver = "192.0.2.10", "4321", "127.0.0.53"
 	good := []string{
 		"type filter hook output priority filter; policy accept;",

@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: supplier_providers
+file: management/platform/.terraform.lock.hcl
+find: 'provider "registry.opentofu.org/hashicorp/kubernetes" {'
+replace: 'provider "registry.opentofu.org/evilcorp/kubernetes" {'
+mentions: "is not an approved supplier"
+why: >
+  A provider runs with this estate's credentials. One from a party nobody
+  approved, taken by changing its source and initialising again, is in the
+  lock that init writes, and every run after takes delivery from it.

@@ -8,7 +8,7 @@
 #     scripts/take-delivery.sh --print checkov              # prints its lock lines, installs nothing
 #
 # This is the only place in the repository that runs `pip install` or installs
-# a tool the lock covers, and tests/go/repo/deliveries_test.go refuses any
+# a tool the lock covers, and policy/semgrep/deliveries.yml refuses any
 # other. That is the point: a version pin written anywhere else fixes the tool
 # and lets everything it depends on float, and a binary downloaded anywhere
 # else is checked against whatever that one place remembered to check (#416).

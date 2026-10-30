@@ -1,0 +1,21 @@
+guard: TestTheConfigurationRulesHold
+rule: action_commits
+file: .github/workflows/zz-second-codeql-commit.yml
+create: |
+  name: planted
+  on: push
+  jobs:
+    planted:
+      runs-on: ubuntu-latest
+      timeout-minutes: 1
+      steps:
+        - uses: $/.github/workflows/mobilize
+          with:
+            egress-policy: block
+        - uses: github/codeql-action/autobuild@1111111111111111111111111111111111111111 # v0.0.0
+mentions: "pinned to 2 different commits"
+why: >
+  Writing each action PATH once still allows two paths of one repository
+  to name two commits - codeql-action's init and analyze are separate
+  paths. A commit belongs to the repository, so running two builds of one
+  action side by side is exactly the drift consolidation was meant to end.

@@ -1,15 +1,11 @@
 package repo
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 
 	"homelab/details/applications"
 )
@@ -45,11 +41,9 @@ func routeVariable(name string) string {
 type fixedService struct{ file, name, clusterIP string }
 
 func TestEveryTunnelRouteIsAServiceAddressAndTheReverse(t *testing.T) {
-	root := repoRoot(t)
-	apps, err := applications.Read(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	light(t)
+	tree := repository(t)
+	apps := tree.Applications(t)
 	// What of the core is reached from away is declared beside the core, as a
 	// route like an application's, and is held to the same: answered by a
 	// Service of its name, among the core's own manifests. Found by what it
@@ -57,16 +51,10 @@ func TestEveryTunnelRouteIsAServiceAddressAndTheReverse(t *testing.T) {
 	for _, rel := range tracked(t, func(rel string) bool {
 		return strings.HasPrefix(rel, fluxTree+"/") && filepath.Base(rel) == "routes.json"
 	}) {
-		data, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatal(err)
-		}
 		var declared struct {
 			Routes map[string]int `json:"routes"`
 		}
-		if err := json.Unmarshal(data, &declared); err != nil {
-			t.Fatalf("%s is not a declaration of routes that can be read: %v", rel, err)
-		}
+		tree.JSONInto(t, rel, &declared)
 		dir := filepath.ToSlash(filepath.Dir(rel))
 		apps = append(apps, applications.Application{Name: dir, Root: dir, Path: rel, Routes: declared.Routes})
 	}
@@ -76,11 +64,11 @@ func TestEveryTunnelRouteIsAServiceAddressAndTheReverse(t *testing.T) {
 		return (strings.HasPrefix(rel, fluxTree+"/") || strings.HasPrefix(rel, "modules/")) &&
 			(strings.HasSuffix(rel, ".yaml") || strings.HasSuffix(rel, ".yml"))
 	}) {
-		data, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatal(err)
+		// A file that is not YAML this reads holds no Service: Helm values
+		// and vendored manifests are in the same trees.
+		if docs, isYAML := tree.MaybeYAML(t, rel); isYAML {
+			services = append(services, fixedServices(rel, docs)...)
 		}
-		services = append(services, fixedServices(rel, string(data))...)
 	}
 	// No floor on how many routes there are: an estate with no application
 	// has none. What this refuses is proved against applications written
@@ -91,10 +79,9 @@ func TestEveryTunnelRouteIsAServiceAddressAndTheReverse(t *testing.T) {
 }
 
 // fixedServices is every Service in one manifest that sets its own address.
-func fixedServices(rel, body string) []fixedService {
+func fixedServices(rel string, docs []any) []fixedService {
 	var out []fixedService
-	dec := yaml.NewDecoder(strings.NewReader(body))
-	for {
+	for _, d := range docs {
 		var doc struct {
 			Kind     string `yaml:"kind"`
 			Metadata struct {
@@ -104,10 +91,8 @@ func fixedServices(rel, body string) []fixedService {
 				ClusterIP string `yaml:"clusterIP"`
 			} `yaml:"spec"`
 		}
-		// A document that is not YAML this reads is not a Service: Helm
-		// values and vendored manifests are in the same trees.
-		if dec.Decode(&doc) != nil {
-			break
+		if as(d, &doc) != nil {
+			continue
 		}
 		if doc.Kind == "Service" && doc.Spec.ClusterIP != "" && doc.Spec.ClusterIP != "None" {
 			out = append(out, fixedService{rel, doc.Metadata.Name, doc.Spec.ClusterIP})
@@ -163,6 +148,7 @@ func routeProblems(apps []applications.Application, services []fixedService) []s
 // written here: a route answered by its own Service is accepted, and each way
 // the two can disagree is named.
 func TestRouteProblemsNamesEachWayARouteAndItsServiceDisagree(t *testing.T) {
+	light(t)
 	app := func(name string, routes map[string]int) applications.Application {
 		root := applications.Dir + "/" + name
 		return applications.Application{Name: name, Root: root, Path: root + "/" + applications.Declaration, Routes: routes}
@@ -198,7 +184,7 @@ func TestRouteProblemsNamesEachWayARouteAndItsServiceDisagree(t *testing.T) {
 		}
 	}
 
-	found := fixedServices("f.yaml", "kind: Service\nmetadata: {name: a}\nspec: {clusterIP: None}\n---\nkind: Service\nmetadata: {name: b}\nspec: {clusterIP: \"${ADDRESS_B}\"}\n---\nkind: Service\nmetadata: {name: c}\nspec: {}\n---\nkind: ConfigMap\nmetadata: {name: d}\nspec: {clusterIP: 1.2.3.4}\n")
+	found := fixedServices("f.yaml", fixtureDocuments(t, "kind: Service\nmetadata: {name: a}\nspec: {clusterIP: None}\n---\nkind: Service\nmetadata: {name: b}\nspec: {clusterIP: \"${ADDRESS_B}\"}\n---\nkind: Service\nmetadata: {name: c}\nspec: {}\n---\nkind: ConfigMap\nmetadata: {name: d}\nspec: {clusterIP: 1.2.3.4}\n"))
 	if len(found) != 1 || found[0] != (fixedService{"f.yaml", "b", "${ADDRESS_B}"}) {
 		t.Errorf("the Services that set their own address were read as %+v", found)
 	}

@@ -1,0 +1,11 @@
+guard: TestTheConfigurationRulesHold
+rule: break_glass_identity
+file: config/management.tpl.json
+find: "  \"state_backup\": {\n"
+replace: "  \"state_backup\": {\n    \"identity\": \"{{ op://estate/state_backup/identity }}\",\n"
+mentions: 'references "state_backup/identity"'
+why: >
+  The template is rendered to disk on every run, beside every other secret,
+  and read by the program the break-glass key exists to outlive. The
+  recipient belongs there; the private half is only ever needed by a person
+  performing a restore.

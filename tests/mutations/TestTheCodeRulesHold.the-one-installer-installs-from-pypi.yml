@@ -1,0 +1,9 @@
+guard: TestTheCodeRulesHold
+rule: nothing-installs-from-pypi-outside-take-delivery
+file: policy/semgrep/deliveries.yml
+find: "        - /scripts/take-delivery.sh\n        - /tests/mutations/\n"
+replace: "        - /tests/mutations/\n"
+mentions: "installs from a Python package index outside scripts/take-delivery.sh"
+why: >
+  take-delivery.sh is the one thing that installs from the index, so the
+  rule must let it through and refuses it without the exclusion.

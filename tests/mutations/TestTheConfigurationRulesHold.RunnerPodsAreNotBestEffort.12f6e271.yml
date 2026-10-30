@@ -1,0 +1,13 @@
+guard: TestTheConfigurationRulesHold
+rule: runner_requests
+file: clusters/core/infrastructure/configs/runner-scale-set.yaml
+find: "memory: 2Gi"
+replace: "ephemeral-storage: 1Gi"
+mentions: "requests no memory"
+why: >
+  A runner with no memory request is BestEffort, which is the first cgroup
+  Talos's OOM controller reaches for, and is what killed a thirteen-minute
+  integration run. The mutation leaves a requests block behind rather than
+  deleting one, because the failure being guarded against is a request
+  quietly dropped from an otherwise healthy-looking spec, not a block
+  vanishing where a reader would notice it.

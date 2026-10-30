@@ -2,13 +2,8 @@ package repo
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 
 	"homelab/details/applications"
 	"homelab/details/privatenet"
@@ -37,8 +32,6 @@ import (
 // refusal lives here, for every application there is or will be, and
 // tests/mutations.yml proves it fires.
 
-var ipBlockCIDR = regexp.MustCompile(`cidr:\s*(\S+)`)
-
 const (
 	// The estate's own space, and the reason it can never be a permitted peer.
 	estateSpace = "10."
@@ -48,6 +41,7 @@ const (
 )
 
 func TestNoApplicationCanBeGivenAPathIntoTheEstate(t *testing.T) {
+	light(t)
 	// EVERY policy that governs an application, not one file.
 	//
 	// NetworkPolicies are additive: a second one, anywhere in the repository,
@@ -79,7 +73,7 @@ server, the state database and the hypervisor is the single thing its policy
 exists to prevent, and a second policy saying so quietly is worse than the
 first one saying it out loud.`, p.file, estateRange))
 	}
-	permitted, excepted := permittedPeers(p.body)
+	permitted, excepted, everywhereGranted := permittedPeers(p.egress)
 	for _, cidr := range permitted {
 		if strings.HasPrefix(cidr, estateSpace) {
 			problems = append(problems, fmt.Sprintf(`%s permits egress to %s.
@@ -98,7 +92,7 @@ outcome. The isolation boundary wins.`, p.file, cidr, estateRange))
 	}
 	// And a rule for everywhere must subtract it, or the grant arrives from
 	// the other direction with nothing above to notice.
-	if strings.Contains(p.body, everywhere) && !contains(excepted, estateRange) {
+	if everywhereGranted && !contains(excepted, estateRange) {
 		problems = append(problems, fmt.Sprintf(`%s permits %s and does not exclude %s.
 
 Everywhere, minus the estate, is the internet. Without that exclusion it is
@@ -114,20 +108,21 @@ Excluded today: %s`, p.file, everywhere, estateRange, strings.Join(excepted, ", 
 // that opens the internet minus every private range and two private ranges
 // beside it is accepted, and each way of opening the estate is named.
 func TestPathsIntoTheEstateNamesEachWayOneIsOpened(t *testing.T) {
+	light(t)
 	const broad = "    - to:\n        - ipBlock:\n            cidr: 0.0.0.0/0\n            except:\n              - 10.0.0.0/8\n              - 172.20.0.0/16\n"
 	for name, c := range map[string]struct {
-		policy applicationPolicy
+		egress string
 		want   string
 	}{
-		"the internet and two private ranges": {applicationPolicy{file: "p.yaml", body: broad + "    - to:\n        - ipBlock:\n            cidr: 192.168.7.0/24\n        - ipBlock:\n            cidr: 172.20.0.0/16\n"}, ""},
-		"no addresses at all":                 {applicationPolicy{file: "p.yaml", body: "  egress:\n    - to:\n        - namespaceSelector: {}\n"}, ""},
-		"the estate's own range":              {applicationPolicy{file: "p.yaml", body: broad + "    - to:\n        - ipBlock:\n            cidr: 10.0.0.0/8\n"}, "permits egress to 10.0.0.0/8"},
-		"a part of the estate's range":        {applicationPolicy{file: "p.yaml", body: broad + "    - to:\n        - ipBlock:\n            cidr: 10.10.0.0/16\n"}, "permits egress to 10.10.0.0/16"},
-		"everywhere, the estate included":     {applicationPolicy{file: "p.yaml", body: "    - to:\n        - ipBlock:\n            cidr: 0.0.0.0/0\n            except:\n              - 172.20.0.0/16\n"}, "does not exclude 10.0.0.0/8"},
-		"everywhere with no exception":        {applicationPolicy{file: "p.yaml", body: "    - to:\n        - ipBlock:\n            cidr: 0.0.0.0/0\n"}, "does not exclude 10.0.0.0/8"},
-		"an empty egress rule":                {applicationPolicy{file: "p.yaml", body: "  egress:\n    - {}\n", openEgress: true}, "permits egress to everything"},
+		"the internet and two private ranges": {broad + "    - to:\n        - ipBlock:\n            cidr: 192.168.7.0/24\n        - ipBlock:\n            cidr: 172.20.0.0/16\n", ""},
+		"no addresses at all":                 {"  egress:\n    - to:\n        - namespaceSelector: {}\n", ""},
+		"the estate's own range":              {broad + "    - to:\n        - ipBlock:\n            cidr: 10.0.0.0/8\n", "permits egress to 10.0.0.0/8"},
+		"a part of the estate's range":        {broad + "    - to:\n        - ipBlock:\n            cidr: 10.10.0.0/16\n", "permits egress to 10.10.0.0/16"},
+		"everywhere, the estate included":     {"    - to:\n        - ipBlock:\n            cidr: 0.0.0.0/0\n            except:\n              - 172.20.0.0/16\n", "does not exclude 10.0.0.0/8"},
+		"everywhere with no exception":        {"    - to:\n        - ipBlock:\n            cidr: 0.0.0.0/0\n", "does not exclude 10.0.0.0/8"},
+		"an empty egress rule":                {"  egress:\n    - {}\n", "permits egress to everything"},
 	} {
-		problems := pathsIntoTheEstate(c.policy)
+		problems := pathsIntoTheEstate(fixturePolicy(t, c.egress))
 		switch {
 		case c.want == "" && len(problems) != 0:
 			t.Errorf("%s: refused: %v", name, problems)
@@ -137,42 +132,64 @@ func TestPathsIntoTheEstateNamesEachWayOneIsOpened(t *testing.T) {
 	}
 }
 
-// permittedPeers splits the policy's CIDRs into what it grants and what it
-// subtracts from the broad rule.
-//
-// Split by indentation rather than by parsing, because an `except:` entry and a
-// permitted `cidr:` are the same text at different depths, and counting them
-// together would make the broad internet rule look like a grant of every
-// private range - which is the exact opposite of what it is.
-func permittedPeers(body string) (permitted, excepted []string) {
-	inExcept := false
-	exceptIndent := 0
-
-	for _, line := range strings.Split(body, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "#") || trimmed == "" {
-			continue
-		}
-		indent := len(line) - len(strings.TrimLeft(line, " "))
-
-		if inExcept && indent <= exceptIndent && !strings.HasPrefix(trimmed, "- ") {
-			inExcept = false
-		}
-		if strings.HasPrefix(trimmed, "except:") {
-			inExcept, exceptIndent = true, indent
-			continue
-		}
-		if inExcept {
-			if v := strings.TrimPrefix(trimmed, "- "); v != trimmed {
-				excepted = append(excepted, v)
+// permittedPeers splits the CIDRs of a policy's egress rules into what it
+// grants and what it subtracts from a broad rule, and says whether one of
+// them grants everywhere. An except entry and a permitted cidr are kept
+// apart by where they are in the rule, so the broad internet rule is never
+// read as a grant of the private ranges it takes away.
+func permittedPeers(egress []map[string]any) (permitted, excepted []string, everywhereGranted bool) {
+	for _, rule := range egress {
+		peers, _ := rule["to"].([]any)
+		for _, peer := range peers {
+			m, _ := peer.(map[string]any)
+			block, _ := m["ipBlock"].(map[string]any)
+			cidr, _ := block["cidr"].(string)
+			switch {
+			case cidr == everywhere:
+				everywhereGranted = true
+			case cidr != "":
+				permitted = append(permitted, cidr)
 			}
-			continue
-		}
-		if m := ipBlockCIDR.FindStringSubmatch(trimmed); m != nil && m[1] != "0.0.0.0/0" {
-			permitted = append(permitted, m[1])
+			except, _ := block["except"].([]any)
+			for _, e := range except {
+				if v, ok := e.(string); ok {
+					excepted = append(excepted, v)
+				}
+			}
 		}
 	}
-	return permitted, excepted
+	return permitted, excepted, everywhereGranted
+}
+
+// policyOf is a policy's egress rules, and whether one of them is empty -
+// which is every address.
+func policyOf(file string, egress []map[string]any) applicationPolicy {
+	open := false
+	for _, rule := range egress {
+		if len(rule) == 0 {
+			open = true
+		}
+	}
+	return applicationPolicy{file: file, egress: egress, openEgress: open}
+}
+
+// fixturePolicy is a policy whose egress rules a test writes out, under
+// spec.egress.
+func fixturePolicy(t *testing.T, text string) applicationPolicy {
+	t.Helper()
+	if !strings.HasPrefix(strings.TrimSpace(text), "egress:") {
+		text = "  egress:\n" + text
+	}
+	var doc struct {
+		Spec struct {
+			Egress []map[string]any `yaml:"egress"`
+		} `yaml:"spec"`
+	}
+	docs := fixtureDocuments(t, "spec:\n"+text)
+	if len(docs) != 1 || as(docs[0], &doc) != nil {
+		t.Fatalf("a fixture policy is not one document of egress rules:\n%s", text)
+	}
+	return policyOf("p.yaml", doc.Spec.Egress)
 }
 
 func contains(haystack []string, needle string) bool {
@@ -184,11 +201,11 @@ func contains(haystack []string, needle string) bool {
 	return false
 }
 
-// A NetworkPolicy that governs an application, with the text of its document
-// and whether its egress is unrestricted.
+// A NetworkPolicy that governs an application, with its egress rules and
+// whether they are unrestricted.
 type applicationPolicy struct {
 	file       string
-	body       string
+	egress     []map[string]any
 	openEgress bool
 }
 
@@ -203,25 +220,23 @@ type applicationPolicy struct {
 // second file.
 func applicationPolicies(t *testing.T) []applicationPolicy {
 	t.Helper()
-	root := repoRoot(t)
-	apps, err := applications.Read(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	tree := repository(t)
 	namespaces := map[string]bool{}
-	for _, a := range apps {
+	for _, a := range tree.Applications(t) {
 		namespaces[a.Name] = true
 	}
 	var found []applicationPolicy
 	for _, rel := range tracked(t, func(rel string) bool {
 		return strings.HasSuffix(rel, ".yaml") || strings.HasSuffix(rel, ".yml")
 	}) {
-		data, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatal(err)
+		// A file that is not YAML this reads holds no policy: Helm values
+		// and templates are in the same tree.
+		docs, isYAML := tree.MaybeYAML(t, rel)
+		if !isYAML {
+			continue
 		}
-		for _, doc := range strings.Split(string(data), "\n---") {
-			var parsed struct {
+		for _, d := range docs {
+			var policy struct {
 				Kind     string `yaml:"kind"`
 				Metadata struct {
 					Namespace string `yaml:"namespace"`
@@ -230,21 +245,13 @@ func applicationPolicies(t *testing.T) []applicationPolicy {
 					Egress []map[string]any `yaml:"egress"`
 				} `yaml:"spec"`
 			}
-			// A document that is not YAML this reads is not a policy: Helm
-			// values and templates are in the same tree.
-			if yaml.Unmarshal([]byte(doc), &parsed) != nil || parsed.Kind != "NetworkPolicy" {
+			if as(d, &policy) != nil || policy.Kind != "NetworkPolicy" {
 				continue
 			}
-			if !strings.HasPrefix(rel, applications.Dir+"/") && !namespaces[parsed.Metadata.Namespace] {
+			if !strings.HasPrefix(rel, applications.Dir+"/") && !namespaces[policy.Metadata.Namespace] {
 				continue
 			}
-			open := false
-			for _, rule := range parsed.Spec.Egress {
-				if len(rule) == 0 {
-					open = true
-				}
-			}
-			found = append(found, applicationPolicy{file: rel, body: doc, openEgress: open})
+			found = append(found, policyOf(rel, policy.Spec.Egress))
 		}
 	}
 	return found

@@ -61,6 +61,11 @@
 #             entry passing through an unrelated error path - a test that dies
 #             on a nil map is red for the wrong reason, and red for the wrong
 #             reason is not proof of anything.
+#   rule      for a proof of TestTheCodeRulesHold or TestTheConfigurationRulesHold
+#             only, and required there: the rule that must be among those
+#             refusing - a Semgrep rule's id, or a Conftest package under
+#             rules. Those run every rule at once, so the right words in the
+#             failure could still be another rule's (#780).
 #   why       what breaks in the estate if this guard stops working.
 #   reads_source
 #             opt-in for a `.go` target, which is otherwise refused. Say true
@@ -87,7 +92,7 @@
 # entry - which is also where the comment check's own decision is proved, in
 # TestSatisfiedByProseOnlyNamesAPassToFailFlip.
 
-owed_ceiling: 52
+owed_ceiling: 16
 
 unprovable:
   # --- cannot be proved by mutation ----------------------------------------
@@ -111,6 +116,11 @@ unprovable:
   - path: tests/go/repo/mutation_ledger_test.go
     reason: meta
   - path: tests/go/repo/preconditions_are_called_test.go
+    reason: meta
+  # The no-text guard's own table: each way a guard could read the
+  # repository is a case in it that must be refused, so the table is the
+  # proof, and the guard itself is proved by the ledger.
+  - test: TestTextReadsFindsEveryWayAGuardCouldReadTheRepository
     reason: meta
   # A check on a declaration list rather than on the estate: it asserts that
   # every declared retry implementation still exists, so mutating what it reads
@@ -147,15 +157,25 @@ unprovable:
     reason: table
   - path: tests/go/repo/vaultcheck_test.go
     reason: table
+  - test: TestSemgrepPathsAreReadAsGitignoreLines
+    reason: table
+  - test: TestAcceptedInReadsSemgrepsOkMark
+    reason: table
+  - test: TestReadsInputCountsTheInputAndNothingThatSaysIt
+    reason: table
+  - test: TestSelectorUsesFindsLibByEveryNameAFileGivesIt
+    reason: table
+  - test: TestReadMetaPartTakesOnlyAPartItCanPlace
+    reason: table
+  - test: TestEveryProofFallsInExactlyOnePartOfTheLedger
+    reason: table
+  - test: TestOutputOfKeepsOneTestsLinesFromAnInterleavedRun
+    reason: table
   # The reader behind TestNoCodePicksASiteByName, whose own ledger entry
   # proves the guard. Its table holds the values it must find and the prose it
   # must leave.
-  - test: TestSiteValuesFindsValuesAndLeavesProse
-    reason: table
   # The reader behind TestTheContractorWritesAResourceAddressInOnePlace, which
   # its own ledger entry proves.
-  - test: TestAddressLiteralsAreFoundAndProseIsNot
-    reason: table
   # The transcript shapes. A pattern that stops matching reports nothing and
   # looks exactly like a repository with no transcripts in it, so the shapes
   # are held to a table of their own - nineteen rows, each a line that must or
@@ -175,10 +195,14 @@ unprovable:
     reason: table
   # The reader behind TestAFileReachesOutsideItsDirectoryFromTheTop, which its own
   # ledger entry proves.
-  - test: TestClimbsWrongFindsEveryOtherWayUp
-    reason: table
   # The readers behind the two custom-block guards, which their own ledger
   # entries prove. Their tables hold each case they must find and must leave.
+  - test: TestDanglingInFindsWhatIsGoneAndLeavesWhatIsThere
+    reason: table
+  - test: TestDanglingFindingJudgesEachNameAScanFound
+    reason: table
+  - test: TestTheOwedCeilingFitsTheDebtExactly
+    reason: table
   - test: TestDuplicateFunctionsFindsCopiesAcrossPackagesOnly
     reason: table
   - test: TestApplicationShapeProblemsRefusesWhatIsNotTheShape
@@ -200,7 +224,9 @@ unprovable:
   - test: TestUnfollowableReleasesNamesEachWayAnOrderCanBeBroken
     reason: table
   - test: TestAnApplicationIsNamedOnlyWhereItLives
-    reason: proved by TestNamedOutsideAllowsAnApplicationsNameOnlyWhereItLives; planting a name here would be naming an application in this file
+    reason: proved by TestNamedOutsideAllowsAnApplicationsNameOnlyWhereItLives, and its reading by TestScanTextFindsEveryLineARuleMatchesInEveryFile; planting a name here would be naming an application in this file
+  - test: TestScanTextFindsEveryLineARuleMatchesInEveryFile
+    reason: table
   - test: TestNamedOutsideAllowsAnApplicationsNameOnlyWhereItLives
     reason: table
   - test: TestEveryApplicationsOwnTestsPass
@@ -211,38 +237,20 @@ unprovable:
     reason: table
   - test: TestRouteProblemsNamesEachWayARouteAndItsServiceDisagree
     reason: table
-  - test: TestInTheClearRefusesEveryPortThatIsNotHTTPSAndNamesWhatIsOutsideIt
-    reason: table
-  - test: TestEachToolHeldToItsLayerIsCaughtDoingANeighboursJob
-    reason: table
-  - test: TestALayerIsHeldToWhatItsSecretsCarry
-    reason: table
-  - test: TestAnAlertIsHeldToSayingAllThreeThings
-    reason: table
   - test: TestPathsIntoTheEstateNamesEachWayOneIsOpened
-    reason: table
-  - test: TestUnpinnedReleasesNamesEachWayAReleaseIsNotPinned
     reason: table
   # Removes each application from a copy of the repository and runs every
   # guard against it: a check on the checks, like the ledger's own runner.
   # What it removes is proved by the table beside it.
   - test: TestAnApplicationIsRemovedByDeletingItsDirectoryAndItsBlocks
     reason: meta
-  - test: TestWithoutApplicationTakesOutOneBlockAndLeavesTheRest
+  - test: TestABlockIsAnApplicationsOwnSourceAndWhatRunsIt
     reason: table
   - test: TestFluxLayoutRefusesWhatIsNotCoreOrASitesOwn
     reason: table
-  - test: TestUnreleasedModulesRefusesEveryWayAroundTheRelease
-    reason: table
   - test: TestOwnerOutsideItsAddressFindsTheNameAndNotTheAddress
     reason: table
-  - test: TestUnprovedKeysFindsAKeyThePatrolDoesNotProve
-    reason: table
   - test: TestLockFaultsFindsEachWayALockDoesNotHold
-    reason: table
-  - test: TestUnversionedSitesWantsALineForEverySiteAndNoOther
-    reason: table
-  - test: TestResourcesInRootsFindsOnlyWhatARootItselfDeclares
     reason: table
   - test: TestAssertingDeclarationsAndExpectedFailuresAreReadNotMatched
     reason: table
@@ -252,27 +260,19 @@ unprovable:
     reason: table
   - test: TestSiteRootProblemsHoldsTheRootsToTheContractors
     reason: table
-  - test: TestKubernetesOutsideThePlatformIsRefused
-    reason: table
-  - test: TestStepOrderProblemsRefusesThePlatformBeforeTheClusterIsReady
-    reason: table
   # The reader behind TestEveryConcurrencyGroupNamesWhatSupersedesIt, which
   # its own ledger entry proves. Its table holds each way to share a group.
-  - test: TestAuditConcurrencyCatchesEachWayToShareAGroup
-    reason: table
-  - test: TestASettingIsAWallOnlyWhileItHoldsWorkflowsToAListAtACommit
-    reason: table
   - test: TestAPoolsPolicyIsHeldToItsListAndItsRunnersToNothingOfTheClusters
     reason: table
-  - test: TestARequiredCheckIsReadAndAJobIsKnownByItsNameOrItsKey
+  - test: TestTheLocalTableRuleIsJudgedByThePlaceItIsAddedAt
     reason: table
-  - test: TestAMachineWithNoAddressIsSeenAndATemplateIsNotAMachine
+  # The reader behind TestEveryGuardOpensBySayingHowItRuns, which its own
+  # ledger entry proves. Its table holds each way a guard may open.
+  - test: TestAGuardsOpeningIsReadFromItsFirstStatement
     reason: table
-  - test: TestAConfigurationThatDrawsOnTheListIsToldFromOneThatDoesNot
-    reason: table
-  - test: TestADedicationIsWorkedOutAndAHalfOfOneIsSeen
-    reason: table
-  - test: TestAGroupOfRunnersIsAWallOnlyWhileItNamesWhatItAdmits
+  # The reader behind TestEveryCoverageFloorIsOneALaneMeasures, which its
+  # own ledger entry proves. Its table holds each way the gate is handed a key.
+  - test: TestAFloorIsMeasuredWhereTheGateIsHandedIt
     reason: table
   #
   # Already a mutation proof in the stronger form: it extracts the task's own
@@ -326,69 +326,21 @@ unprovable:
   #
   # Tracked as an epoch 06 issue; burning it down is a sitting, not a
   # sprint, and doing it badly would produce entries that prove nothing.
-  - test: TestAWorkstationWithNoOverlayKeyIsRefused
-    owed: true
-  - test: TestAuditWorkflowCatchesTheWaysInAndIgnoresTheOthers
-    owed: true
-  - test: TestBreakGlassIdentityIsNeverReferencedByOpenTofu
-    owed: true
-  - test: TestBreakGlassIdentityIsNotInTheConfigTemplate
-    owed: true
-  - test: TestBreakGlassIdentityIsReadOnlyByTheRestorePath
-    owed: true
-  - test: TestChartSourcesAreApproved
-    owed: true
-  - test: TestClusterImagesComeFromApprovedRegistriesAndArePinned
-    owed: true
-  - test: TestEveryCheckoutRefusesToPersistCredentials
-    owed: true
-  - test: TestEveryCommitHookIsPinned
-    owed: true
-  - test: TestEveryJobHardensTheRunnerFirst
-    owed: true
-  - test: TestEveryJobIsBounded
-    owed: true
   - test: TestEveryPhaseHasASourceFileNamedAfterIt
     owed: true
   - test: TestEverySensitivePathExists
     owed: true
   - test: TestEverySensitivePathExplainsItself
     owed: true
-  - test: TestEveryVaultReferenceInTheTemplateIsWrapped
-    owed: true
-  - test: TestEveryWorkflowDefaultsToAPipefailShell
-    owed: true
-  - test: TestFluxSyncsAnonymously
-    owed: true
   - test: TestGuardAndSignedpushAgreeOnTheScratchRef
     owed: true
-  - test: TestIPv6IsDisabledAtTheStack
-    owed: true
-  - test: TestMarkedRepliesReachTheLocalTable
-    owed: true
   - test: TestNoCompiledBinaryIsTracked
-    owed: true
-  - test: TestNoGitCredentialIsCreatedForFlux
-    owed: true
-  - test: TestNoSourceControlTokenInTheConfigTemplate
-    owed: true
-  - test: TestNoWorkflowDeclaresAVersionThatVersionsEnvOwns
-    owed: true
-  - test: TestNothingReadsAValueFromTheHealthGate
     owed: true
   - test: TestNothingRunsTofuBeforeAttach
     owed: true
   - test: TestOnlyQuietTofuSubcommandsAreStreamed
     owed: true
-  - test: TestParseSensitivePaths
-    owed: true
-  - test: TestReachableFromPullRequest
-    owed: true
   - test: TestRunnerImageCarriesEveryBinaryTheContractorInvokes
-    owed: true
-  - test: TestRunnerManifestsAgreeWithOpenTofu
-    owed: true
-  - test: TestRunnerScaleSetPinsItsImageByDigest
     owed: true
   - test: TestSensorAndParserAgreeOnEveryPath
     owed: true
@@ -404,29 +356,7 @@ unprovable:
     owed: true
   - test: TestTheCodeLawsAreCoveredBySensitivePaths
     owed: true
-  - test: TestTheDigestCoversOnlyTheSensitiveFiles
-    owed: true
-  - test: TestTheHealthGateDependsOnTheMachines
-    owed: true
-  - test: TestTheLabelMechanismIsGone
-    owed: true
-  - test: TestTheRoutingFixIsAppliedPerHostNotPerSite
-    owed: true
-  - test: TestTheToolshedIsIgnored
-    owed: true
-  - test: TestTheTripwireCanRefuse
-    owed: true
-  - test: TestTheTripwireOpensAConversation
-    owed: true
-  - test: TestTheWorkstationDoesNotWearTheRouterTag
-    owed: true
-  - test: TestTheWorkstationIsProvisionedOntoTheOverlay
-    owed: true
-  - test: TestTheWorkstationTagIsDocumentedInThePolicy
-    owed: true
   - test: TestVersionsAreDeclaredOnceAndSharedByBoth
-    owed: true
-  - test: TestWorkflowEgressIsDeclaredInTheSuppliersList
     owed: true
 
   # --- the ledger cannot mutate Go source ------------------------------------
@@ -443,14 +373,6 @@ unprovable:
   # than depending on the package it lives in, so nothing invalidated the
   # cache. Any repo-introspection guard proved by hand needs -count=1, or the
   # proof is of nothing.
-  - path: tests/go/repo/enumeration_root_test.go
-    reason: go-source
-    # It calls repopath.Root from the compiled binary, so no mutation of the
-    # scratch tree reaches the answer it checks. Proved by hand, with -count=1
-    # for the reason recorded above: repopath's walk was edited to answer one
-    # directory too deep, the check failed naming both paths, and the edit was
-    # reverted byte for byte. The logic it protects is also unit-tested in
-    # scripts/details/repopath: TestANestedClaudeMdDoesNotBecomeTheRoot.
   - path: tests/go/repo/toolbelt_test.go
     reason: go-source
   # Same reason: it reads Go source and nothing else, so the ledger cannot
@@ -465,21 +387,3 @@ unprovable:
   # closure is an assignment too.
   - path: tests/go/repo/pinned_endpoints_test.go
     reason: go-source
-
-# Tests that legitimately read a comment.
-#
-# TestNoTestIsSatisfiedByAComment runs the whole package against a copy with
-# every whole-line comment stripped out of the YAML it reads, and requires
-# every test that passed to still pass. A test that flips was being satisfied
-# by prose - which has happened twice here, most recently a tripwire check
-# satisfied by the comment ABOVE the step it was meant to be asserting.
-#
-# An entry here is an exemption, so it costs what an exemption costs: a reason
-# somebody can read later.
-comment_dependent:
-  - test: TestEverySilencedFindingNamesTheGuardThatProvesItMayBe
-    reason: >
-      The comment is its subject. A tool's own configuration cannot carry a
-      reason anywhere else, so the guard a silenced entry names is written in
-      the comment above that entry, and a copy with the comments stripped is
-      a copy in which every such entry names nothing.

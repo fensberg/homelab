@@ -2,9 +2,7 @@ package repo
 
 import (
 	"go/ast"
-	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -41,77 +39,77 @@ import (
 // not worth the false positives, so this guards the reassignable seam and says
 // nothing about the others.
 func TestPackagesWithANetworkEndpointPinItInTests(t *testing.T) {
-	root := repoRoot(t)
+	light(t)
+	tree := repository(t)
+	fset := token.NewFileSet()
+
+	// Each package as Go's own parser groups one: its directory and its
+	// package clause, so a package's external tests are a package of their own.
+	type pkgKey struct{ dir, name string }
+	pkgs := map[pkgKey]map[string]*ast.File{}
+	for _, rel := range tree.Files(t) {
+		if !strings.HasPrefix(rel, "scripts/") || !strings.HasSuffix(rel, ".go") {
+			continue
+		}
+		file := tree.Go(t, fset, rel)
+		key := pkgKey{filepath.Dir(rel), file.Name.Name}
+		if pkgs[key] == nil {
+			pkgs[key] = map[string]*ast.File{}
+		}
+		pkgs[key][rel] = file
+	}
 
 	var checked int
-	err := filepath.WalkDir(filepath.Join(root, "scripts"), func(dir string, d os.DirEntry, err error) error {
-		if err != nil || !d.IsDir() {
-			return err
-		}
+	for _, files := range pkgs {
+		endpoints := map[string]string{} // variable name -> file it is declared in
+		var tests []*ast.File
 
-		fset := token.NewFileSet()
-		pkgs, perr := parser.ParseDir(fset, dir, nil, 0)
-		if perr != nil {
-			return nil // not a Go package, or does not parse; other guards own that
-		}
-
-		for _, pkg := range pkgs {
-			endpoints := map[string]string{} // variable name -> file it is declared in
-			var tests []string
-
-			for name, file := range pkg.Files {
-				if strings.HasSuffix(name, "_test.go") {
-					tests = append(tests, name)
+		for name, file := range files {
+			if strings.HasSuffix(name, "_test.go") {
+				tests = append(tests, file)
+				continue
+			}
+			for _, decl := range file.Decls {
+				gen, ok := decl.(*ast.GenDecl)
+				if !ok || gen.Tok != token.VAR {
 					continue
 				}
-				for _, decl := range file.Decls {
-					gen, ok := decl.(*ast.GenDecl)
-					if !ok || gen.Tok != token.VAR {
+				for _, spec := range gen.Specs {
+					vs, ok := spec.(*ast.ValueSpec)
+					if !ok {
 						continue
 					}
-					for _, spec := range gen.Specs {
-						vs, ok := spec.(*ast.ValueSpec)
-						if !ok {
+					for i, id := range vs.Names {
+						if i >= len(vs.Values) {
 							continue
 						}
-						for i, id := range vs.Names {
-							if i >= len(vs.Values) {
-								continue
-							}
-							lit, ok := vs.Values[i].(*ast.BasicLit)
-							if !ok || lit.Kind != token.STRING {
-								continue
-							}
-							v := strings.Trim(lit.Value, "`\"")
-							if strings.HasPrefix(v, "http://") || strings.HasPrefix(v, "https://") {
-								endpoints[id.Name] = name
-							}
+						lit, ok := vs.Values[i].(*ast.BasicLit)
+						if !ok || lit.Kind != token.STRING {
+							continue
+						}
+						v := strings.Trim(lit.Value, "`\"")
+						if strings.HasPrefix(v, "http://") || strings.HasPrefix(v, "https://") {
+							endpoints[id.Name] = name
 						}
 					}
 				}
 			}
+		}
 
-			for name, file := range endpoints {
-				checked++
-				if len(tests) == 0 {
-					rel, _ := filepath.Rel(root, file)
-					t.Errorf("%s declares the endpoint %q and the package has no tests at all.\n\n"+
-						"Anything exercising this reaches the real service.", rel, name)
-					continue
-				}
-				if !pinnedBySomeTest(t, tests, name) {
-					rel, _ := filepath.Rel(root, file)
-					t.Errorf("%s declares the endpoint %q and no test in the package ever assigns it.\n\n"+
-						"So the package's tests run against the real service, and their outcome depends on "+
-						"what it happens to return. Assign it in a TestMain - a closed port on the loopback "+
-						"refuses immediately - and let a test that wants an answer stand up an httptest server.", rel, name)
-				}
+		for name, rel := range endpoints {
+			checked++
+			if len(tests) == 0 {
+				t.Errorf("%s declares the endpoint %q and the package has no tests at all.\n\n"+
+					"Anything exercising this reaches the real service.", rel, name)
+				continue
+			}
+			if !pinnedBySomeTest(tests, name) {
+				t.Errorf("%s declares the endpoint %q and no test in the package ever assigns it.\n\n"+
+					"So the package's tests run against the real service, and their outcome depends on "+
+					"what it happens to return. Assign it in a TestMain - a closed port on the loopback "+
+					"refuses immediately - and let a test that wants an answer stand up an httptest server.", rel, name)
 			}
 		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking scripts: %v", err)
 	}
 	if checked == 0 {
 		t.Fatal("no network endpoints found in scripts/, so this test proves nothing")
@@ -119,15 +117,10 @@ func TestPackagesWithANetworkEndpointPinItInTests(t *testing.T) {
 }
 
 // pinnedBySomeTest reports whether any test file assigns the named variable.
-func pinnedBySomeTest(t *testing.T, files []string, name string) bool {
-	t.Helper()
-	for _, f := range files {
-		tree, err := parser.ParseFile(token.NewFileSet(), f, nil, 0)
-		if err != nil {
-			continue
-		}
+func pinnedBySomeTest(files []*ast.File, name string) bool {
+	for _, file := range files {
 		var found bool
-		ast.Inspect(tree, func(n ast.Node) bool {
+		ast.Inspect(file, func(n ast.Node) bool {
 			assign, ok := n.(*ast.AssignStmt)
 			if !ok {
 				return true

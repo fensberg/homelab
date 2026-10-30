@@ -4,7 +4,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -53,13 +52,19 @@ import (
 
 // discoveryCalls are the ways a test finds its own subject on disk. A test
 // using one of these is asking the filesystem what to check, so what comes back
-// is not something the author wrote down and can be sure of.
+// is not something the author wrote down and can be sure of. The repository is
+// listed through tests/parsed, so asking a tree for its files or a
+// directory's entries is discovery wherever the tree came from. Its untracked
+// files are not: none is the answer hoped for.
 var discoveryCalls = map[string]bool{
 	"filepath.Walk":    true,
 	"filepath.WalkDir": true,
 	"filepath.Glob":    true,
 	"os.ReadDir":       true,
 }
+
+// discoveryMethods are a tree's ways of listing what it holds.
+var discoveryMethods = map[string]bool{"Files": true, "Entries": true}
 
 // callName renders a call's function as it is written, so `filepath.WalkDir`
 // stays distinguishable from a local `WalkDir`.
@@ -80,7 +85,14 @@ func callName(c *ast.CallExpr) string {
 func discovers(fn *ast.FuncDecl) bool {
 	found := false
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
-		if c, ok := n.(*ast.CallExpr); ok && discoveryCalls[callName(c)] {
+		c, ok := n.(*ast.CallExpr)
+		if !ok {
+			return !found
+		}
+		if discoveryCalls[callName(c)] {
+			found = true
+		}
+		if sel, ok := c.Fun.(*ast.SelectorExpr); ok && discoveryMethods[sel.Sel.Name] {
 			found = true
 		}
 		return !found
@@ -209,25 +221,18 @@ func failsTheTest(block *ast.BlockStmt) bool {
 }
 
 func TestEveryGuardThatDiscoversItsSubjectAssertsItFoundSome(t *testing.T) {
-	root := repoRoot(t)
-	dir := filepath.Join(root, "tests", "go", "repo")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("reading %s: %v", dir, err)
-	}
-
+	light(t)
+	tree := repository(t)
 	fset := token.NewFileSet()
 	var vacuous []string
 	discovering := 0
 
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), "_test.go") {
+	for _, rel := range tree.Files(t) {
+		if filepath.Dir(rel) != guardsDir || !strings.HasSuffix(rel, "_test.go") {
 			continue
 		}
-		f, parseErr := parser.ParseFile(fset, filepath.Join(dir, e.Name()), nil, 0)
-		if parseErr != nil {
-			t.Fatalf("parsing %s: %v", e.Name(), parseErr)
-		}
+		name := filepath.Base(rel)
+		f := tree.Go(t, fset, rel)
 		consts := intConstants(f)
 		for _, decl := range f.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
@@ -239,7 +244,7 @@ func TestEveryGuardThatDiscoversItsSubjectAssertsItFoundSome(t *testing.T) {
 			}
 			discovering++
 			if !assertsAFloor(fn, consts) {
-				vacuous = append(vacuous, e.Name()+"  "+fn.Name.Name)
+				vacuous = append(vacuous, name+"  "+fn.Name.Name)
 			}
 		}
 	}
@@ -292,6 +297,7 @@ usually a filter that still matches something.`, len(vacuous), strings.Join(vacu
 // still be refused - otherwise any comparison against any variable would pass
 // for a floor and the guard would stop meaning anything.
 func TestAFloorIsRecognisedHoweverItIsSpelled(t *testing.T) {
+	light(t)
 	cases := []struct {
 		name string
 		src  string

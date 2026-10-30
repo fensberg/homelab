@@ -40,6 +40,25 @@ import (
 // provisions. Moving either is a change to this list and a new order.
 var lockedPythons = []string{"3.12", "3.13"}
 
+// lockedGlibc is the oldest C library among the machines the lock serves:
+// glibc 2.39 on ubuntu-latest (Ubuntu 24.04); Debian 13 has 2.41. A wheel
+// built for any glibc up to it runs on both, so pip is told every one of
+// those, down to manylinux2014's 2.17. Naming fewer hid every release of a
+// tool built for a newer glibc than the list named: Semgrep's wheels moved
+// to manylinux_2_35 at 1.158.0, and a list that stopped at 2_28 resolved
+// nothing newer.
+const lockedGlibc = 39
+
+// lockedPlatforms is the wheel platforms pip may choose from, newest first.
+// pip does not extend a manylinux_2_X tag downward itself, so each is named.
+func lockedPlatforms() []string {
+	var platforms []string
+	for minor := lockedGlibc; minor >= 17; minor-- {
+		platforms = append(platforms, fmt.Sprintf("manylinux_2_%d_x86_64", minor))
+	}
+	return append(platforms, "manylinux2014_x86_64", "linux_x86_64")
+}
+
 // resolvedPackage is one package pip chose, with what it requires.
 type resolvedPackage struct {
 	Name     string
@@ -230,9 +249,10 @@ func pipResolve(python string, requirements []string) (map[string]resolvedPackag
 	args := []string{"-m", "pip", "install", "--dry-run", "--ignore-installed", "--quiet",
 		"--report", report, "--target", filepath.Join(dir, "target"),
 		"--python-version", python, "--implementation", "cp", "--abi", "cp" + strings.ReplaceAll(python, ".", ""),
-		"--platform", "manylinux_2_28_x86_64", "--platform", "manylinux_2_17_x86_64",
-		"--platform", "manylinux2014_x86_64", "--platform", "linux_x86_64",
 		"--only-binary=:all:"}
+	for _, platform := range lockedPlatforms() {
+		args = append(args, "--platform", platform)
+	}
 	args = append(args, requirements...)
 	cmd := exec.Command("python3", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {

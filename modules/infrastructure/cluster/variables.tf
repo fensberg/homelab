@@ -154,15 +154,16 @@ locals {
   # defensible and neither is obvious, which is exactly the class of choice that
   # should not live as a literal repeated in two files.
   #
-  # THE PATH FOR A FORK, which is the other half of #360: change this line. A
-  # network with internal resolvers, split-horizon DNS, or a policy against
-  # public upstreams needs nothing else - every machine the estate builds reads
-  # from here. tests/go/repo/cluster_network_test.go refuses a restatement.
+  # THE PATH FOR A FORK, which is the other half of #360: change the list in
+  # config/facts/dns-resolvers.json. A network with internal resolvers,
+  # split-horizon DNS, or a policy against public upstreams needs nothing
+  # else - every machine the estate builds reads from here.
+  # policy/conftest/rules/dns_resolvers refuses a restatement.
   #
   # Not moved into the vault template: a resolver address is not a secret, and
   # putting it there would make a fork edit a vault item to change a routing
   # decision that belongs in code where it can be reviewed.
-  dns_resolvers = ["1.1.1.1", "1.0.0.1"]
+  dns_resolvers = jsondecode(file("${path.module}/../../../config/facts/dns-resolvers.json")).servers
 
   # The two largest address commitments in the estate, the site's own.
   #

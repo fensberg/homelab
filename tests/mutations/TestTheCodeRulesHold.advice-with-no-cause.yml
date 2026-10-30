@@ -1,0 +1,12 @@
+guard: TestTheCodeRulesHold
+rule: no-phase-swallows-an-error-it-handles
+file: scripts/contractor/internal/phases/sterilize.go
+reads_source: true
+find: '			run.Warn("Could not migrate state back to local: " + err.Error())'
+replace: '			run.Warn("Could not migrate state back to local.")'
+mentions: "handles an error with run.Warn and never reports it"
+why: >
+  The handler goes on to tell the operator what to do about a failed state
+  migration. Without the error it tells them nothing about why it failed -
+  the shape of the teardown that once printed "check Proxmox manually" over
+  five VMs it had failed to destroy.

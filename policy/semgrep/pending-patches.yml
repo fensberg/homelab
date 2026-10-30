@@ -1,0 +1,23 @@
+# No test reads .github/patches.
+#
+# A patch exists for the seconds between the agent handing it over and the
+# operator applying it, and everything that changes with it travels inside
+# it. So there is nothing about the pending state worth testing, and tests
+# that tried - reading workflows through pending patches, applying them to
+# the ledger's scratch tree, checking a patch still applies - cost hours and
+# guarded a window nobody runs in. In the operator's words: "A test whose only
+# purpose is to test a patch that won't exist in 5 seconds is a stupid test."
+# This refuses the first step back towards that machinery.
+rules:
+  - id: no-test-reads-the-patches-directory
+    languages: [go]
+    severity: ERROR
+    message: >-
+      reads .github/patches. A patch lives for the seconds between hand-over
+      and apply, and carries every change that goes with it. Test the tree as
+      it is; there is no pending state worth a test.
+    pattern-either:
+      - pattern: '"=~/\.github\/patches/"'
+      - pattern: filepath.Join(..., ".github", "patches", ...)
+    paths:
+      include: ["/tests/**/*_test.go"]

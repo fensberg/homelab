@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: supplier_hooks
+file: .pre-commit-config.yaml
+find: "  - repo: https://github.com/rbubley/mirrors-prettier\n    rev: v3.9.6\n"
+replace: "  - repo: https://github.com/rbubley/mirrors-prettier\n    rev: main\n"
+mentions: "which moves"
+why: >
+  A hook runs on every commit with the developer's own privileges. On a
+  branch name, the code that runs next is whatever was pushed there last, not
+  the code anybody reviewed.

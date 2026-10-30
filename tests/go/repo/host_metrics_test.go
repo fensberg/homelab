@@ -1,11 +1,17 @@
 package repo
 
 import (
-	"os"
-	"path/filepath"
-	"regexp"
+	"fmt"
+	"go/ast"
+	"go/token"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/zclconf/go-cty/cty"
+	"gopkg.in/yaml.v3"
+
+	"homelab/tests/parsed"
 )
 
 // The host is measured, and it takes three halves in three tiers.
@@ -32,17 +38,18 @@ import (
 const hostExporterPackage = "prometheus-node-exporter"
 
 func TestMeasuringTheHostChangesAllThreeHalvesTogether(t *testing.T) {
-	playbook := stripYAMLComments(readRepoFile(t, "management/hypervisor/hypervisor-prep.yml"))
-	scrape := hostScrape(t)
-	tofu := ""
-	for _, body := range tofuSources(t) {
-		tofu += body
-	}
+	light(t)
+	tree := repository(t)
+	playbook := hostPlaybook(t)
+	scrape, scraped := hostScrape(t)
 
-	scraped := scrape != ""
-	installed := regexp.MustCompile(`(?m)^\s*-\s*` + regexp.QuoteMeta(hostExporterPackage) + `\s*$`).MatchString(playbook)
-	written := strings.Contains(tofu, `resource "kubernetes_secret" "host_metrics"`) &&
-		strings.Contains(tofu, `resource "kubernetes_endpoint_slice_v1" "hypervisor"`)
+	installed := slices.Contains(playbook.packages, hostExporterPackage)
+	// OpenTofu writes where the exporter answers, and the secret the scrape
+	// reads its certificates from.
+	written := len(tree.Blocks(t, "resource", "kubernetes_endpoint_slice_v1", "hypervisor")) == 1
+	if scraped {
+		written = written && writesSecret(t, tree, scrape.Spec.TLSConfig.CA.Secret.Name)
+	}
 
 	if scraped != installed || scraped != written {
 		t.Fatalf("measuring the host is half done.\n\n"+
@@ -58,18 +65,18 @@ func TestMeasuringTheHostChangesAllThreeHalvesTogether(t *testing.T) {
 		return
 	}
 
-	if !regexp.MustCompile(`--web\.listen-address=\{\{\s*ansible_host\s*\}\}:9100`).MatchString(playbook) {
+	if !slices.Contains(playbook.exporterArgs, "--web.listen-address={{ ansible_host }}:9100") {
 		t.Error("the host's exporter is not told to listen on the host's own address.\n\n" +
 			"That is the address the Service OpenTofu writes points Prometheus at. On the site's " +
 			"gateway it is inside the zone's VRF, where a program on the host can neither answer " +
 			"nor be reached. Set --web.listen-address={{ ansible_host }}:9100.")
 	}
-	if !regexp.MustCompile(`client_auth_type:\s*RequireAndVerifyClientCert`).MatchString(playbook) {
+	if playbook.clientAuth != "RequireAndVerifyClientCert" {
 		t.Error("the host's exporter does not ask its caller for a certificate.\n\n" +
 			"Anything that can reach the site's gateway - every pod in the cluster - would read " +
 			"the host. Set client_auth_type: RequireAndVerifyClientCert.")
 	}
-	if !regexp.MustCompile(`(?m)^\s*scheme:\s*HTTPS\s*$`).MatchString(scrape) {
+	if scrape.Spec.Scheme != "HTTPS" {
 		t.Error("the host is scraped in the clear. The exporter serves TLS and nothing else; set scheme: HTTPS.")
 	}
 }
@@ -79,44 +86,160 @@ func TestMeasuringTheHostChangesAllThreeHalvesTogether(t *testing.T) {
 // Service that makes it resolve is named for it. One that disagrees is a
 // certificate that does not match, found on the estate.
 func TestTheHostsExporterHasOneName(t *testing.T) {
-	declared := regexp.MustCompile(`HostMetricsName = "([a-z0-9.-]+)"`).FindStringSubmatch(
-		readRepoFile(t, "scripts/contractor/internal/phases/secrets.go"))
-	if declared == nil {
+	light(t)
+	tree := repository(t)
+	name := stringConstant(t, tree, "scripts/contractor/internal/phases/secrets.go", "HostMetricsName")
+	if name == "" {
 		t.Fatal("the contractor no longer declares the name the exporter's certificate is generated for, so this check is asserting nothing")
 	}
-	name := declared[1]
 
-	playbook := stripYAMLComments(readRepoFile(t, "management/hypervisor/hypervisor-prep.yml"))
-	if got := regexp.MustCompile(`(?m)^\s*host_metrics_name:\s*"([^"]+)"`).FindStringSubmatch(playbook); got == nil || got[1] != name {
-		t.Errorf("the playbook asks the exporter for %v, and its certificate is generated for %q.", got, name)
+	if got := hostPlaybook(t).name; got != name {
+		t.Errorf("the playbook asks the exporter for %q, and its certificate is generated for %q.", got, name)
 	}
 
-	scrape := hostScrape(t)
-	if !regexp.MustCompile(`(?m)^\s*serverName:\s*` + regexp.QuoteMeta(name) + `\s*$`).MatchString(scrape) {
+	scrape, _ := hostScrape(t)
+	if scrape.Spec.TLSConfig.ServerName != name {
 		t.Errorf("the scrape does not verify the exporter as %q, the name in its certificate.", name)
 	}
-	if !regexp.MustCompile(`(?m)^\s*-\s*` + regexp.QuoteMeta(name) + `:9100\s*$`).MatchString(scrape) {
+	var targets []string
+	for _, c := range scrape.Spec.StaticConfigs {
+		targets = append(targets, c.Targets...)
+	}
+	if !slices.Contains(targets, name+":9100") {
 		t.Errorf("the scrape's target is not %s:9100, so it either cannot resolve or reaches something else.", name)
 	}
 
-	_, tofu := tofuDeclaring(t, `resource "kubernetes_service" "hypervisor"`)
-	service := regexp.MustCompile(`(?s)resource "kubernetes_service" "hypervisor".*?name\s*=\s*"([a-z0-9-]+)"`).FindStringSubmatch(tofu)
-	if service == nil || !strings.HasPrefix(name, service[1]+".monitoring.") {
-		t.Errorf("the Service OpenTofu creates is %v, and %q does not resolve to it.", service, name)
+	service, _ := parsed.Literal(parsed.Attribute(tree.Declaring(t, "resource", "kubernetes_service", "hypervisor").Body, "metadata", "name").Expr)
+	if service.IsNull() || service.Type() != cty.String || !strings.HasPrefix(name, service.AsString()+".monitoring.") {
+		t.Errorf("the Service OpenTofu creates is named %#v, and %q does not resolve to it.", service, name)
 	}
 }
 
-// hostScrape is the definition of the host's scrape in the Flux tree, without
-// its comments, or "" when there is none.
-func hostScrape(t *testing.T) string {
+// playbookFacts is what the hypervisor's playbook says of the exporter: the
+// packages it installs, the arguments the exporter is started with, what its
+// TLS config asks of a caller, and the name it is asked to answer to.
+type playbookFacts struct {
+	packages     []string
+	exporterArgs []string
+	clientAuth   string
+	name         string
+}
+
+// hostPlaybook reads the hypervisor's play, and the two files it writes for
+// the exporter, each by its own parser: the TLS config as YAML, and the
+// service's environment as the words its ARGS hands the exporter.
+func hostPlaybook(t *testing.T) playbookFacts {
 	t.Helper()
-	path, err := fluxObjectPath("ScrapeConfig", "hypervisor")
-	if err != nil {
-		return ""
+	play := hypervisorPlay(t)
+	var out playbookFacts
+	out.name, _ = play.Vars["host_metrics_name"].(string)
+	for _, task := range play.Tasks {
+		if task.Is("apt") {
+			switch names := task.Args["name"].(type) {
+			case string:
+				out.packages = append(out.packages, names)
+			case []any:
+				for _, n := range names {
+					out.packages = append(out.packages, fmt.Sprint(n))
+				}
+			}
+		}
+		dest, content, ok := task.Writes()
+		if !ok {
+			continue
+		}
+		switch dest {
+		case "/etc/prometheus-node-exporter/web.yml":
+			var web struct {
+				TLS struct {
+					ClientAuth string `yaml:"client_auth_type"`
+				} `yaml:"tls_server_config"`
+			}
+			if err := yaml.Unmarshal([]byte(content), &web); err != nil {
+				t.Fatalf("the exporter's TLS config, as the playbook writes it, is not YAML: %v", err)
+			}
+			out.clientAuth = web.TLS.ClientAuth
+		case "/etc/default/prometheus-node-exporter":
+			commands, err := parsed.TemplateCommands(dest, content)
+			if err != nil {
+				t.Fatalf("the exporter's environment, as the playbook writes it, is not shell: %v", err)
+			}
+			for _, c := range commands {
+				// The service's manager splits ARGS into the exporter's
+				// arguments, once Ansible has rendered it.
+				args, err := parsed.TemplateCommands("ARGS", c.Assigns["ARGS"])
+				if err != nil {
+					t.Fatalf("the exporter's ARGS is not words: %v", err)
+				}
+				for _, a := range args {
+					out.exporterArgs = append(out.exporterArgs, a.Words...)
+				}
+			}
+		}
 	}
-	body, err := os.ReadFile(filepath.Join(repoRoot(t), path))
-	if err != nil {
-		t.Fatal(err)
+	return out
+}
+
+// scrapeDefinition is what the host's scrape says about where and how it
+// reaches the exporter.
+type scrapeDefinition struct {
+	Spec struct {
+		Scheme        string `yaml:"scheme"`
+		StaticConfigs []struct {
+			Targets []string `yaml:"targets"`
+		} `yaml:"staticConfigs"`
+		TLSConfig struct {
+			ServerName string `yaml:"serverName"`
+			CA         struct {
+				Secret struct {
+					Name string `yaml:"name"`
+				} `yaml:"secret"`
+			} `yaml:"ca"`
+		} `yaml:"tlsConfig"`
+	} `yaml:"spec"`
+}
+
+// hostScrape is the definition of the host's scrape in the Flux tree, and
+// whether there is one.
+func hostScrape(t *testing.T) (scrapeDefinition, bool) {
+	t.Helper()
+	var out scrapeDefinition
+	if _, err := fluxObjectPath(t, "ScrapeConfig", "hypervisor"); err != nil {
+		return out, false
 	}
-	return stripYAMLComments(string(body))
+	_, docs := fluxObject(t, "ScrapeConfig", "hypervisor")
+	for _, d := range docs {
+		m, _ := d.(map[string]any)
+		if m["kind"] != "ScrapeConfig" {
+			continue
+		}
+		encoded, err := yaml.Marshal(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := yaml.Unmarshal(encoded, &out); err != nil {
+			t.Fatalf("the host's scrape is not the shape this reads: %v", err)
+		}
+		return out, true
+	}
+	return out, false
+}
+
+// writesSecret says whether OpenTofu writes a Kubernetes Secret of this name.
+func writesSecret(t *testing.T, tree *parsed.Tree, name string) bool {
+	t.Helper()
+	for _, b := range tree.Blocks(t, "resource", "kubernetes_secret") {
+		if a := parsed.Attribute(b.Body, "metadata", "name"); a != nil && isLiteral(a.Expr, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// stringConstant is a string constant a Go file declares, or "" when it
+// declares none by that name.
+func stringConstant(t *testing.T, tree *parsed.Tree, rel, name string) string {
+	t.Helper()
+	f := tree.Go(t, token.NewFileSet(), rel)
+	return stringConstants(map[string]*ast.File{rel: f})[name]
 }

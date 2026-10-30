@@ -1,0 +1,11 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_control_plane_metrics
+file: modules/infrastructure/cluster/talos.tf
+find: "          extraArgs = { (l.argument) = l.value }\n        }\n      }"
+replace: "          extraArgs = { (l.argument) = l.value }\n        } if l.component != \"etcd\"\n      }"
+mentions: "not every control plane's configuration sets cluster.etcd.extraArgs.listen-metrics-urls"
+why: >
+  The machines are told to open each listener the fact lists, and a filter
+  in the patch is the plausible way one stops being opened while the chart
+  goes on scraping it: a target permanently red, which is how a cluster
+  teaches everybody to stop reading red targets.

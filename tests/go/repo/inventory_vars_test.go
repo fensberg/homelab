@@ -1,7 +1,10 @@
 package repo
 
 import (
+	"go/ast"
+	"go/token"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -21,22 +24,50 @@ import (
 // What the inventory supplies is read from the program that writes it: every
 // host variable it prints into the inventory it builds.
 func TestNoPlayGivesADefaultToWhatTheInventorySuppliesPerHost(t *testing.T) {
-	hostVar := regexp.MustCompile(`Fprintf\(&inv, "\s{10}([a-z_]+): `)
+	light(t)
+	tree := repository(t)
+	hostVar := regexp.MustCompile(`^\s{10}([a-z_]+): `)
 	supplied := map[string]string{}
+	fset := token.NewFileSet()
 	for _, rel := range goFiles(t) {
 		if strings.HasSuffix(rel, "_test.go") {
 			continue
 		}
-		for _, m := range hostVar.FindAllStringSubmatch(readRepoFile(t, rel), -1) {
-			supplied[m[1]] = rel
-		}
+		// fmt.Fprintf(&inv, "          name: ...") - a line of the inventory.
+		ast.Inspect(tree.Go(t, fset, rel), func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok || len(call.Args) < 2 {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "Fprintf" {
+				return true
+			}
+			to, ok := call.Args[0].(*ast.UnaryExpr)
+			if !ok || to.Op != token.AND {
+				return true
+			}
+			if id, ok := ast.Unparen(to.X).(*ast.Ident); !ok || id.Name != "inv" {
+				return true
+			}
+			lit, ok := call.Args[1].(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				return true
+			}
+			if format, err := strconv.Unquote(lit.Value); err == nil {
+				if m := hostVar.FindStringSubmatch(format); m != nil {
+					supplied[m[1]] = rel
+				}
+			}
+			return true
+		})
 	}
 	if len(supplied) == 0 {
 		t.Fatal("found no host variable written into an inventory, so this is no longer reading the program that writes one")
 	}
 
 	plays := 0
-	for _, rel := range trackedFiles(t) {
+	for _, rel := range tree.Files(t) {
 		if !strings.HasSuffix(rel, ".yml") && !strings.HasSuffix(rel, ".yaml") || strings.HasPrefix(rel, ".github/") {
 			continue
 		}
@@ -44,7 +75,8 @@ func TestNoPlayGivesADefaultToWhatTheInventorySuppliesPerHost(t *testing.T) {
 			Hosts string               `yaml:"hosts"`
 			Vars  map[string]yaml.Node `yaml:"vars"`
 		}
-		if yaml.Unmarshal([]byte(readRepoFile(t, rel)), &doc) != nil {
+		docs, isYAML := tree.MaybeYAML(t, rel)
+		if !isYAML || len(docs) == 0 || as(docs[0], &doc) != nil {
 			continue
 		}
 		for _, play := range doc {

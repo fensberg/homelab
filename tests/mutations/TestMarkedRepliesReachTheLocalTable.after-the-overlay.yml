@@ -1,0 +1,10 @@
+guard: TestMarkedRepliesReachTheLocalTable
+file: management/hypervisor/hypervisor-prep.yml
+find: "cmd: ip rule add pref 5200 from all fwmark 0x80000/0xff0000 lookup local"
+replace: "cmd: ip rule add pref 5300 from all fwmark 0x80000/0xff0000 lookup local"
+mentions: "which is not before the overlay's own rules"
+why: >
+  The rule moved behind the overlay's own, at 5210 to 5250. It is still
+  there and still names the local table, and a marked reply never reaches
+  it: the overlay's rules match it first and send it where no local route
+  is, so the host leaves the overlay with every rule apparently in place.

@@ -99,13 +99,13 @@ the site's own service account, with read and write on `site0` and read on
 `site0-shared` and `estate-shared`, and nothing else. The contractor refuses a
 token that can see more (`scripts/details/vaults`).
 
-**None of them needs a reviewer.** Every job naming an
-environment runs from `main` or on a schedule, never from a pull request: a
-pull request's plan runs on GitHub's runner against the as-built record and
-holds no credential (#554). So the only thing that reaches the estate is a
-merge, and the pull request's approval is the only gate.
-`tests/go/repo/selfhosted_test.go` refuses any pull-request job on the
-estate's runner.
+**None of them needs a reviewer.** Every job naming an environment runs from
+`main` or on a schedule, never from a pull request: a pull request's plan runs
+on GitHub's runner against the as-built record and holds no credential (#554).
+So the only thing that reaches the estate is a merge, and the pull request's
+approval is the only gate.
+`policy/conftest/rules/pull_request_runners/pull_request_runners.rego` refuses
+any pull-request job on the estate's runner.
 
 ## Invariants
 
@@ -127,7 +127,7 @@ belongs in an epoch record.
   and stored somewhere this program can read would foreclose the property in
   the same breath as creating it. Generated once for the estate with
   `age-keygen` — one break-glass key, not one per site — and never referenced
-  by OpenTofu, which `tests/go/repo` enforces.
+  by OpenTofu, which `policy/semgrep/breakglass-opentofu.yml` enforces.
 
   Everything below that floor is generated: the state database password is
   created by build-site and written to 1Password, because the rule that decides
@@ -396,13 +396,14 @@ Interrupting a destroy deliberately does _not_ sterilize: wiping state
 part-way through a teardown is how VMs get orphaned, so it waits for tofu to
 release its lock and leaves everything in place to be re-run.
 
-**Getting state back is `contractor restore`.** It fetches the break-glass
-identity, decrypts the latest age backup from object storage, checks that what
-came back is state describing something, and pushes it through the encrypted
-backend. It refuses if local state already exists. It is the only place in the
-program that reads the private half, which `tests/go/repo` enforces, and it
-restores state and stops - what to do with it afterwards is a judgement call,
-not a next step.
+**Getting state back is `contractor restore`.** It takes the break-glass
+identity on stdin, piped from the estate's vault by the person restoring,
+decrypts the latest age backup from object storage, checks that what came back
+is state describing something, and pushes it through the encrypted backend. It
+refuses if local state already exists. It is the only place in the program
+that holds the private half, and no program here reads it from a vault
+(`policy/semgrep/breakglass-contractor.yml`). It restores state and stops -
+what to do with it afterwards is a judgement call, not a next step.
 
 **Checking the vault is `contractor check-inventory`** (`task check-inventory`).
 It proves every `op://` reference in `config/management.tpl.json` resolves and
@@ -486,11 +487,12 @@ that password across sites would mean compromising one reaches all - the
 backup recipient is the exception precisely because it is a public key, and
 sharing it costs nothing.
 
-Hostnames, credentials and even the site's human name are `op://` references,
-so the file shows the shape of the estate without revealing what or where
-anything is. Every one of them must be wrapped in `{{ }}` - `op inject`
-substitutes nothing else, and a bare `op://` string is valid JSON that reaches
-the reader verbatim. `tests/go/repo` asserts it.
+Hostnames, credentials and even the site's human name are `op://` references, so
+the file shows the shape of the estate without revealing what or where anything
+is. Every one of them must be wrapped in `{{ }}` - `op inject` substitutes
+nothing else, and a bare `op://` string is valid JSON that reaches the reader
+verbatim. `policy/conftest/rules/config_template/config_template.rego` asserts
+it.
 
 **Every `op://` reference in the template must resolve.** There is no way to
 leave a placeholder site or node, so add the vault items first, then the
@@ -682,18 +684,28 @@ in both places and adding a case to that manifest.
 test that opens `management/<root>/talos.tf` or
 `clusters/<somewhere>/thing.yaml` checks that path, and goes on checking it
 after the thing it guards has moved to another root, a module or a site's own
-directory. So a test asks for "the file that declares this" - `tofuDeclaring`
-and `fluxObject` in `tests/go/repo`, `tofufiles.Declaring` in a program's
-test - or reads every file (`tofuSources`). `TestNoTestNamesTheRootItReads`
-refuses a test that names a root's files or a path into the Flux tree.
+directory. So a test asks for "the block that declares this" - the tree's
+`Declaring` and `fluxObject` in `tests/go/repo`, `tofufiles.Declaring` in a
+program's test - or reads every file (the tree's `OpenTofu`).
+`TestNoTestNamesTheRootItReads` refuses a test that names a root's files or a
+path into the Flux tree.
+
+**A guard reads the repository through `tests/go/parsed`, and nothing else.**
+Each kind of file has its parser there - OpenTofu as HCL blocks and
+attributes, YAML, JSON, Go, shell, Markdown - and a guard asks the parser
+rather than reading text. A guard whose subject is what every file says,
+comments included, asks Semgrep (`scanText`). `TestNoGuardReadsAFileAsText`
+refuses any other way in: a root found or built, a relative path, a program
+started outside the tree's `Invoke`.
 
 **A verb is tested whole.** `scripts/contractor/internal/phases/verbs_test.go`
 runs a build, a converge and a teardown through the real phases with `tofu`,
 `op`, `age` and `rclone` replaced on PATH by programs that log what they were
 asked. It asserts what reaches tofu and in which root, not what a phase
 prints. A phase added to a verb has to be run there or declared not to be.
-`plan_unbuilt_test.go` plans both roots from nothing with the real providers
-and a stand-in for every vault value.
+`steps.PlanUnbuilt` plans both roots from nothing with the real providers
+and a stand-in for every vault value; its test holds the plan to that, and
+the configuration rules judge OpenTofu on the plan it makes.
 
 Coverage is a ratchet, not a threshold: `tests/coverage-baseline.json` is a
 floor a pull request may not drop below and is free to leave alone.
@@ -828,8 +840,10 @@ floor a pull request may not drop below and is free to leave alone.
   in CI on every pull request. **Commit and push together stay under ten
   seconds:** the `pre-push` hook runs only what cannot be undone once
   published and the guards that answer in milliseconds
-  (`go test -C tests/go -count=1 -short ./repo`); a guard costing seconds calls
-  `heavy()` and waits for the pull request. Run `task validate` and
+  (`go test -C tests/go -count=1 -short ./repo`). Every guard opens by saying
+  how it runs: `light(t)` runs at push, beside the others; `heavy(t, why)`
+  costs seconds and waits for the pull request; `serial(t, why)` changes the
+  process and runs alone. Run `task validate` and
   `task test` by hand when you want the whole answer before pushing.
   `validate` and `test` are separate on purpose - "does it resolve" and
   "does it do the right thing" are different questions, and one owner per

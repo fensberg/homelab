@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"homelab/details/facts"
 	"homelab/details/tcp"
 	"homelab/tests/harness"
 )
@@ -41,40 +42,13 @@ import (
 // already reaches for the Talos API check - so the tier does not acquire Talos
 // API access, which sits below Kubernetes and can reset a machine.
 //
-// tests/go/repo/talos_listeners_test.go holds this table and talos.tf
-// together, so a listener added there and not dialled here fails the build.
-type controlPlaneListener struct {
-	// What it is, in the words a failure message should use.
-	What string
-	// The key under `cluster` in talos.tf's yamlencode patch that opens it.
-	// This is what the repo-tier guard matches on.
-	Component string
-	Port      string
-	// The metric to look for when /metrics is servable without a credential,
-	// which for etcd it deliberately is - that is why its metrics listener is
-	// a separate listener from its client port. Empty means the endpoint
-	// authenticates, and reaching the port is all that can be checked here.
-	Metric string
-}
-
-var controlPlaneListeners = []controlPlaneListener{
-	{
-		What:      "etcd's metrics listener",
-		Component: "etcd",
-		Port:      "2381",
-		Metric:    "etcd_server_has_leader",
-	},
-	{
-		What:      "the scheduler's metrics listener",
-		Component: "scheduler",
-		Port:      "10259",
-	},
-	{
-		What:      "the controller-manager's metrics listener",
-		Component: "controllerManager",
-		Port:      "10257",
-	},
-}
+// Which listeners, on which port, and the metric each is read for, are the
+// fact config/facts/control-plane-listeners.json, which the cluster module
+// opens them from too: a listener added there is dialled here with no second
+// list to forget. The port is the component's own default, which the module
+// does not write for every component; metric is empty where the endpoint
+// authenticates, and reaching the port is all that can be checked here.
+var controlPlaneListeners = facts.ControlPlaneListenersOpened
 
 func TestEveryControlPlaneOpensTheListenersItWasConfiguredFor(t *testing.T) {
 	t.Parallel()

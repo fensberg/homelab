@@ -1,0 +1,11 @@
+guard: TestTheConfigurationRulesHold
+rule: version_pins
+file: .github/workflows/fabricator.yml
+find: "        env:\n          CONTEXT: ${{ matrix.order.context }}\n          ORDER_PINS: ${{ matrix.order.pins }}\n"
+replace: "        env:\n          TOFU_VERSION: 1.10.6\n          CONTEXT: ${{ matrix.order.context }}\n          ORDER_PINS: ${{ matrix.order.pins }}\n"
+mentions: "declares TOFU_VERSION itself"
+why: >
+  A workflow that writes a version down beside the one versions.env pins runs
+  on its own copy of it. pr-validation.yml did, for long enough that pull
+  requests were validated on OpenTofu 1.10.6 while the estate converged on
+  1.12.6, and nothing reported the two disagreeing.
