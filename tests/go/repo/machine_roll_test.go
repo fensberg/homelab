@@ -6,19 +6,21 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
 	"homelab/details/applications"
+	"homelab/details/asbuilt"
 	"homelab/details/capacity"
 	"homelab/details/flux"
+	"homelab/tests/parsed"
 )
 
 // The machine roll, run for real against a cluster that holds no machines.
@@ -77,10 +79,10 @@ func baseRollCase() rollCase {
 			{"dmz-100", "10.0.10.100", "v1.13.11", true, false, true},
 		},
 		want: map[string]string{
-			"talos_version":       "v1.13.11",
-			"talos_upgrades_from": "v1.13",
-			"kubernetes_version":  "1.36.3",
-			"installer_image":     "factory.example/installer/abc:v1.13.11",
+			asbuilt.TalosVersionKey: "v1.13.11",
+			"talos_upgrades_from":   "v1.13",
+			"kubernetes_version":    "1.36.3",
+			"installer_image":       "factory.example/installer/abc:v1.13.11",
 		},
 		runner: "wk-202",
 		hour:   "03",
@@ -164,11 +166,13 @@ func resourceOf(group, kind string) string { return strings.ToLower(kind) + "s."
 // holds a store and an API server, and a runner has a few cores.
 var rollSlots = make(chan struct{}, 3)
 
+// rollIsHeavy is why each of the roll's tests waits for the pull request.
+const rollIsHeavy = "starts a cluster and runs ansible-playbook against it"
+
 var rollStarting sync.Mutex
 
 func startRollSite(t *testing.T) *rollSite {
 	t.Helper()
-	heavy(t, "starts a cluster and runs ansible-playbook against it")
 	t.Parallel()
 	rollSlots <- struct{}{}
 	t.Cleanup(func() { <-rollSlots })
@@ -330,20 +334,13 @@ func (s *rollSite) roll(t *testing.T, c rollCase) rollResult {
 		t.Fatal(err)
 	}
 
-	tree := filepath.Join(t.TempDir(), "tree")
-	play := copyRollPlay(t, filepath.Join(tree, "management", "roll"))
-	app := filepath.Join(tree, filepath.FromSlash(applications.Dir), "given")
-	if err := os.MkdirAll(app, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	tree, play := copyRollPlay(t)
 	declaration := `{}`
 	if c.backup {
 		declaration = `{"before_teardown": {"what": "the data", "selector": "app=given", "container": "saver", "command": ["save", "now"]}}`
 	}
 	if !c.noApps {
-		if err := os.WriteFile(filepath.Join(app, applications.Declaration), []byte(declaration), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		tree.Write(t, path.Join(applications.Dir, "given", applications.Declaration), declaration)
 	}
 
 	// The site's entry in the config template, which is where the play
@@ -356,12 +353,7 @@ func (s *rollSite) roll(t *testing.T, c rollCase) rollResult {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(tree, "config"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(tree, "config", "management.tpl.json"), template, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	tree.Write(t, "config/management.tpl.json", string(template))
 
 	scratch := t.TempDir()
 	bin := filepath.Join(scratch, "bin")
@@ -429,27 +421,25 @@ esac
 	// Where the roll asks, which is this test's server; and a soak of
 	// rounds that do not wait between them, since nothing here changes
 	// with time. How many rounds there are is still the play's own.
-	cmd := exec.Command("ansible-playbook", "talos-upgrade.yml",
-		"-e", "github_host="+strings.TrimPrefix(github.URL, "https://"), "-e", "github_ca="+ca,
-		"-e", "soak_round_minutes=0")
-	cmd.Dir = play
-	cmd.Env = append(os.Environ(),
-		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"ROLL_WORKDIR="+work,
-		"TALOS_ACCESS="+access,
-		"RUNNER_NODE_NAME="+c.runner,
+	stdout, stderr, err := tree.Invoke(parsed.Run{Dir: play, Env: []string{
+		"PATH=" + bin + string(os.PathListSeparator) + os.Getenv("PATH"),
+		"ROLL_WORKDIR=" + work,
+		"TALOS_ACCESS=" + access,
+		"RUNNER_NODE_NAME=" + c.runner,
 		"GITHUB_REPOSITORY=example/estate",
 		"GITHUB_TOKEN=stand-in",
-		"GITHUB_OUTPUT="+output,
+		"GITHUB_OUTPUT=" + output,
 		"SITE=north",
-		"ANSIBLE_CONFIG="+filepath.Join(scratch, "none.cfg"),
-		"ANSIBLE_LOCAL_TEMP="+filepath.Join(scratch, "ansible"),
-		"ANSIBLE_REMOTE_TEMP="+filepath.Join(scratch, "ansible", "remote"),
+		"ANSIBLE_CONFIG=" + filepath.Join(scratch, "none.cfg"),
+		"ANSIBLE_LOCAL_TEMP=" + filepath.Join(scratch, "ansible"),
+		"ANSIBLE_REMOTE_TEMP=" + filepath.Join(scratch, "ansible", "remote"),
 		"ANSIBLE_NOCOLOR=1",
 		"ANSIBLE_LOCALHOST_WARNING=False",
 		"ANSIBLE_INVENTORY_UNPARSED_WARNING=False",
-	)
-	out, err := cmd.CombinedOutput()
+	}}, "ansible-playbook", "talos-upgrade.yml",
+		"-e", "github_host="+strings.TrimPrefix(github.URL, "https://"), "-e", "github_ca="+ca,
+		"-e", "soak_round_minutes=0")
+	out := append(stdout, stderr...)
 	body, _ := os.ReadFile(calls)
 	gh, _ := os.ReadFile(output)
 	var talos []string
@@ -461,40 +451,30 @@ esac
 	return rollResult{string(out), string(gh), err, talos, world}
 }
 
-// copyRollPlay copies the directory the roll's play is in, found by its
-// name wherever it is, to dest, and gives dest.
-func copyRollPlay(t *testing.T, dest string) string {
+// copyRollPlay is a scratch copy of the directory the roll's play is in, found
+// by its name wherever it is, and that directory's place in the copy.
+func copyRollPlay(t *testing.T) (*parsed.Tree, string) {
 	t.Helper()
-	root := repoRoot(t)
-	var src string
-	for _, rel := range tracked(t, func(rel string) bool { return filepath.Base(rel) == "talos-upgrade.yml" }) {
-		if src != "" {
-			t.Fatalf("two files are called talos-upgrade.yml, so which is the roll is not decided: %s and %s", src, rel)
+	tree := repository(t)
+	var dir string
+	for _, rel := range tree.Files(t) {
+		if path.Base(rel) == "talos-upgrade.yml" {
+			if dir != "" {
+				t.Fatalf("two files are called talos-upgrade.yml, so which is the roll is not decided: %s and %s", dir, rel)
+			}
+			dir = path.Dir(rel)
 		}
-		src = filepath.Dir(rel)
 	}
-	if src == "" {
+	if dir == "" {
 		t.Fatal("no file is called talos-upgrade.yml, so there is no roll to run")
 	}
-	err := filepath.WalkDir(filepath.Join(root, src), func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+	var files []string
+	for _, rel := range tree.Files(t) {
+		if strings.HasPrefix(rel, dir+"/") {
+			files = append(files, rel)
 		}
-		rel, _ := filepath.Rel(filepath.Join(root, src), path)
-		target := filepath.Join(dest, rel)
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		body, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(target, body, 0o644)
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
-	return dest
+	return tree.CopyOf(t, files...), dir
 }
 
 // nodeState is each node's version and whether it is cordoned.
@@ -511,6 +491,7 @@ func (s *rollSite) nodeState(t *testing.T) map[string]string {
 }
 
 func TestTheRollMovesEveryMachineInOrderAndHoldsTheSiteToItsHealth(t *testing.T) {
+	heavy(t, rollIsHeavy)
 	s := startRollSite(t)
 	r := s.roll(t, baseRollCase())
 	if r.err != nil {
@@ -556,6 +537,7 @@ func TestTheRollMovesEveryMachineInOrderAndHoldsTheSiteToItsHealth(t *testing.T)
 }
 
 func TestTheRollHandsItsOwnMachineToTheNextJob(t *testing.T) {
+	heavy(t, rollIsHeavy)
 	s := startRollSite(t)
 	c := baseRollCase()
 	c.runner = "wk-201"
@@ -578,6 +560,7 @@ func TestTheRollHandsItsOwnMachineToTheNextJob(t *testing.T) {
 }
 
 func TestAMachineThatWillNotUpgradeStopsTheRollAndStaysCordoned(t *testing.T) {
+	heavy(t, rollIsHeavy)
 	s := startRollSite(t)
 	c := baseRollCase()
 	c.upgradeFails = true
@@ -598,6 +581,7 @@ func TestAMachineThatWillNotUpgradeStopsTheRollAndStaysCordoned(t *testing.T) {
 
 // Every way a site can be unfit to roll, and the roll touches nothing.
 func TestTheRollRefusesASiteNotFitToBeRolledAndTouchesNothing(t *testing.T) {
+	heavy(t, rollIsHeavy)
 	s := startRollSite(t)
 	for name, tc := range map[string]struct {
 		change func(*rollCase)
@@ -611,12 +595,12 @@ func TestTheRollRefusesASiteNotFitToBeRolledAndTouchesNothing(t *testing.T) {
 		}, "will not move from"},
 		"a minor version moved backwards": {func(c *rollCase) { c.machines[1].version = "v1.14.0" }, "will not move from"},
 		"a minor version moved without saying so": {func(c *rollCase) {
-			c.want["talos_version"], c.want["installer_image"] = "v1.14.0", "factory.example/installer/abc:v1.14.0"
+			c.want[asbuilt.TalosVersionKey], c.want["installer_image"] = "v1.14.0", "factory.example/installer/abc:v1.14.0"
 			c.want["talos_upgrades_from"] = "v1.14"
 			c.machines[3].version, c.machines[4].version = "v1.14.0", "v1.14.0"
 		}, "will not move from"},
 		"a bump that says it crosses two minor versions": {func(c *rollCase) {
-			c.want["talos_version"], c.want["installer_image"] = "v1.15.0", "factory.example/installer/abc:v1.15.0"
+			c.want[asbuilt.TalosVersionKey], c.want["installer_image"] = "v1.15.0", "factory.example/installer/abc:v1.15.0"
 			c.machines[3].version, c.machines[4].version = "v1.15.0", "v1.15.0"
 		}, "must be that version's own minor, or the one"},
 		"an etcd member that does not vote": {func(c *rollCase) { c.etcd = strings.Replace(c.etcd, "   false\n", "   true\n", 1) }, "not voting"},
@@ -661,6 +645,7 @@ func TestTheRollRefusesASiteNotFitToBeRolledAndTouchesNothing(t *testing.T) {
 // A run outside the window, and a run with nothing behind, change nothing
 // and are not failures: the timer fires every hour.
 func TestTheRollDoesNothingOutsideTheWindowOrWithNothingBehind(t *testing.T) {
+	heavy(t, rollIsHeavy)
 	s := startRollSite(t)
 	outside := baseRollCase()
 	outside.hour = "07"
@@ -682,9 +667,10 @@ func TestTheRollDoesNothingOutsideTheWindowOrWithNothingBehind(t *testing.T) {
 
 // A bump across a minor version that says so moves the machines forward.
 func TestARollAcrossAMinorVersionThatSaysSoGoesAhead(t *testing.T) {
+	heavy(t, rollIsHeavy)
 	s := startRollSite(t)
 	c := baseRollCase()
-	c.want["talos_version"], c.want["installer_image"] = "v1.14.0", "factory.example/installer/abc:v1.14.0"
+	c.want[asbuilt.TalosVersionKey], c.want["installer_image"] = "v1.14.0", "factory.example/installer/abc:v1.14.0"
 	c.machines[3].version, c.machines[4].version = "v1.14.0", "v1.14.0"
 	r := s.roll(t, c)
 	if r.err != nil {

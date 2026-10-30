@@ -1338,6 +1338,8 @@ egress:
 #   binary: <name>    with fetch:, the file an archive gives up when it is not
 #                     named for the repository - fluxcd/flux2 ships `flux`.
 #                     It is also the name take-delivery.sh is asked for.
+#   command: <name>  with pypi:, the program it gives when that is not the
+#                     package's own name - ansible-core gives ansible-playbook.
 #   library: <package> a Python package with no command, which a pypi: tool
 #                     imports - the Kubernetes client, and Ansible's
 #                     collections. Resolved and locked with the pypi: tools,
@@ -1519,6 +1521,7 @@ tools:
   - source: ansible/ansible
     version: ANSIBLE_CORE_VERSION
     pypi: ansible-core
+    command: ansible-playbook
     reason: >-
       Runs management/hypervisor/hypervisor-prep.yml, the only thing that
       configures a hypervisor. Already installed by

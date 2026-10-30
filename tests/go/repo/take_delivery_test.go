@@ -367,6 +367,7 @@ func TestTakeDeliveryRefusesWhatTheLockDoesNotDecide(t *testing.T) {
 // hash like them, and puts nothing on PATH: it has no command, and the
 // refusal of a tool that installed none must not be what it meets.
 func TestTakeDeliveryPutsALibraryBesideTheToolsThatImportIt(t *testing.T) {
+	light(t)
 	lock := "# [pypi: alpha ALPHA_VERSION=1]\n" +
 		"alpha==1 --hash=sha256:" + strings.Repeat("a", 64) + "\n# [end]\n" +
 		"# [library: lib LIB_VERSION=4]\n" +

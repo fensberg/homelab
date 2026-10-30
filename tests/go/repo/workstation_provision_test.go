@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"homelab/tests/parsed"
 )
 
 // The workstation's play, run for real against a hypervisor that is a
@@ -27,7 +29,6 @@ type workstationRun struct {
 
 func runWorkstationPlay(t *testing.T, statusCode, destroyCode string, extra ...string) workstationRun {
 	t.Helper()
-	heavy(t, "runs ansible-playbook")
 	if _, err := exec.LookPath("ansible-playbook"); err != nil {
 		t.Fatal("ansible-playbook is not on PATH; take delivery of it: scripts/take-delivery.sh ansible-core")
 	}
@@ -46,18 +47,14 @@ func runWorkstationPlay(t *testing.T, statusCode, destroyCode string, extra ...s
 	if err := os.WriteFile(inventory, []byte("all:\n  children:\n    hypervisor:\n      hosts:\n        stand-in:\n          ansible_connection: local\n          ansible_become: false\n          ansible_python_interpreter: \"{{ ansible_playbook_python }}\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	play := filepath.Join(repoRoot(t), "workstation")
-	cmd := exec.Command("ansible-playbook", "-i", inventory, "provision.yml")
-	cmd.Args = append(cmd.Args, extra...)
-	cmd.Dir = play
-	cmd.Env = append(os.Environ(),
-		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"ANSIBLE_CONFIG="+filepath.Join(dir, "none.cfg"),
-		"ANSIBLE_LOCAL_TEMP="+filepath.Join(dir, "tmp"),
-		"ANSIBLE_REMOTE_TEMP="+filepath.Join(dir, "tmp", "remote"),
+	stdout, stderr, err := repository(t).Invoke(parsed.Run{Dir: "workstation", Env: []string{
+		"PATH=" + bin + string(os.PathListSeparator) + os.Getenv("PATH"),
+		"ANSIBLE_CONFIG=" + filepath.Join(dir, "none.cfg"),
+		"ANSIBLE_LOCAL_TEMP=" + filepath.Join(dir, "tmp"),
+		"ANSIBLE_REMOTE_TEMP=" + filepath.Join(dir, "tmp", "remote"),
 		"ANSIBLE_NOCOLOR=1",
-	)
-	out, err := cmd.CombinedOutput()
+	}}, "ansible-playbook", append([]string{"-i", inventory, "provision.yml"}, extra...)...)
+	out := append(stdout, stderr...)
 	body, _ := os.ReadFile(calls)
 	var called []string
 	for _, l := range strings.Split(strings.TrimSpace(string(body)), "\n") {
@@ -69,6 +66,7 @@ func runWorkstationPlay(t *testing.T, statusCode, destroyCode string, extra ...s
 }
 
 func TestTheWorkstationIsRefusedWhenItCouldNotReachTheEstate(t *testing.T) {
+	heavy(t, "runs ansible-playbook")
 	r := runWorkstationPlay(t, "2", "0")
 	if r.err == nil || !strings.Contains(r.out, "overlay_auth_key is empty") {
 		t.Fatalf("a workstation with no overlay key was not refused:\n%s", r.out)
@@ -79,6 +77,7 @@ func TestTheWorkstationIsRefusedWhenItCouldNotReachTheEstate(t *testing.T) {
 }
 
 func TestAWorkstationThatExistsIsLeftAlone(t *testing.T) {
+	heavy(t, "runs ansible-playbook")
 	r := runWorkstationPlay(t, "0", "0", "-e", "overlay_auth_key=stand-in")
 	if r.err != nil {
 		t.Fatalf("the play failed on a workstation that exists: %v\n%s", r.err, r.out)
@@ -89,6 +88,7 @@ func TestAWorkstationThatExistsIsLeftAlone(t *testing.T) {
 }
 
 func TestATeardownStopsAndDestroysTheWorkstation(t *testing.T) {
+	heavy(t, "runs ansible-playbook")
 	r := runWorkstationPlay(t, "0", "0", "-e", "state=absent")
 	if r.err != nil {
 		t.Fatalf("the teardown failed: %v\n%s", r.err, r.out)
@@ -99,6 +99,7 @@ func TestATeardownStopsAndDestroysTheWorkstation(t *testing.T) {
 }
 
 func TestATeardownThatDoesNotFinishSaysHowToFreeTheMachine(t *testing.T) {
+	heavy(t, "runs ansible-playbook")
 	r := runWorkstationPlay(t, "0", "1", "-e", "state=absent")
 	if r.err == nil || !strings.Contains(r.out, "qm unlock 9000") {
 		t.Fatalf("a teardown that did not finish did not say how to free the machine:\n%s", r.out)

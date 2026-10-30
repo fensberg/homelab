@@ -213,11 +213,7 @@ func discover(t *testing.T) []unit {
 	for _, p := range tracked(t, func(rel string) bool {
 		return strings.HasSuffix(rel, ".yml") || strings.HasSuffix(rel, ".yaml")
 	}) {
-		body, err := os.ReadFile(filepath.Join(root, p))
-		if err != nil {
-			t.Fatalf("reading %s: %v", p, err)
-		}
-		if isPlaybook(body) {
+		if plays(tree.YAMLDocuments(t, p)) {
 			units = append(units, unit{"ansible", p})
 		}
 	}
@@ -527,18 +523,39 @@ run "c" {
 	}
 }
 
-// isPlaybook says whether a YAML file is an Ansible playbook: its first
-// document a non-empty list of plays, every one of them saying which hosts
-// it plays on. A Kubernetes list, a workflow and a file of tasks all fail it.
-func isPlaybook(body []byte) bool {
-	var plays []map[string]any
-	if err := yaml.Unmarshal(body, &plays); err != nil || len(plays) == 0 {
-		return false
-	}
-	for _, play := range plays {
-		if _, ok := play["hosts"]; !ok {
-			return false
+// stringConstants is every string constant the package declares, by name, so
+// a program named by a constant is named.
+func stringConstants(files map[string]*ast.File) map[string]string {
+	out := map[string]string{}
+	for _, f := range files {
+		for _, d := range f.Decls {
+			gen, ok := d.(*ast.GenDecl)
+			if !ok || gen.Tok != token.CONST {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for i, name := range vs.Names {
+					if i < len(vs.Values) {
+						if v, ok := stringLiteral(vs.Values[i]); ok {
+							out[name.Name] = v
+						}
+					}
+				}
+			}
 		}
 	}
-	return true
+	return out
+}
+
+func stringLiteral(e ast.Expr) (string, bool) {
+	lit, ok := ast.Unparen(e).(*ast.BasicLit)
+	if !ok || lit.Kind != token.STRING {
+		return "", false
+	}
+	v, err := strconv.Unquote(lit.Value)
+	return v, err == nil
 }

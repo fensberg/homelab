@@ -90,6 +90,16 @@ capacity above" or names another criterion, it means epoch 04's.
 - **17. The bet has been tested.** Staging is overfilled on purpose and the
   right things are shed in the right order.
 
+## Acceptance criteria this epoch owes for what it lends
+
+- **The reserve to replace a machine with is held again** before anything
+  replaces a machine one at a time. One control plane's worth was kept back
+  on the hypervisor for that (`Held` in
+  `scripts/contractor/internal/budget`), and on 2026-10-22 it was lent to the
+  untrusted worker, where a pull request's jobs run, while no roll used it.
+  Holding it again takes it back from that machine, or from the workers'
+  share, by the operator's call at the time.
+
 ## Decided 2026-10-15: rolled by Ansible, shaped like the standard
 
 **Chose:** machines are changed one at a time by an Ansible play run with

@@ -297,6 +297,10 @@ func pluginDir(root string) string {
 	return "-plugin-dir=" + filepath.Join(root, ".terraform", "providers")
 }
 
+// TalosVersionKey is the name the Talos release goes by, in OpenTofu's state
+// and in what the site is told its machines should run.
+const TalosVersionKey = "talos_version"
+
 func talosVersion(state map[string]any) string {
 	v := ""
 	instances(state, func(res, inst map[string]any) {
@@ -304,7 +308,7 @@ func talosVersion(state map[string]any) string {
 			return
 		}
 		attrs, _ := inst["attributes"].(map[string]any)
-		if s, ok := attrs["talos_version"].(string); ok {
+		if s, ok := attrs[TalosVersionKey].(string); ok {
 			v = s
 		}
 	})

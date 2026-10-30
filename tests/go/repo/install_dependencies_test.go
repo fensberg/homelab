@@ -76,10 +76,8 @@ func newSetupFixture(t *testing.T, ghBehaviour string) *setupFixture {
 	// take-delivery.sh downloads and installs for real, and the script calls it
 	// for every locked tool on every run (#416). Stubbed to record what it was
 	// asked for, so the delivery half is observable without a network.
-	if wErr := os.WriteFile(filepath.Join(repo, "scripts", "take-delivery.sh"),
-		[]byte("#!/usr/bin/env bash\necho \"$*\" >>\"$(dirname \"$0\")/deliveries-taken\"\n"), 0o755); wErr != nil {
-		t.Fatal(wErr)
-	}
+	repo.WriteExecutable(t, "scripts/take-delivery.sh", "#!/usr/bin/env bash\necho \"$*\" >>\"$(dirname \"$0\")/deliveries-taken\"\n")
+	repo.Write(t, "management/hypervisor/requirements.yml", "collections: []\n")
 
 	// A stub that answers any version query and otherwise succeeds quietly.
 	stub := "#!/usr/bin/env bash\ncase \"$1\" in\n  --version|-version|version) echo \"stub 0.0.0\" ;;\nesac\nexit 0\n"
@@ -207,17 +205,21 @@ readable reason.`, want.key, got, want.value)
 	// skipped it fails every commit (#416). The plays run from here too, so a
 	// collection they use that the workstation never took is a play that
 	// fails on its first task.
-	taken, _ := os.ReadFile(filepath.Join(f.repo, "scripts", "deliveries-taken"))
 	asked := map[string]bool{}
 	if f.repo.Exists("scripts/deliveries-taken") {
 		for _, name := range strings.Fields(f.repo.OwnText(t, "scripts/deliveries-taken")) {
 			asked[name] = true
 		}
 	}
-	lock := readFile(t, filepath.Join(repoRoot(t), "scripts", "deliveries.lock"))
-	pypi := regexp.MustCompile(`(?m)^# \[(?:pypi|library|collection): (\S+) `).FindAllStringSubmatch(lock, -1)
+	var pypi []string
+	for _, s := range repository(t).DeliveriesLock(t) {
+		if s.Kind == "pypi" || s.Kind == "library" {
+			pypi = append(pypi, s.Name)
+		}
+	}
+	sort.Strings(pypi)
 	if len(pypi) == 0 {
-		t.Fatal("scripts/deliveries.lock has no pypi:, library: or collection: section, so this cannot tell whether the workstation takes delivery of them")
+		t.Fatal("scripts/deliveries.lock has no pypi: or library: section, so this cannot tell whether the workstation takes delivery of them")
 	}
 	for _, name := range pypi {
 		if !asked[name] {

@@ -850,10 +850,10 @@ jobs:
     # never waits for one of the builds pool's runners (2026-10-23).
     runs-on: pr-builds-primary-${{ vars.pull_request_runners_site }}
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
-    # which is what GitHub's default timeout allows.
-    # Thirty since the plays are run here: the machine roll's tests start a
-    # cluster and run it several times over, about four minutes more.
-    timeout-minutes: 30
+    # which is what GitHub's default timeout allows; above Go's own bound
+    # on the tests below, so a slow run fails as a timeout that names the
+    # test rather than as a cancelled job that names nothing.
+    timeout-minutes: 35
     permissions:
       contents: read
     steps:
@@ -959,10 +959,10 @@ jobs:
       matrix:
         part: [0, 1, 2, 3]
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
-    # which is what GitHub's default timeout allows.
-    # Thirty since the plays are run here: the machine roll's tests start a
-    # cluster and run it several times over, about four minutes more.
-    timeout-minutes: 30
+    # which is what GitHub's default timeout allows. Above the tests' own
+    # bound below, so that a slow run is reported by Go, naming the test,
+    # rather than cut off by the runner.
+    timeout-minutes: 35
     permissions:
       contents: read
     steps:
@@ -1023,11 +1023,10 @@ jobs:
       - name: Take delivery of what the plays are run with
         run: scripts/take-delivery.sh kwokctl etcd kube-apiserver kubectl ansible-core ansible kubernetes
 
-      # The two tests that prove the other tests: the mutation ledger breaks
-      # each guarded file and checks its guard fails, and the comment test
-      # strips every comment and re-runs the guards to prove none is satisfied
-      # by prose. Each re-runs a large part of the tier, so together they were
-      # about half its time, and here they run beside it instead of after it.
+      # The test that proves the other tests: the mutation ledger breaks each
+      # guarded file and checks its guard fails. It re-runs a large part of
+      # the tier, so it was about half its time, and here it runs beside it
+      # instead of after it.
       - name: Prove the guards fail when they should
         working-directory: tests/go
         env:

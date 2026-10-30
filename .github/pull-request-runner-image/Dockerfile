@@ -123,8 +123,8 @@ ENV PATH=/home/runner/.local/bin:/opt/hostedtoolcache/go/${GO_VERSION}/x64/bin:/
 # change in, which it starts itself and which holds nothing.
 RUN --mount=type=bind,from=reads,target=/reads \
     bash /reads/scripts/take-delivery.sh \
-        ansible ansible-core checkov codespell etcd hadolint kube-apiserver kube-scheduler kubeconform \
-        kubectl kubernetes kustomize kwokctl opentofu pre-commit pre-commit-hooks shellcheck zizmor
+        ansible ansible-core checkov codespell conftest etcd hadolint kube-apiserver kube-scheduler kubeconform kubectl \
+        kubernetes kustomize kwokctl opa opentofu pre-commit pre-commit-hooks regal semgrep shellcheck zizmor
 
 # Each one runs, as the account a job runs as, before the image is published.
 RUN for b in go node git envsubst tofu checkov codespell conftest etcd hadolint kube-apiserver kube-scheduler \

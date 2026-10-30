@@ -1,9 +1,6 @@
 package repo
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"sort"
 	"testing"
 	"time"
@@ -23,17 +20,12 @@ import (
 // misspelt one, would be rolled on whatever clock the runner keeps, which
 // is UTC: the middle of the evening, with people on the site.
 func TestEverySiteSaysWhichClockItKeeps(t *testing.T) {
-	body, err := os.ReadFile(filepath.Join(repoRoot(t), "config", "management.tpl.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	light(t)
 	// The config's own types: the template is the config before the vault's
 	// values are put in, and every value it holds outside the vault is
 	// already of the type the config reads.
 	var template config.Config
-	if err := json.Unmarshal(body, &template); err != nil {
-		t.Fatalf("the config template does not parse: %v", err)
-	}
+	repository(t).JSONInto(t, "config/management.tpl.json", &template)
 	if len(template.Sites) == 0 {
 		t.Fatal("the config template declares no sites, so no site's clock was checked")
 	}

@@ -6,12 +6,11 @@
 # the machines' images and templates from it; the platform module puts it in
 # the cluster, where the play that rolls the machines one at a time
 # (management/roll) reads what each machine should be running and compares it
-# with what it is. A version is bumped here and nowhere else.
+# with what it is. A version is bumped in scripts/versions.env, the one place
+# one is pinned, and read here.
 
 locals {
   # --- platform ------------------------------------------------------------
-  # renovate: datasource=github-releases depName=siderolabs/talos
-  #
   # This line, not schematic_id, is what selects extension versions. The image
   # URL in compute.tf is factory.talos.dev/image/<schematic>/<talos_version>/…,
   # and the Factory resolves each extension to the build matching that Talos
@@ -26,7 +25,10 @@ locals {
   # at a time in the night's window, and new machines by their template. Until
   # 2026-10-15 a rebuild was the only way a version reached a running estate
   # (#97).
-  talos_version = "v1.13.9"
+  #
+  # The version itself is TALOS_VERSION in scripts/versions.env, beside the
+  # talosctl that has to stay within a minor of it.
+  talos_version = local.versions.TALOS_VERSION
 
   # The minor version machines may be rolled up from. Talos moves between
   # patch versions of one minor in either direction - which is what lets a
@@ -38,8 +40,6 @@ locals {
   # neither).
   talos_upgrades_from = "v1.13"
 
-  # renovate: datasource=github-releases depName=kubernetes/kubernetes
-  #
   # Was inline in talos.tf as a bare "1.31.1" with no comment, no annotation
   # and no entry in versions.env - so nothing watched it and nothing could
   # have told you it had gone stale. It had: Talos v1.13.9 defaults to
@@ -60,8 +60,20 @@ locals {
   # window in which it costs nothing. Ignite on 1.31 and the estate carries an
   # out-of-support control plane until epoch 05 exists to move it.
   #
-  # tests/go/repo/versions_test.go asserts kubectl stays within one minor.
-  kubernetes_version = "1.36.3"
+  # The version itself is KUBERNETES_VERSION in scripts/versions.env, which
+  # the scheduler a change is tried with is delivered by too, so the two are
+  # one line. policy/conftest/rules/client_skew asserts kubectl stays within
+  # one minor.
+  kubernetes_version = local.versions.KUBERNETES_VERSION
+
+  # scripts/versions.env, as KEY = value: every line that assigns, and none
+  # of its comments.
+  versions = {
+    for line in split("\n", file("${path.module}/../../../scripts/versions.env")) :
+    split("=", line)[0] => join("=", slice(split("=", line), 1, length(split("=", line))))
+    if can(regex("^[A-Z0-9_]+=", line))
+  }
+
   # Two system extensions, generated via factory.talos.dev's schematic API:
   # siderolabs/tailscale and siderolabs/util-linux-tools. Talos ships neither
   # by default. util-linux-tools provides fstrim, which stays useful whatever
