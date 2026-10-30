@@ -866,6 +866,9 @@ jobs:
           # pre-step, before any step of this job can run.
           egress-policy: block
           disable-sudo-and-containers: "true"
+          # All of it, for the tags: the configuration rules plan each site
+          # with the release it runs, read from that release's tag (#843).
+          fetch-depth: 0
           allowed-endpoints: >
             api.github.com:443
             files.pythonhosted.org:443
@@ -965,6 +968,9 @@ jobs:
           # pre-step, before any step of this job can run.
           egress-policy: block
           disable-sudo-and-containers: "true"
+          # All of it, for the tags: the configuration rules plan each site
+          # with the release it runs, read from that release's tag (#843).
+          fetch-depth: 0
           allowed-endpoints: >
             api.github.com:443
             files.pythonhosted.org:443

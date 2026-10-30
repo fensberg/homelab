@@ -45,6 +45,18 @@ type Unbuilt struct {
 // An error is returned for what stops every root being planned; a root that
 // does not plan says so in its own Err.
 func PlanUnbuilt(repo, site, providers string) ([]Unbuilt, error) {
+	return PlanUnbuiltAt(repo, site, providers, Released{})
+}
+
+// Released is a release of the platform to plan a site's roots with in place
+// of the checkout's modules: its commit, read from the git objects at
+// Objects. Empty, the checkout's own are planned.
+type Released struct{ Objects, Revision string }
+
+// PlanUnbuiltAt plans as PlanUnbuilt does, with the modules of the release
+// given: the checkout's roots with a pinned release's modules, which is what
+// a converge of a site pinned to it applies.
+func PlanUnbuiltAt(repo, site, providers string, release Released) ([]Unbuilt, error) {
 	committed, err := os.ReadFile(filepath.Join(repo, "config", "management.tpl.json"))
 	if err != nil {
 		return nil, err
@@ -70,7 +82,11 @@ func PlanUnbuilt(repo, site, providers string) ([]Unbuilt, error) {
 	}
 	defer func() { _ = os.RemoveAll(work) }()
 	unreleased := platform.Unreleased + "-" + filepath.Base(work)[len(unbuiltWork)+1:]
-	if _, err := platform.PlaceUnreleasedAs(repo, strings.Split(strings.TrimRight(string(tracked), "\x00"), "\x00"), unreleased); err != nil {
+	if release.Revision != "" {
+		if _, err := platform.PlaceReleasedAs(release.Objects, release.Revision, repo, unreleased); err != nil {
+			return nil, err
+		}
+	} else if _, err := platform.PlaceUnreleasedAs(repo, strings.Split(strings.TrimRight(string(tracked), "\x00"), "\x00"), unreleased); err != nil {
 		return nil, err
 	}
 	defer func() { _ = os.RemoveAll(filepath.Join(repo, unreleased)) }()

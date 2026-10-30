@@ -283,7 +283,7 @@ func place(name, arg string) string {
 // manifest lib.objects picks, which the harness renders again; every other
 // place is broken where it is.
 func madeFrom(p string) string {
-	for _, readsAPlan := range []string{"plan", "plan_configuration", "plan_module_calls", "plan_outputs", "plan_variables"} {
+	for _, readsAPlan := range []string{"plan", "pinned_plan", "plan_configuration", "plan_module_calls", "plan_outputs", "plan_variables"} {
 		if p == place(readsAPlan, "") {
 			return place("opentofu", "")
 		}

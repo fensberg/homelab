@@ -29,7 +29,7 @@ func TestAPlanIsKeptByWhatItIsMadeFrom(t *testing.T) {
 	tree := planned(t)
 	key := func() string {
 		t.Helper()
-		k, err := tree.planKey(t, "site0")
+		k, err := tree.planKey(t, "site0", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -44,7 +44,7 @@ func TestAPlanIsKeptByWhatItIsMadeFrom(t *testing.T) {
 	if got := key(); got != first {
 		t.Errorf("a change to a file no plan reads gave a new key")
 	}
-	if other, err := tree.planKey(t, "site1"); err != nil || other == first {
+	if other, err := tree.planKey(t, "site1", ""); err != nil || other == first {
 		t.Errorf("another site's plans were kept under this site's key (%v)", err)
 	}
 	for _, rel := range []string{"management/somewhere/first.tf", "modules/something/second.tf", "config/fixture.tpl.json", "elsewhere/read.env"} {
@@ -54,6 +54,38 @@ func TestAPlanIsKeptByWhatItIsMadeFrom(t *testing.T) {
 		if key() == before {
 			t.Errorf("a change to %s, which a plan is made from, kept the old key", rel)
 		}
+	}
+}
+
+// Planned with a release's modules, the plans are kept by the release and
+// the roots: a change to the checkout's modules is not a new key, and a
+// change to a root or to the release is.
+func TestAPinnedPlanIsKeptByItsReleaseAndTheRoots(t *testing.T) {
+	tree := planned(t)
+	key := func(revision string) string {
+		t.Helper()
+		k, err := tree.planKey(t, "site0", revision)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return k
+	}
+	first := key("aaaa")
+	if key("bbbb") == first {
+		t.Error("another release gave the same key")
+	}
+	if key("") == first {
+		t.Error("the checkout's own modules and a release's gave the same key")
+	}
+	tree.Write(t, "modules/something/second.tf", "# the checkout's module changed\n")
+	tree.Index(t)
+	if key("aaaa") != first {
+		t.Error("a change to the checkout's modules gave a pinned plan a new key, though it plans with the release's")
+	}
+	tree.Write(t, "management/somewhere/first.tf", "# the root changed\n")
+	tree.Index(t)
+	if key("aaaa") == first {
+		t.Error("a change to a root kept the pinned plan's old key")
 	}
 }
 

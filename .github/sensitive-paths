@@ -23,7 +23,6 @@ tests/go/repo/                              # The building code. Deleting one as
 tests/go/parsed/                            # The one reader the building code reads through, and what keeps it the only way. Loosen it and every guard reads less.
 tests/mutations.yml                         # What the mutation ledger admits it cannot prove. Adding a guard here excuses it from ever being shown to fail.
 tests/mutations/                            # The proof each guard catches anything, one to a file. Deleting one makes a red check vanish and takes the proof with it.
-tests/mutations-removed.yml                 # Where a removed proof is said to have been. A line here is what lets a proof be deleted, so read the reason.
 tests/coverage-blocklist.yml                # Declared debt. Adding a line and bumping the ceiling is two characters and turns a red build green.
 tests/languages.yml                         # Which kinds of file anything reads. Moving one to ungoverned: turns off every check for that kind at once.
 .github/sensitive-paths                     # This list. Removing a line turns the alarm off for that path, silently.

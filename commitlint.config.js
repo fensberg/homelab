@@ -46,6 +46,24 @@ function creditsItselfAsCoAuthor(raw) {
   );
 }
 
+// A proof removed from the mutation ledger is said to be, on the commit that
+// removes it, by a trailer the sensitive-paths check reads (#814):
+//
+//   Removes-proof: <the proof's file>: <why the guard no longer needs it>
+//
+// A proof's file is named for its guard and can be most of a line on its own,
+// so that trailer is the one footer line the 100-character limit does not
+// hold; every other footer line still is. And it must have its shape: a
+// file, and a reason after it.
+const removesProof = /^Removes-proof:/i;
+const removesProofShape = /^Removes-proof: [^\s:]+\.yml: +\S/;
+const footerLimit = 100;
+function footerLines(raw) {
+  // The footer is the last paragraph of the message.
+  const paragraphs = (raw ?? "").trimEnd().split(/\n\s*\n/);
+  return paragraphs.length > 1 ? paragraphs[paragraphs.length - 1].split("\n") : [];
+}
+
 module.exports = {
   extends: ["@commitlint/config-conventional"],
   helpUrl: "https://www.conventionalcommits.org/",
@@ -55,6 +73,26 @@ module.exports = {
   plugins: [
     {
       rules: {
+        "footer-lines-fit": ({ raw }) => {
+          const long = footerLines(raw).filter(
+            (line) => !removesProof.test(line) && line.length > footerLimit,
+          );
+          return [
+            long.length === 0,
+            `footer lines must not be longer than ${footerLimit} characters: ` + long.join(" | "),
+          ];
+        },
+        "removes-proof-shape": ({ raw }) => {
+          const bad = (raw ?? "")
+            .split("\n")
+            .filter((line) => removesProof.test(line) && !removesProofShape.test(line));
+          return [
+            bad.length === 0,
+            "A Removes-proof trailer names the proof's file and says why: " +
+              "`Removes-proof: <Guard.name.yml>: <why the guard no longer needs it>`. Not: " +
+              bad.join(" | "),
+          ];
+        },
         "no-self-co-authorship": ({ raw }) => [
           !creditsItselfAsCoAuthor(raw ?? ""),
           "Drop the `Co-Authored-By: Claude` trailer. Claude is the author of " +
@@ -65,6 +103,9 @@ module.exports = {
     },
   ],
   rules: {
+    "footer-max-line-length": [0],
+    "footer-lines-fit": [2, "always"],
+    "removes-proof-shape": [2, "always"],
     "no-self-co-authorship": [2, "always"],
   },
 };

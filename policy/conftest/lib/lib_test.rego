@@ -73,6 +73,15 @@ test_what_flux_applies_is_read_as_the_harness_renders_it if {
 	lib.rendered_layers == {["/tmp/x/layer-0-0.json", {"name": "l", "path": "d"}, [{"kind": "ConfigMap"}]]} with input as [layer, {"path": "a.yaml", "contents": {"kind": "x"}}]
 }
 
+test_a_pinned_plan_is_read_apart_from_the_plans_a_change_makes if {
+	resources := {"planned_values": {"root_module": {"resources": [{"address": "a.b", "type": "a", "values": {}}]}}}
+	made := {"path": "/tmp/x/site/site0-platform.plan.json", "contents": resources}
+	pinned := {"path": "/tmp/x/pinned/site0-platform.plan.json", "contents": {"pinned_plan": object.union(resources, {"configuration": {"root_module": {"outputs": {"o": {}}}}})}}
+	count(lib.plan) == 1 with input as [made, pinned]
+	{p | some [p, _] in lib.pinned_plan} == {"/tmp/x/pinned/site0-platform.plan.json"} with input as [made, pinned]
+	count(lib.plan_outputs) == 0 with input as [pinned]
+}
+
 test_the_pools_are_named_from_the_suppliers_list if {
 	pools := lib.pull_request_pools with input as [{"path": "scripts/approved-suppliers.yml", "contents": {"pull_request_pools": {"names": ["builds", "source"]}}}]
 	pools == {"pr-builds-${{ vars.pull_request_runners_site }}", "pr-source-${{ vars.pull_request_runners_site }}"}

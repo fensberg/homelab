@@ -37,7 +37,24 @@ plan contains [f.path, r] if {
 	some f in input
 	is_object(f.contents)
 	is_object(f.contents.planned_values)
-	walk(f.contents.planned_values, [_, r])
+	some r in resources_of(f.contents.planned_values)
+}
+
+# pinned_plan is every resource a plan of a site's roots would make with the
+# modules of the release the site's line names, as [path, resource]: what a
+# converge of that site applies once a change merges and before its line
+# moves. Flux applies what merges at once, so what it needs of the platform
+# is held to these too. The harness hands each over under pinned_plan, so
+# plan and its siblings, which are what the change makes, never read one.
+pinned_plan contains [f.path, r] if {
+	some f in input
+	is_object(f.contents)
+	is_object(f.contents.pinned_plan.planned_values)
+	some r in resources_of(f.contents.pinned_plan.planned_values)
+}
+
+resources_of(planned) := {r |
+	walk(planned, [_, r])
 	is_object(r)
 	is_string(r.address)
 	is_string(r.type)

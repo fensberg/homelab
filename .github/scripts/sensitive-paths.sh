@@ -50,12 +50,24 @@ fi
 # adding one conflicts with nobody. What a count of them used to give - that
 # one is not lost without somebody meaning it - is this: a changed file under
 # the proofs' directory that is no longer there was removed, and a removal
-# that the list of removals does not name, with a reason, stops here. It is
+# that no commit of the change names, with a reason, stops here. It is
 # refused and not reported, because a report is a thing a reviewer has to
 # notice and this is a thing nobody has to.
+#
+# Named by a trailer on the commit that removes it:
+#
+#   Removes-proof: <the file's name>: <why the guard no longer needs it>
+#
+# Read from the change's own commits, from where it left main, so the record
+# travels in git history and nothing is kept to clear (#814). Without the two
+# commits there are no commits to read, and a removal is refused.
 PROOFS="${MUTATION_PROOFS_DIR:-tests/mutations}"
-REMOVED="${MUTATION_PROOFS_REMOVED:-tests/mutations-removed.yml}"
+said=""
+if [ -n "${BASE:-}" ] && [ -n "${HEAD:-}" ]; then
+	said=$(git log --format='%(trailers:key=Removes-proof,valueonly,separator=%x0A)' "${BASE}..${HEAD}")
+fi
 unsaid=""
+reasons=""
 while IFS= read -r file; do
 	case "$file" in
 	"$PROOFS"/*.yml) ;;
@@ -65,9 +77,26 @@ while IFS= read -r file; do
 		continue
 	fi
 	name="${file##*/}"
-	# The entry naming it, and a reason on the line after.
-	if ! grep -F -x -A1 -e "  - proof: ${name}" "$REMOVED" 2>/dev/null | grep -Eq '^    reason: +[^[:space:]]'; then
+	# A trailer naming it, and a reason after it.
+	reason=""
+	while IFS= read -r trailer; do
+		case "$trailer" in
+		"${name}:"*)
+			why="${trailer#"${name}:"}"
+			why="${why#"${why%%[![:space:]]*}"}"
+			if [ -n "$why" ]; then
+				reason="$why"
+			fi
+			;;
+		esac
+	done <<TRAILERS_EOF
+$said
+TRAILERS_EOF
+	if [ -z "$reason" ]; then
 		unsaid="${unsaid}  ${file}
+"
+	else
+		reasons="${reasons}- \`${name}\`: ${reason}
 "
 	fi
 done <<PROOFS_EOF
@@ -79,11 +108,10 @@ This change removes proof(s) from the mutation ledger and does not say so:
 
 ${unsaid}
 Each is the committed proof that a guard fails when it should. If it was
-removed by mistake, put it back. If the guard no longer needs it, name it in
-${REMOVED} with the reason, in the same change:
+removed by mistake, put it back. If the guard no longer needs it, say so on
+the commit that removes it, with the reason:
 
-  - proof: <the file's name>
-    reason: <why the guard no longer needs this proof>
+  Removes-proof: <the file's name>: <why the guard no longer needs this proof>
 PROOFS_EOF
 	exit 1
 fi
@@ -174,7 +202,10 @@ cat <<EOF
 
 ${summary} Each line below says what breaks if this change is wrong.
 
-${hits}---
+${hits}${reasons:+**Proofs removed, and why:**
+
+${reasons}
+}---
 
 **To merge:** resolve the review conversation opened on the file below. It is
 anchored to the change itself, so resolving it means somebody was looking at the
