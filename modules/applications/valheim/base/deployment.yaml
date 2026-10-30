@@ -287,18 +287,12 @@ spec:
           # built on. The request is what the scheduler reserves; the limit is
           # what stops a leak taking the node's other tenants with it.
           #
-          # 6 GiB, the bottom of that range for an explored world, which this
-          # one is: its players brought it with them. It was 8 until
-          # 2026-10-15, when the machines began holding back what their own
-          # services really use (modules/infrastructure/cluster, criterion 16
-          # of docs/epochs/04-observability.md) and 8 no longer fitted beside
-          # it. The operator's call. Not measured with anybody playing: idle,
-          # it used about 1.9 GiB. Because request and limit are equal, using
-          # more than this stops it, and every player with it - so it is to be
-          # read again the first week people play.
+          # THIS DOES NOT FIT COMFORTABLY ON AN 8 GiB WORKER. See the note in
+          # docs/epochs/03-workload.md - moving this workload to the shared
+          # workers was right on isolation grounds and was not costed on memory.
           resources:
             requests:
-              memory: 6Gi
+              memory: 8Gi
               # Four, and there is deliberately no CPU limit beneath it.
               #
               # A request reserves scheduling room rather than consuming it:
@@ -322,7 +316,7 @@ spec:
               # allocatable minus eight leaves room for the daemons that run
               # everywhere and very little else, which is a real consequence of
               # asking for the vendor's upper bound rather than an accident.
-              memory: 6Gi
+              memory: 8Gi
 
       volumes:
         - name: world
