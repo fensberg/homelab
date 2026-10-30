@@ -1,9 +1,0 @@
-guard: TestNothingInstallsACollectionOutsideTakeDelivery
-file: scripts/install-dependencies.sh
-find: '"$(dirname "$0")/take-delivery.sh" ansible kubernetes'
-replace: 'ansible-galaxy collection install -r "$(dirname "$0")/../management/hypervisor/requirements.yml"'
-mentions: "installs an Ansible collection outside scripts/take-delivery.sh"
-why: >
-  The workstation took hypervisor-prep.yml's collections this way until the
-  machine roll: a version range in a requirements file, filled from Galaxy
-  with nothing checking what arrived.

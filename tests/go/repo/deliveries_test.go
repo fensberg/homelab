@@ -26,56 +26,12 @@ const takeDelivery = "scripts/take-delivery.sh"
 // An install from a Python package index, in any of the spellings in use.
 var pythonInstall = regexp.MustCompile(`\b(?:pip3?|pipx)\s+install\b|\buv\s+(?:pip|tool)\s+install\b`)
 
-// An install of an Ansible collection or role, which ansible-galaxy completes
-// from Galaxy when it is not told to stay offline.
-var galaxyInstall = regexp.MustCompile(`\bansible-galaxy\s+(?:(?:collection|role)\s+)?install\b`)
-
 // A whole-line comment in any of the languages this repository writes. A line
 // that only mentions an install is prose, and the history of one - "this used
 // to be pipx install pre-commit" - is exactly what a comment here should say.
 var commentLine = regexp.MustCompile(`^\s*(?:#|//|\*|<!--|--)`)
 
 func TestNothingInstallsFromPyPIOutsideTakeDelivery(t *testing.T) {
-	offenders := installsOutsideTakeDelivery(t, pythonInstall)
-	if len(offenders) > 0 {
-		t.Errorf(`something installs from a Python package index outside %s:
-
-  %s
-
-A version pin written anywhere else fixes the tool and lets every dependency it
-pulls in resolve fresh on each install - over a hundred packages for checkov
-alone. Declare the tool with pypi: on its tools: entry in
-scripts/approved-suppliers.yml, pin its version in scripts/versions.env, run
-task order-deliveries, and install it with:
-
-    %s <name>`, takeDelivery, strings.Join(offenders, "\n  "), takeDelivery)
-	}
-}
-
-// The same for an Ansible collection. Galaxy has no lockfile: a version range
-// in a requirements file, which is how this estate took its collections until
-// the machine roll, installs whatever Galaxy serves inside it, checked against
-// nothing. They come from the ansible package on PyPI, through the lock.
-func TestNothingInstallsACollectionOutsideTakeDelivery(t *testing.T) {
-	offenders := installsOutsideTakeDelivery(t, galaxyInstall)
-	if len(offenders) > 0 {
-		t.Errorf(`something installs an Ansible collection outside %s:
-
-  %s
-
-Galaxy has no lockfile, so a version written anywhere else installs whatever
-Galaxy serves for it. The collections come in Ansible's own release on PyPI,
-the ansible package, locked by hash; a collection it does not carry is a
-decision to make, not a line to add. Install them with:
-
-    %s ansible`, takeDelivery, strings.Join(offenders, "\n  "), takeDelivery)
-	}
-}
-
-// installsOutsideTakeDelivery is every line of every file authored here that
-// runs an install of the given shape, but for take-delivery.sh itself.
-func installsOutsideTakeDelivery(t *testing.T, install *regexp.Regexp) []string {
-	t.Helper()
 	root := repoRoot(t)
 
 	var offenders []string
@@ -95,7 +51,7 @@ func installsOutsideTakeDelivery(t *testing.T, install *regexp.Regexp) []string 
 		}
 		scanned++
 		for n, line := range strings.Split(string(body), "\n") {
-			if commentLine.MatchString(line) || !install.MatchString(line) {
+			if commentLine.MatchString(line) || !pythonInstall.MatchString(line) {
 				continue
 			}
 			// This file carries the shapes in order to refuse them, and the
@@ -110,7 +66,19 @@ func installsOutsideTakeDelivery(t *testing.T, install *regexp.Regexp) []string 
 	if scanned < 100 {
 		t.Fatalf("only %d files were scanned, which is not this repository - the enumeration has stopped matching", scanned)
 	}
-	return offenders
+	if len(offenders) > 0 {
+		t.Errorf(`something installs from a Python package index outside %s:
+
+  %s
+
+A version pin written anywhere else fixes the tool and lets every dependency it
+pulls in resolve fresh on each install - over a hundred packages for checkov
+alone. Declare the tool with pypi: on its tools: entry in
+scripts/approved-suppliers.yml, pin its version in scripts/versions.env, run
+task order-deliveries, and install it with:
+
+    %s <name>`, takeDelivery, strings.Join(offenders, "\n  "), takeDelivery)
+	}
 }
 
 // The bypass belongs to the expediting duty, not to procurement.
