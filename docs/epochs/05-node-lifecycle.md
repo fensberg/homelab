@@ -72,8 +72,33 @@ capacity above" or names another criterion, it means epoch 04's.
   default. etcd, the API server and the databases are sized by declaration
   until there is a reason to trust a guess about them.
 - **14. Work is spread again after a roll** (#628), by the descheduler.
+- **16. How a machine sheds load is declared**, not left at the kubelet's
+  defaults. Moved here on 2026-10-15: declaring it changes every running
+  machine, and the plan for it applied the change to all of them at once,
+  in no order (#767, parked until this epoch can roll it). What it was
+  sized from is kept so it is not measured twice. On site0, the week to
+  2026-10-15, each machine's memory in use outside pods at its 99th
+  percentile: control planes 957-1048 MiB, workers 934-1049 MiB, the
+  untrusted worker 885 MiB. The kubelet's defaults hold back 512 MiB on a
+  control plane and 384 MiB on any other, so pods are promised memory the
+  machines already use. #767 holds back 1088 MiB, 1088 MiB and 896 MiB,
+  with work put off gently below 256 MiB free and at once below 100 MiB.
+  It takes about 700 MiB from what each worker can offer pods, which the
+  game server's 8 GiB no longer fits beside; #767 lowers it to 6 GiB, the
+  publisher's lower figure for an explored world, by the operator's call,
+  and that release has to land before the machines change.
 - **17. The bet has been tested.** Staging is overfilled on purpose and the
   right things are shed in the right order.
+
+## Acceptance criteria this epoch owes for what it lends
+
+- **The reserve to replace a machine with is held again** before anything
+  replaces a machine one at a time. One control plane's worth was kept back
+  on the hypervisor for that (`Held` in
+  `scripts/contractor/internal/budget`), and on 2026-10-22 it was lent to the
+  untrusted worker, where a pull request's jobs run, while no roll used it.
+  Holding it again takes it back from that machine, or from the workers'
+  share, by the operator's call at the time.
 
 ## Scope
 
@@ -347,6 +372,30 @@ site.
   the hazard in `02-abstraction.md`. Adopting Cluster API would retire the
   expression entirely, which is one more argument for evaluating it before
   patching it. Trigger: a second hypervisor, or this epoch.
+
+## Ideas
+
+- **The primary pool follows the longest lane (2026-10-23).** A pool has a
+  primary pool beside it for the job every pull request waits on longest, so
+  that job never waits for a runner. Which job that is was read by hand, once.
+  Two pieces would keep it true:
+  1. **A job that measures the lanes and opens a pull request.** On a
+     schedule, it reads what each lane on the pools took over its recent
+     successful runs - the reading `TestAJobOnTheEstatesRunnersTakesAsLongAsItSays`
+     in `tests/go/api` already makes - and opens a pull request moving each
+     `takes:` in `scripts/approved-suppliers.yml` to what was measured, rather
+     than failing. Open: which runner reads the run history, given it holds a
+     token that can open a pull request; how many runs make a reading; and
+     whether it merges itself, as the site pin does (epoch 08), or waits for
+     the operator.
+  2. **A guard that the primary is the longest.** Of the jobs a merge waits
+     on, the one with the longest `takes:` is the one in a primary pool, and
+     no other job is. A lane that grows past it fails until its `runs-on` and
+     its `pool:` move, and the pull request in 1 is where that first shows.
+
+  The guard makes `takes:` decide where work runs, which is why the
+  measuring job comes with it: a duration written by hand and never read
+  again would be deciding it.
 
 ## Gotchas
 

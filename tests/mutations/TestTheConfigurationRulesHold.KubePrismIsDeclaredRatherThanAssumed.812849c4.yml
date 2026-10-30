@@ -1,0 +1,17 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_kubeprism
+file: modules/infrastructure/cluster/talos.tf
+find: "              port    = 7445\n"
+replace: "              port    = 7446\n"
+mentions: "7445"
+why: >
+  The port is declared in the one list every machine is configured from,
+  and as k8sServicePort in the Cilium values. Moved in one and not the
+  other, it breaks the pod network on every machine, with nothing anywhere
+  naming a port.
+
+  There were two lists, a zone's and everybody else's, and this mutated
+  the zone's: the realistic drift was a change to the one somebody was
+  looking at. There is one list now, and
+  TestEveryKindOfMachineIsConfiguredFromTheOneList holds every kind of
+  machine to it.

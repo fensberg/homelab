@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_released_modules
+file: config/management.tpl.json
+find: '"site0": {'
+replace: '"site9": {'
+mentions: "management/versions.json gives site0 a release, and the config declares no such site"
+why: >
+  A site renamed in the config and not in the versions file leaves a line
+  that is nobody's: a version somebody believes is running, and a site
+  with no release to run.

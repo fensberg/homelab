@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: pull_request_runners
+file: clusters/core/infrastructure/configs/runner-scale-set.yaml
+find: "    runnerScaleSetName: homelab-${SITE}\n"
+replace: "    runnerScaleSetLabel: homelab-${SITE}\n"
+mentions: "the management pool's name could not be read"
+why: >
+  The rule reads the management pool's HelmRelease by what it is, to name
+  the pool a refusal is about. Without its name, a refusal cannot say which
+  runner was asked for.

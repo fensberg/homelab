@@ -1,0 +1,11 @@
+guard: TestTheConfigurationRulesHold
+rule: runner_namespaces
+file: clusters/core/infrastructure/controllers/sweeper.yaml
+find: "kind: RoleBinding\nmetadata:\n  name: sweeper\n  namespace: pull-request-runners\n"
+replace: "kind: RoleBinding\nmetadata:\n  name: sweeper\n  namespace: sweeper\n"
+mentions: "nothing grants sweeper anything there"
+why: >
+  The sweeper's right to read the runners' pods is granted in a namespace.
+  Granted where it is not looking, every list it makes is refused, and
+  what it does then is the only thing standing between a used machine and
+  the next job.

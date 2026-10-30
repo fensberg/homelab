@@ -1,8 +1,6 @@
 package repo
 
 import (
-	"regexp"
-	"strings"
 	"testing"
 )
 
@@ -21,52 +19,9 @@ import (
 // turns up when somebody wonders what vnetdmz is for months later.
 //
 // See docs/epochs/03-workload.md, "Removing the untrusted zone".
-
-// Every zone resource keys off the machines, never off the site.
 //
-// `for_each = toset(local.dmz_hypervisors)` builds nothing when the zone is
-// empty, because that list is derived from the machines. `for_each =
-// toset(local.all_vm_hypervisors)` would build the same resource on every
-// hypervisor forever, and would read as correct in review - it is the line the
-// resource beside it uses.
-func TestEveryZoneResourceIsKeyedOffItsMachines(t *testing.T) {
-	_, body := tofuDeclaring(t, `resource "proxmox_virtual_environment_vm" "dmz"`)
-
-	// Top-level blocks, so a resource is judged with its own for_each rather
-	// than with a neighbour's.
-	blocks := regexp.MustCompile(`(?m)^resource\s+"`).Split(body, -1)
-
-	var checked int
-	for _, block := range blocks {
-		if !strings.Contains(block, "dmz") {
-			continue
-		}
-		// The header line names the resource; keep it for the message.
-		header := strings.SplitN(block, "\n", 2)[0]
-		if !strings.Contains(block, "for_each") {
-			continue // not a per-machine resource at all
-		}
-		checked++
-
-		forEach := regexp.MustCompile(`for_each\s*=\s*([^\n]+)`).FindStringSubmatch(block)
-		if forEach == nil {
-			continue
-		}
-		if !strings.Contains(forEach[1], "dmz") {
-			t.Errorf(`resource "%s is a zone resource keyed off %s.
-
-That builds it whether or not any untrusted machine exists, so an estate that
-has deprecated its last untrusted workload keeps maintaining the zone. Key it
-off a dmz collection - those are derived from the machines and are empty when
-there are none.`, header, strings.TrimSpace(forEach[1]))
-		}
-	}
-
-	if checked == 0 {
-		t.Fatal("no zone resource with a for_each found in compute.tf, so this test proves nothing.\n\n" +
-			"Either the zone moved or its resources stopped being per-machine.")
-	}
-}
+// That every zone resource is keyed off the zone is a rule over the plan
+// (policy/conftest/rules/plan_zone_off_switch/plan_zone_off_switch.rego); the playbook's half is here.
 
 // Every zone task in the playbook loops over the zones.
 //
@@ -82,34 +37,28 @@ there are none.`, header, strings.TrimSpace(forEach[1]))
 // a count to named zones broke it while the behaviour it cared about was
 // unchanged - which is the failure the mutation ledger exists to make visible.
 func TestEveryZoneTaskLoopsOverTheZones(t *testing.T) {
-	body := readRepoFile(t, "management/hypervisor/hypervisor-prep.yml")
-
-	tasks := regexp.MustCompile(`(?m)^    - name:`).Split(body, -1)
-
+	light(t)
 	var checked int
-	for _, task := range tasks {
-		// A zone task is one that reads a zone's own values. The shared vnet
-		// listing is not one: it lists every vnet, and looping it over the
-		// zones would hide the node vnet from the task that creates it.
-		if !strings.Contains(task, "item.vnet") && !strings.Contains(task, "item.item.vnet") {
+	for _, task := range hypervisorPlay(t).Tasks {
+		if !task.Uses("item.vnet") {
 			continue
 		}
 		checked++
-
-		if !strings.Contains(task, "loop:") {
-			name := strings.SplitN(strings.TrimSpace(task), "\n", 2)[0]
+		if task.Loop == nil && task.LoopExpr == "" {
 			t.Errorf(`the task "%s" reads a zone's values without looping over the zones.
 
 Without the loop it runs once against an undefined item on every estate,
 including one with no untrusted workload at all. The loop is what makes "no
 zones" mean "nothing is built" - Ansible creates and never removes, so anything
 this leaves behind stays until somebody finds it and wonders what it is for.`,
-				strings.Trim(name, ": "))
+				task.Name)
 		}
 	}
-
 	if checked == 0 {
 		t.Fatal("no task in hypervisor-prep.yml reads a zone's values, so this test proves nothing.\n\n" +
 			"Either the zones' SDN tasks were removed or their loop variable was renamed.")
 	}
 }
+
+// hypervisorPlaybook is the playbook that prepares a hypervisor.
+const hypervisorPlaybook = "management/hypervisor/hypervisor-prep.yml"

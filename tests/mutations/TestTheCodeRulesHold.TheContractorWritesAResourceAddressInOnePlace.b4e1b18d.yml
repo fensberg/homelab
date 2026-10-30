@@ -1,0 +1,12 @@
+guard: TestTheCodeRulesHold
+rule: the-contractor-writes-a-resource-address-in-one-place
+file: scripts/contractor/internal/phases/overlay.go
+find: "const overlayKeyAddress = steps.OverlayKey"
+replace: 'const overlayKeyAddress = "tailscale_tailnet_key.hypervisor[0]"'
+mentions: "writes a resource address"
+reads_source: true
+why: >
+  An address written where it is used reads as clearer than a constant a
+  file away. It is the literal that stays unprefixed when the root becomes
+  a module, and the one place the plan and the converge can disagree
+  again (#497).

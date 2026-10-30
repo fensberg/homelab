@@ -176,12 +176,12 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(container_memory_working_set_bytes{container!=\"\",container!=\"POD\"} and on (node) kube_node_spec_taint{key=\"untrusted-zone\"}) or vector(0)",
+          "expr": "sum(container_memory_working_set_bytes{container!=\"\",container!=\"POD\"} and on (node) node:untrusted_zone:info) or vector(0)",
           "legendFormat": "in use"
         },
         {
           "refId": "B",
-          "expr": "sum(kube_node_status_allocatable{resource=\"memory\"} and on (node) kube_node_spec_taint{key=\"untrusted-zone\"}) or vector(0)",
+          "expr": "sum(kube_node_status_allocatable{resource=\"memory\"} and on (node) node:untrusted_zone:info) or vector(0)",
           "legendFormat": "the machine holds"
         }
       ],

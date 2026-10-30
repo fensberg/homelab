@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+rule: supplier_egress
+file: scripts/approved-suppliers.yml
+find: "    hosts:\n      - go.dev:443\n      - proxy.golang.org:443\n"
+replace: "    hosts:\n      - go.dev:443\n"
+mentions: 'reaches "proxy.golang.org:443", which is not in the approved suppliers list'
+why: >
+  A host a workflow may reach is declared on the list; one taken off it and
+  still reached is egress nothing approved.

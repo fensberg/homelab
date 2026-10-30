@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_estate_scope
+file: management/estate/zero-trust.tf
+find: 'resource "cloudflare_zero_trust_device_default_profile" "estate" {'
+replace: "resource \"github_repository_file\" \"planted\" {\n  repository = \"homelab\"\n  file       = \"planted.txt\"\n  content    = \"planted\"\n}\n\nresource \"cloudflare_zero_trust_device_default_profile\" \"estate\" {"
+mentions: "which is not listed as the estate's"
+why: >
+  Whatever the estate root declares survives every site and is shared by
+  all of them. Something belonging to one site put there instead outlives
+  the site, and is changed for all sites by work meant for one.

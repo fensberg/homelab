@@ -1,8 +1,0 @@
-guard: TestEveryConcurrencyGroupNamesWhatSupersedesIt
-file: .github/workflows/plan-infrastructure.yml
-find: "group: plan-infrastructure-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.merge_group.head_sha }}"
-replace: "group: plan-infrastructure-${{ github.event_name }}-${{ github.ref }}"
-mentions: "does not use github.event.pull_request.number"
-why: >
-  A pull request closed by merging reports main as its ref, so a group keyed
-  by ref lets its closing run cancel the converge the merge started (#573).

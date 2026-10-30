@@ -18,4 +18,9 @@ const (
 	// Kustomizations is the kind above as kubectl is asked for it, said in
 	// full: Kubernetes' own kustomize has a kind of the same short name.
 	Kustomizations = "kustomizations.kustomize.toolkit.fluxcd.io"
+	// Force is the annotation that has Flux replace an object - delete it
+	// and make it again - when an edit of it is refused, and only then; and
+	// Forced is its value that says so.
+	Force  = "kustomize.toolkit.fluxcd.io/force"
+	Forced = "Enabled"
 )

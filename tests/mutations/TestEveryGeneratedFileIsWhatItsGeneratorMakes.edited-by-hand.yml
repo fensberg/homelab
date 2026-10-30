@@ -1,0 +1,11 @@
+guard: TestEveryGeneratedFileIsWhatItsGeneratorMakes
+file: scripts/details/facts/untrusted-zone.generated.go
+reads_source: true
+find: '"untrusted-zone/not-yet-clean"'
+replace: '"untrusted-zone/unclean"'
+mentions: "does not give what is committed"
+why: >
+  reads_source: the guard regenerates the file in the copy and compares,
+  so it reads the file as data rather than running it. A generated file
+  edited by hand is a second declaration of the fact, and the first one
+  to drift from it.

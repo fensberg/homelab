@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+rule: supplier_charts
+file: scripts/approved-suppliers.yml
+find: "  - url: https://traefik.github.io/charts\n"
+replace: "  - url: https://traefik.example.org/charts\n"
+mentions: 'chart source "https://traefik.github.io/charts" is not an approved supplier'
+why: >
+  The list is what makes a chart repository a supplier. One taken off it and
+  still read from is a delivery nobody approved.

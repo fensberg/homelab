@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"homelab/tests/parsed"
 	"os"
 	"os/exec"
 	"strings"
@@ -21,7 +22,7 @@ import (
 // Run for real rather than read, in a repository where the sweeper cannot be
 // built, which is the path where silence would do the damage.
 func TestThePostMergeHookSaysWhenItCouldNotCollect(t *testing.T) {
-	root := repoRoot(t)
+	light(t)
 	dir := t.TempDir()
 	env := []string{
 		"PATH=" + os.Getenv("PATH"),
@@ -38,10 +39,8 @@ func TestThePostMergeHookSaysWhenItCouldNotCollect(t *testing.T) {
 
 	// The path is spelled out on the line that runs it, so the coverage check
 	// can see this file is executed rather than merely read.
-	cmd := exec.Command("bash", root+"/githooks/post-merge")
-	cmd.Dir = dir
-	cmd.Env = env
-	out, err := cmd.CombinedOutput()
+	stdout, stderr, err := repository(t).Invoke(parsed.Run{In: dir, Env: env, Bare: true}, "bash", parsed.Here("githooks/post-merge"))
+	out := append(stdout, stderr...)
 
 	if err != nil {
 		t.Errorf("the hook exited with %v; git ignores this exit status, but a failing hook "+

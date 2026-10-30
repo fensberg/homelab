@@ -65,7 +65,8 @@ skip-check:
   # nothing. Excused for the repository and not for that one file, because
   # the reason is general and is held for every workflow: one that takes
   # inputs holds no write permission, so there is no output for an input to
-  # have shaped. proved by TestAWorkflowThatTakesInputsCanPublishNothing
+  # have shaped. proved by TestTheConfigurationRulesHold, whose rule this is
+  # (policy/conftest/rules/dispatch_inputs/dispatch_inputs.rego)
   #
   # This went unseen until the exclusion of the test trees below was found to
   # cover every path with "tests" in it, that workflow's among them.
@@ -79,7 +80,8 @@ skip-path:
   # proved by TestAnExcludedPathHoldsNothingTheToolWasMeantToRead
   - \.unreleased
   # Flux's own install, committed as Flux published it.
-  # proved by TestAnExcludedPathHoldsNothingTheToolWasMeantToRead and TestEveryFluxControllerIsPinnedHere
+  # proved by TestAnExcludedPathHoldsNothingTheToolWasMeantToRead and TestTheConfigurationRulesHold
+  # (policy/conftest/rules/flux_controllers/flux_controllers.rego)
   - clusters/core/flux-system/gotk-components\.yaml
   # clusters/bootstrap/ is Cilium's own chart output, committed verbatim for
   # the same reason flux-system is: a version bump should be a reviewable diff

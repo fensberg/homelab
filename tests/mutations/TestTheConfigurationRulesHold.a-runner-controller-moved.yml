@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: runner_namespaces
+file: clusters/core/infrastructure/controllers/actions-runner-controller.yaml
+find: "  namespace: arc-systems\n"
+replace: "  namespace: arc-runners\n"
+mentions: 'is the runners'' controller, and is in the namespace "arc-runners"'
+why: >
+  The controller in the estate's runners' namespace sits inside their walls
+  and under their budget, and the namespace the estate made for it is left
+  empty. Each half reads as correct alone.

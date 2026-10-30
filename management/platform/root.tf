@@ -80,10 +80,10 @@ variable "kubeconfig" {
 module "platform" {
   # Fetched by the digest of the package, which is the contents: stronger
   # than the commit hash or tag these two checks ask a git source for, and
-  # not something they can read. TestEverySiteRootRunsItsModulesAsReleased
-  # holds what they are for.
-  # checkov:skip=CKV_TF_1:fetched by digest, proved by TestEverySiteRootRunsItsModulesAsReleased
-  # checkov:skip=CKV_TF_2:fetched by digest, proved by TestEverySiteRootRunsItsModulesAsReleased
+  # not something they can read. policy/semgrep/released-modules.yml and
+  # policy/conftest/rules/plan_released_modules hold what they are for.
+  # checkov:skip=CKV_TF_1:fetched by digest, proved by TestTheCodeRulesHold (policy/semgrep/released-modules.yml)
+  # checkov:skip=CKV_TF_2:fetched by digest, proved by TestTheCodeRulesHold (policy/semgrep/released-modules.yml)
   source = var.unreleased != "" ? "${var.unreleased}/modules/infrastructure/platform" : "oci://${var.release}//modules/infrastructure/platform?digest=${var.digest}"
 
   site        = var.site

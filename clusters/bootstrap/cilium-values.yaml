@@ -138,6 +138,6 @@ operator:
 # carries node-to-node and site-to-site traffic instead. A second site would
 # make this a real question again.
 #
-# tests/go/repo/cni_test.go refuses an unpinned MTU while this holds, and
+# policy/conftest/rules/cni/cni.rego refuses an unpinned MTU while this holds, and
 # tests/go/integration asserts the cluster is running the number pinned here.
 MTU: 1450

@@ -1,0 +1,25 @@
+guard: TestTheConfigurationRulesHold
+rule: action_commits
+file: .github/workflows/zz-second-copy-of-checkout.yml
+create: |
+  name: planted
+  on: push
+  jobs:
+    planted:
+      runs-on: ubuntu-latest
+      timeout-minutes: 1
+      steps:
+        - uses: $/.github/workflows/mobilize
+          with:
+            egress-policy: block
+        - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+          with:
+            persist-credentials: false
+mentions: "is written in 2 places"
+why: >
+  harden-runner was pinned in 31 jobs and checkout in 30, agreeing only
+  because nobody had yet made a mistake. The shared actions under
+  .github/workflows hold the one literal each, and this is what stops a
+  new job reaching past them and writing a second copy - which would pass
+  every other check, since it names the right commit today. Planted,
+  because once consolidated there is no second copy in the tree to edit.

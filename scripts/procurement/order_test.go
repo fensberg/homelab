@@ -314,3 +314,25 @@ func TestABinaryNamedUnlikeItsRepositoryIsDeliveredByThatName(t *testing.T) {
 		t.Fatalf("want one delivery named flux, got %+v", got)
 	}
 }
+
+// pip is offered every glibc the locked machines can run, so a tool whose
+// wheels need a newer one than manylinux2014 is resolved rather than held at
+// its last old build - and none newer than the machines have.
+func TestTheLockOffersEveryPlatformTheMachinesRun(t *testing.T) {
+	got := lockedPlatforms()
+	has := map[string]bool{}
+	for _, p := range got {
+		has[p] = true
+	}
+	for _, want := range []string{"manylinux_2_39_x86_64", "manylinux_2_35_x86_64", "manylinux_2_28_x86_64", "manylinux_2_17_x86_64", "manylinux2014_x86_64", "linux_x86_64"} {
+		if !has[want] {
+			t.Errorf("pip is not offered %s: %v", want, got)
+		}
+	}
+	if has["manylinux_2_40_x86_64"] || has["manylinux_2_16_x86_64"] {
+		t.Errorf("pip is offered a platform outside the machines' glibc: %v", got)
+	}
+	if got[0] != "manylinux_2_39_x86_64" {
+		t.Errorf("the newest platform is offered first, and is %s", got[0])
+	}
+}

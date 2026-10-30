@@ -329,7 +329,7 @@ step "Python tools, from the lock"
 user_site="$(python3 -m site --user-site 2>/dev/null || true)"
 leftovers=()
 if [ -n "$user_site" ] && [ -d "$user_site" ]; then
-	locked_names="$("$(dirname "$0")/take-delivery.sh" --print ansible-core pre-commit pre-commit-hooks checkov zizmor codespell | sed 's/==.*//')"
+	locked_names="$("$(dirname "$0")/take-delivery.sh" --print ansible-core pre-commit pre-commit-hooks checkov zizmor codespell semgrep | sed 's/==.*//')"
 	for dist in "$user_site"/*.dist-info; do
 		[ -d "$dist" ] || continue
 		name="$(basename "$dist" .dist-info)"
@@ -343,8 +343,8 @@ if [ "${#leftovers[@]}" -gt 0 ]; then
 	info "removing ${#leftovers[@]} locked packages an earlier install left in the user site"
 	python3 -m pip uninstall --break-system-packages --yes "${leftovers[@]}"
 fi
-info "installing ansible-core, pre-commit, pre-commit-hooks, checkov, zizmor and codespell from the lock"
-"$(dirname "$0")/take-delivery.sh" ansible-core pre-commit pre-commit-hooks checkov zizmor codespell
+info "installing ansible-core, pre-commit, pre-commit-hooks, checkov, zizmor, codespell and semgrep from the lock"
+"$(dirname "$0")/take-delivery.sh" ansible-core pre-commit pre-commit-hooks checkov zizmor codespell semgrep
 ok "python tools installed at the locked versions"
 
 step "Ansible collections"
@@ -474,6 +474,25 @@ ok "hadolint and shellcheck installed into ~/.local/bin"
 info "taking delivery of kustomize ${KUSTOMIZE_VERSION}"
 "$(dirname "$0")/take-delivery.sh" kustomize
 ok "kustomize installed into ~/.local/bin"
+
+# Conftest, which runs the configuration rules in policy/conftest. The guards
+# that run at push are among them (TestTheConfigurationRulesHold), so a
+# workstation without it cannot push.
+info "taking delivery of conftest ${CONFTEST_VERSION}"
+"$(dirname "$0")/take-delivery.sh" conftest
+ok "conftest installed into ~/.local/bin"
+
+# OPA, which reads the configuration rules themselves: a guard that runs at
+# push (TestOnlyTheSelectorsReadTheInput) asks it for each rule's syntax tree.
+info "taking delivery of opa ${OPA_VERSION}"
+"$(dirname "$0")/take-delivery.sh" opa
+ok "opa installed into ~/.local/bin"
+
+# TruffleHog, which the push hook runs over the commits a push would publish
+# (security guard-secrets), so a workstation without it cannot push.
+info "taking delivery of trufflehog ${TRUFFLEHOG_VERSION}"
+"$(dirname "$0")/take-delivery.sh" trufflehog
+ok "trufflehog installed into ~/.local/bin"
 
 step "commit signing"
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"

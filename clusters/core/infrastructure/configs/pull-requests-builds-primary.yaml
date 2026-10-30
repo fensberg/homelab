@@ -1,0 +1,172 @@
+# The pool for the one job every pull request waits on longest, which
+# downloads what a build needs. It is a pool of its own so that job never
+# waits for a runner: in the builds pool it raced eight others for four
+# runners and started six to ten minutes late (2026-10-23), and the run
+# ended that much later. Which job is first is its runs-on; the pool says
+# nothing about which job that is.
+# What holds every pool is said once, in pull-request-runners.yaml.
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: pull-requests-builds-primary
+  namespace: pull-request-runners
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: gha-runner-scale-set
+      version: "0.14.2"
+      sourceRef:
+        kind: HelmRepository
+        name: actions-runner-controller
+        namespace: flux-system
+      interval: 12h
+  install:
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 5m
+  upgrade:
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 5m
+  values:
+    githubConfigUrl: ${RUNNER_GITHUB_CONFIG_URL}
+    githubConfigSecret: ${RUNNER_SECRET_NAME}
+    # A group of its own. The estate's other runners are in one that takes
+    # only named workflows from the default branch, which a pull request
+    # never runs from.
+    runnerGroup: pull-requests
+
+    runnerScaleSetName: pr-builds-primary-${SITE}
+
+    minRunners: 0
+    # One, at two gibibytes: one of the builds pool's four, moved here, so
+    # what the pools ask of the untrusted worker is what it was.
+    maxRunners: 1
+
+    listenerTemplate:
+      spec:
+        terminationGracePeriodSeconds: 60
+        securityContext:
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+        priorityClassName: critical
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: node-role.kubernetes.io/control-plane
+                      operator: DoesNotExist
+        containers:
+          - name: listener
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop: ["ALL"]
+            resources:
+              requests:
+                cpu: 25m
+                memory: 64Mi
+
+    template:
+      spec:
+        priorityClassName: interactive
+        automountServiceAccountToken: false
+        # The untrusted zone's machine and no other: the label sends a
+        # runner there, and the toleration is what lets it stay.
+        nodeSelector:
+          untrusted-zone: zone0
+        tolerations:
+          - key: untrusted-zone
+            operator: Equal
+            value: zone0
+            effect: NoSchedule
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: node-role.kubernetes.io/control-plane
+                      operator: DoesNotExist
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1001
+          runAsGroup: 1001
+          fsGroup: 1001
+          seccompProfile:
+            type: RuntimeDefault
+        containers:
+          - name: runner
+            image: ghcr.io/fensberg/homelab-pull-request-runner@sha256:06f194adc618843dfdba8e8e3da6c3d35039bc996da5b2b697894ea9128a2cf7
+            command: ["/home/runner/run.sh"]
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop: ["ALL"]
+            resources:
+              requests:
+                cpu: "1"
+                memory: 2Gi
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: pull-requests-builds-primary
+  namespace: pull-request-runners
+spec:
+  endpointSelector:
+    matchLabels:
+      actions.github.com/scale-set-name: pr-builds-primary-${SITE}
+  egress:
+    # The cluster's resolver, and only for the names below: a name that is
+    # not asked for is a name nothing can be sent to inside a question.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*.actions.githubusercontent.com"
+              - matchPattern: "*.blob.core.windows.net"
+              - matchName: api.github.com
+              - matchName: codeload.github.com
+              - matchName: files.pythonhosted.org
+              - matchName: get.opentofu.org
+              - matchName: github.com
+              - matchName: go.dev
+              - matchName: objects.githubusercontent.com
+              - matchName: proxy.golang.org
+              - matchName: pypi.org
+              - matchName: registry.opentofu.org
+              - matchName: release-assets.githubusercontent.com
+              - matchName: storage.googleapis.com
+              - matchName: sum.golang.org
+    - toFQDNs:
+        - matchPattern: "*.actions.githubusercontent.com"
+        - matchPattern: "*.blob.core.windows.net"
+        - matchName: api.github.com
+        - matchName: codeload.github.com
+        - matchName: files.pythonhosted.org
+        - matchName: get.opentofu.org
+        - matchName: github.com
+        - matchName: go.dev
+        - matchName: objects.githubusercontent.com
+        - matchName: proxy.golang.org
+        - matchName: pypi.org
+        - matchName: registry.opentofu.org
+        - matchName: release-assets.githubusercontent.com
+        - matchName: storage.googleapis.com
+        - matchName: sum.golang.org
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

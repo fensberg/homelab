@@ -1,0 +1,9 @@
+guard: TestTheCodeRulesHold
+rule: a-connection-string-carries-no-credential-of-its-own
+file: policy/semgrep/credentials.yml
+find: "      exclude: [\"*_test.go\"]\n\n  - id: a-connection-string-with-a-user-part"
+replace: "\n  - id: a-connection-string-with-a-user-part"
+mentions: "writes a connection string whose user part is not a placeholder"
+why: >
+  Tests write connection strings with made-up users, to check how they are
+  parsed; without the exclusion the rule refuses them.

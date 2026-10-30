@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: supplier_egress
+file: .github/workflows/sensitive-paths.yml
+find: "          allowed-endpoints: >\n            api.github.com:443\n"
+replace: "          allowed-endpoints: >\n            api.github.com:443\n            exfil.example.invalid:443\n"
+mentions: "which is not in the approved suppliers list"
+why: >
+  An endpoint added to one workflow's allowlist and nowhere else is invisible
+  to any review not already reading that file, which is how fifteen
+  allowlists in nine workflows came to answer nothing between them.

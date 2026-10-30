@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -191,19 +189,9 @@ func runnerProblems(release map[string]any) []string {
 }
 
 func TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore(t *testing.T) {
-	root := repoRoot(t)
-	list, err := os.ReadFile(filepath.Join(root, supplierslist.Path))
-	if err != nil {
-		t.Fatal(err)
-	}
-	pools, err := supplierslist.PoolsOf(list)
-	if err != nil {
-		t.Fatal(err)
-	}
-	egress, err := supplierslist.EgressOf(list)
-	if err != nil {
-		t.Fatal(err)
-	}
+	light(t)
+	tree := repository(t)
+	pools, egress := tree.Pools(t), tree.Egress(t)
 	if len(pools.Names) == 0 {
 		t.Fatal("the suppliers list declares no pool of pull-request runners, so this checked nothing")
 	}
@@ -232,22 +220,11 @@ func TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore(t *testing.T)
 	releases := map[string]map[string]any{}
 	namespaceOf := map[string]string{}
 	closed := map[string]bool{}
-	for _, rel := range trackedFilesIn(t, root) {
-		if !authoredHere(rel) || !strings.HasPrefix(rel, "clusters/") || !strings.HasSuffix(rel, ".yaml") {
+	for _, rel := range tree.Files(t) {
+		if !authoredHere(t, rel) || !strings.HasPrefix(rel, "clusters/") || !strings.HasSuffix(rel, ".yaml") {
 			continue
 		}
-		body, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !bytes.Contains(body, []byte("pull-request")) {
-			continue
-		}
-		docs, err := documents(body)
-		if err != nil {
-			t.Fatalf("%s speaks of the pull-request runners and does not parse: %v", rel, err)
-		}
-		for _, doc := range docs {
+		for _, doc := range mappings(t, tree, rel) {
 			namespace, _ := walk(doc, "metadata", "namespace").(string)
 			switch doc["kind"] {
 			case "CiliumNetworkPolicy":
@@ -294,6 +271,7 @@ func TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore(t *testing.T)
 
 // The judging, on policies and runners made up here.
 func TestAPoolsPolicyIsHeldToItsListAndItsRunnersToNothingOfTheClusters(t *testing.T) {
+	light(t)
 	const good = `
 spec:
   egress:

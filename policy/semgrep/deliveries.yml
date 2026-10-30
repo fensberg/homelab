@@ -1,0 +1,54 @@
+# How tools arrive (#416).
+#
+# scripts/deliveries.lock pins every tool this estate installs that has no
+# lockfile of its own ecosystem, by version and by hash, and
+# scripts/take-delivery.sh is the only thing that installs from it. A second
+# installer appearing beside it is how that stops being true without anything
+# else noticing. Whether the lock agrees with its declarations is `security
+# guard-deliveries`, which runs on every commit; whether the right party
+# orders it is policy/conftest/rules/expedite_duty/expedite_duty.rego.
+rules:
+  - id: nothing-installs-from-pypi-outside-take-delivery
+    # Read as text, in every kind of file Semgrep is handed
+    # (tests/languages.yml), because an install can be written in a script, a
+    # Dockerfile, a workflow's step or a task. A line that only
+    # mentions an install is prose - "this used to be pipx install pre-commit"
+    # is exactly what a comment should say - so a whole-line comment in any of
+    # the languages written here is not read.
+    languages: [generic]
+    severity: ERROR
+    message: >-
+      installs from a Python package index outside scripts/take-delivery.sh. A
+      version pin written anywhere else fixes the tool and lets every
+      dependency it pulls in resolve fresh on each install - over a hundred
+      packages for checkov alone. Declare the tool with pypi: on its tools:
+      entry in scripts/approved-suppliers.yml, pin its version in
+      scripts/versions.env, run task order-deliveries, and install it with
+      scripts/take-delivery.sh <name>.
+    pattern-regex: (?m)^(?![ \t]*(?:#|//|\*|<!--|--)).*?\b(?:(?:pip3?|pipx)\s+install|uv\s+(?:pip|tool)\s+install)\b
+    paths:
+      exclude:
+        - /scripts/take-delivery.sh
+        - /tests/mutations/
+
+  - id: the-installer-does-not-override-a-pinned-version
+    # The pin is only a pin if the thing installing it reads it.
+    # install-dependencies.sh sourced versions.env and then overwrote
+    # KUBECTL_VERSION with `curl https://dl.k8s.io/release/stable.txt`, so the
+    # workstation installed whatever upstream called stable that day while the
+    # runner image honoured the pin (#178). Held in every script, not one: a
+    # script that sources the pins and replaces one is the same defect
+    # wherever it is.
+    # An assignment at the start of a line, which a comment cannot be.
+    languages: [generic]
+    severity: ERROR
+    message: >-
+      assigns a pinned version from a command, overriding the pin in
+      versions.env. Sourcing the pin and then replacing it is worse than not
+      pinning at all: the file still claims to be the one place a version is
+      declared, the runner image still honours it, and the two quietly install
+      different versions of the same tool. Read the pin, or take the version
+      out of versions.env and say why.
+    pattern-regex: (?m)^[ \t]*[A-Z_]+_VERSION[ \t]*=[ \t]*"?\$\(
+    paths:
+      include: ["*.sh"]

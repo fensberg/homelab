@@ -1,0 +1,10 @@
+guard: TestTheCodeRulesHold
+rule: the-vault-check-never-fetches-or-writes-a-secret
+file: scripts/contractor/internal/phases/checkvault.go
+reads_source: true
+find: "	if !onepassword.SignedIn() {"
+replace: "	_, _ = onepassword.Read(\"op://estate/item/field\")\n	if !onepassword.SignedIn() {"
+mentions: "fetches or writes a secret. The vault check must not"
+why: >
+  The vault check's output is meant to be pasted into an issue. A value fetched
+  inside it is a value one debug print from being published.

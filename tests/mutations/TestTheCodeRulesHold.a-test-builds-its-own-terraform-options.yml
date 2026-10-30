@@ -1,0 +1,10 @@
+guard: TestTheCodeRulesHold
+rule: terraform-options-are-built-in-the-harness
+file: tests/go/integration/drift_test.go
+reads_source: true
+find: "opts := harness.TofuOptions(t, root, nil)"
+replace: "opts := &terraform.Options{TerraformDir: root}"
+mentions: "builds its own terraform.Options. They are built in tests/go/harness"
+why: >
+  A test that builds its own options decides its own logger, and Terratest's
+  default prints every command's output into a public log (#491).

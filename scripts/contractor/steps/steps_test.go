@@ -2,9 +2,11 @@ package steps
 
 import (
 	"errors"
-	"homelab/contractor/config"
 	"slices"
+	"strings"
 	"testing"
+
+	"homelab/contractor/config"
 )
 
 // A phase's steps are its own, in the declared order, and the plan's view of
@@ -71,5 +73,62 @@ func TestClusterAccessIsReadFromTheClusterRootsOutputs(t *testing.T) {
 	failing := func(string, []string, ...string) ([]byte, []byte, error) { return nil, nil, errors.New("exit 1") }
 	if _, err := ClusterAccess("d", failing); err == nil {
 		t.Error("a failed read of the outputs was not an error")
+	}
+}
+
+// The platform root is applied only after the cluster root has finished:
+// every cluster step before every platform step, and the cluster root ending
+// with its untargeted apply, the only one that includes the health read
+// that waits for every node. A platform applied to a cluster that is not
+// ready is how an ignition tears itself back down.
+func TestThePlatformRootComesAfterTheClusterIsReady(t *testing.T) {
+	for _, p := range stepOrderProblems(Converge) {
+		t.Error(p)
+	}
+}
+
+// stepOrderProblems is what is wrong with the order of the converge's steps.
+func stepOrderProblems(converge []Step) []string {
+	var problems []string
+	lastCluster, firstPlatform := -1, -1
+	for i, st := range converge {
+		switch st.Root {
+		case config.ClusterRoot:
+			lastCluster = i
+		case config.PlatformRoot:
+			if firstPlatform < 0 {
+				firstPlatform = i
+			}
+		default:
+			problems = append(problems, "step "+st.Label+" names the root "+st.Root+", which is not one of a site's")
+		}
+	}
+	switch {
+	case lastCluster < 0 || firstPlatform < 0:
+		problems = append(problems, "the converge does not apply both of a site's roots, so one of them is never built")
+	case firstPlatform < lastCluster:
+		problems = append(problems, "step "+converge[firstPlatform].Label+" applies the platform root before step "+converge[lastCluster].Label+" has finished the cluster root. The platform is applied to a cluster whose nodes are Ready, and only the cluster root's last step makes that true.")
+	case len(converge[lastCluster].Targets) != 0:
+		problems = append(problems, "the cluster root's last step, "+converge[lastCluster].Label+", is targeted. Only an untargeted apply includes the health read that waits for every node, so the platform root would be applied to a cluster that is not ready.")
+	}
+	return problems
+}
+
+func TestStepOrderProblemsRefusesThePlatformBeforeTheClusterIsReady(t *testing.T) {
+	c, p := config.ClusterRoot, config.PlatformRoot
+	for name, tc := range map[string]struct {
+		steps []Step
+		want  string
+	}{
+		"the converge's own":        {Converge, ""},
+		"platform first":            {[]Step{{Root: p, Label: "p"}, {Root: c, Label: "c"}}, "before step"},
+		"cluster ends targeted":     {[]Step{{Root: c, Label: "c", Targets: []string{"x"}}, {Root: p, Label: "p"}}, "is targeted"},
+		"no platform":               {[]Step{{Root: c, Label: "c"}}, "both of a site's roots"},
+		"a root that is not a root": {[]Step{{Root: c, Label: "c"}, {Root: p, Label: "p"}, {Root: "elsewhere", Label: "e"}}, "not one of a site's"},
+	} {
+		got := strings.Join(stepOrderProblems(tc.steps), "|")
+		if (tc.want == "") != (got == "") || !strings.Contains(got, tc.want) {
+			t.Errorf("%s: got %q, want %q", name, got, tc.want)
+		}
 	}
 }

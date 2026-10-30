@@ -1,14 +1,13 @@
 package repo
 
 import (
-	"os"
+	"fmt"
+	"go/ast"
+	"go/token"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 // Every guard in this package is either proved or declared unprovable.
@@ -40,20 +39,13 @@ type ledgerCompleteness struct {
 	} `yaml:"unprovable"`
 }
 
-var testFunc = regexp.MustCompile(`(?m)^func (Test[A-Za-z0-9_]*)\(`)
-
 func TestEveryGuardIsProvedOrDeclaredUnprovable(t *testing.T) {
+	light(t)
 	skipIfInner(t)
-	root := repoRoot(t)
+	tree := repository(t)
 
-	body, err := os.ReadFile(filepath.Join(root, "tests", "mutations.yml"))
-	if err != nil {
-		t.Fatalf("reading tests/mutations.yml: %v", err)
-	}
 	var l ledgerCompleteness
-	if err := yaml.Unmarshal(body, &l); err != nil {
-		t.Fatalf("parsing tests/mutations.yml: %v", err)
-	}
+	tree.YAMLInto(t, ledgerEntries+".yml", &l)
 
 	proved := map[string]bool{}
 	for _, m := range readLedger(t).Mutations {
@@ -77,45 +69,31 @@ func TestEveryGuardIsProvedOrDeclaredUnprovable(t *testing.T) {
 		}
 	}
 
-	dir := filepath.Join(root, "tests", "go", "repo")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("reading %s: %v", dir, err)
-	}
-
 	var undeclared []string
 	seen := map[string]bool{}
-	for _, e := range entries {
-		if !strings.HasSuffix(e.Name(), "_test.go") {
+	fset := token.NewFileSet()
+	for _, rel := range tree.Files(t) {
+		if filepath.Dir(rel) != guardsDir || !strings.HasSuffix(rel, "_test.go") {
 			continue
 		}
-		src, err := os.ReadFile(filepath.Join(dir, e.Name()))
-		if err != nil {
-			t.Fatalf("reading %s: %v", e.Name(), err)
-		}
-		for _, m := range testFunc.FindAllStringSubmatch(string(src), -1) {
-			name := m[1]
-			seen[name] = true
-			if proved[name] || exemptTest[name] || exemptPath[e.Name()] {
+		file := filepath.Base(rel)
+		for _, d := range tree.Go(t, fset, rel).Decls {
+			fn, ok := d.(*ast.FuncDecl)
+			// TestMain starts the package and is no test of anything.
+			if !ok || fn.Recv != nil || !strings.HasPrefix(fn.Name.Name, "Test") || fn.Name.Name == "TestMain" {
 				continue
 			}
-			undeclared = append(undeclared, e.Name()+" "+name)
+			name := fn.Name.Name
+			seen[name] = true
+			if proved[name] || exemptTest[name] || exemptPath[file] {
+				continue
+			}
+			undeclared = append(undeclared, file+" "+name)
 		}
 	}
 
-	// The debt may shrink, never grow. Without this the owed list is a place to
-	// put anything rather than a queue with an end.
-	if owed > l.OwedCeiling {
-		t.Errorf(`%d guards are marked owed; the ceiling is %d.
-
-owed means "provable, not yet proved". It is bounded on purpose: a new guard
-cannot join that list without another one leaving it. Write the mutation entry
-for this one, or prove an older one and lower the ceiling in the same diff.`,
-			owed, l.OwedCeiling)
-	}
-	if owed < l.OwedCeiling {
-		t.Logf("%d guards owed against a ceiling of %d - lower it to %d to keep the "+
-			"debt ratcheting down", owed, l.OwedCeiling, owed)
+	if problem := owedCeilingProblem(owed, l.OwedCeiling); problem != "" {
+		t.Error(problem)
 	}
 
 	if len(seen) == 0 {
@@ -146,6 +124,44 @@ failing case" is a good reason; silence is not.`,
 	for _, m := range l.Mutations {
 		if !seen[m.Guard] {
 			t.Errorf("the ledger names guard %q, which is not a test in tests/go/repo", m.Guard)
+		}
+	}
+}
+
+// owedCeilingProblem is what is wrong with an owed count against its
+// ceiling, or "". The debt may shrink, never grow: without a ceiling the owed
+// list is a place to put any new guard nobody wants to prove. And the ceiling
+// may not sit above what is owed, because slack is room the next new guard
+// spends unproved - a proof landed on #773 and the ceiling was left one above
+// the count, which a log line said only when something else had failed.
+func owedCeilingProblem(owed, ceiling int) string {
+	switch {
+	case owed > ceiling:
+		return fmt.Sprintf(`%d guards are marked owed; the ceiling is %d.
+
+owed means "provable, not yet proved". It is bounded on purpose: a new guard
+cannot join that list without another one leaving it. Write the mutation entry
+for this one, or prove an older one and lower the ceiling in the same diff.`, owed, ceiling)
+	case owed < ceiling:
+		return fmt.Sprintf("%d guards owed against a ceiling of %d - lower it to %d. A ceiling above "+
+			"what is owed is room the next new guard spends without being proved.", owed, ceiling, owed)
+	}
+	return ""
+}
+
+func TestTheOwedCeilingFitsTheDebtExactly(t *testing.T) {
+	light(t)
+	for _, c := range []struct {
+		owed, ceiling int
+		want          string
+	}{
+		{24, 24, ""},
+		{25, 24, "the ceiling is 24"},
+		{23, 24, "lower it to 23"},
+	} {
+		got := owedCeilingProblem(c.owed, c.ceiling)
+		if (c.want == "") != (got == "") || !strings.Contains(got, c.want) {
+			t.Errorf("%d owed against %d: got %q, want %q", c.owed, c.ceiling, got, c.want)
 		}
 	}
 }

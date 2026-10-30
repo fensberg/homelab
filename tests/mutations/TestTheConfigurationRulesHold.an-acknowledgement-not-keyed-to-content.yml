@@ -1,0 +1,11 @@
+guard: TestTheConfigurationRulesHold
+rule: sensitive_gate_conversation
+file: .github/workflows/sensitive-paths.yml
+find: "            -pr \"$PR\" \\\n            -digest \"$DIGEST\" \\\n            -anchor \"$ANCHOR\" \\\n            -head \"$HEAD\" \\\n            -report /tmp/sensitive-report.md"
+replace: "            -pr \"$PR\" \\\n            -anchor \"$ANCHOR\" \\\n            -head \"$HEAD\" \\\n            -report /tmp/sensitive-report.md"
+mentions: "not keyed to a digest of the sensitive diff"
+why: >
+  The acknowledgement of a sensitive change is a conversation keyed to a
+  digest of what changed. Without the digest it is keyed to nothing, so
+  one given for a harmless first push still stands after the next push
+  rewrites the sensitive file - the defect the label it replaced had.

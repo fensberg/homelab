@@ -1,11 +1,11 @@
 package repo
 
 import (
-	"os"
-	"path/filepath"
 	"regexp"
-	"strings"
+	"slices"
 	"testing"
+
+	"homelab/tests/parsed"
 )
 
 // A workstation on the hypervisor's own bridge must not accept the estate's
@@ -33,25 +33,13 @@ import (
 // are true at once, so moving the workstation off the bridge is allowed and
 // re-adding the flag while it stays there is not.
 func TestAWorkstationOnTheHypervisorBridgeDoesNotAcceptRoutes(t *testing.T) {
-	body, err := os.ReadFile(filepath.Join(repoRoot(t), "workstation", "provision.yml"))
-	if err != nil {
-		t.Fatalf("reading workstation/provision.yml: %v", err)
-	}
-	text := string(body)
-
-	onHypervisorBridge := regexp.MustCompile(`(?m)^\s*bridge:\s*vmbr\d+\s*$`).MatchString(text)
-
-	// Only the command matters. The explanation above it says the words on
-	// purpose, and a check that matched those would fail on the comment that
-	// exists to stop this recurring - which is the exact shape of test this
-	// repository has been bitten by twice.
-	var accepts bool
-	for _, line := range strings.Split(text, "\n") {
-		if strings.Contains(line, "tailscale up") && strings.Contains(line, "--accept-routes") {
-			accepts = true
-		}
-	}
-
+	light(t)
+	bridge, _ := workstationPlay(t).Vars["bridge"].(string)
+	onHypervisorBridge := regexp.MustCompile(`^vmbr\d+$`).MatchString(bridge)
+	accepts := slices.ContainsFunc(tailscaleUps(workstationCommands(t)), func(c parsed.Command) bool {
+		_, given := flagOf(c, "--accept-routes")
+		return given
+	})
 	if onHypervisorBridge && accepts {
 		t.Error(`workstation/provision.yml puts the workstation on the hypervisor's own
 bridge AND passes --accept-routes to tailscale up.
@@ -65,7 +53,6 @@ Verify on an unreachable SDN gateway.
 Either drop --accept-routes, or move the workstation off vmbr0 and accept that
 it reaches the estate only as a tailnet peer.`)
 	}
-
 	if !onHypervisorBridge && !accepts {
 		t.Log("the workstation is no longer on the hypervisor's bridge; whether it " +
 			"needs --accept-routes is a live question again rather than a settled one")

@@ -1,9 +1,0 @@
-guard: TestNoPodIsLetPastTheRefusalOfUncountedWork
-file: clusters/core/infrastructure/controllers/uncounted-pods.yaml
-find: "  failurePolicy: Fail"
-replace: "  failurePolicy: Ignore"
-mentions: "cannot be evaluated lets the pod in"
-why: >
-  Ignore is the default people choose so that a broken rule cannot stop
-  the cluster. Here it means the refusal is absent exactly when its
-  expression is wrong, with nothing to say so.

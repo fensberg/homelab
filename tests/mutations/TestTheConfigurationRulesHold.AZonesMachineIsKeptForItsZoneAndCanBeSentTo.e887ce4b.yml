@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_zone_dedication
+file: modules/infrastructure/cluster/talos.tf
+find: "labels = { (local.untrusted_zone.key) = v.zone }"
+replace: 'labels = { "zone" = v.zone }'
+mentions: "cannot be sent there"
+why: >
+  Work meant for an untrusted zone selects the zone's machine by this
+  label. Without it a pod that tolerates the taint lands wherever there
+  is room, which is a machine the estate trusts.

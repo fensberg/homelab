@@ -1,9 +1,11 @@
 package repo
 
 import (
-	"os"
+	"go/ast"
+	"go/printer"
+	"go/token"
 	"path/filepath"
-	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -27,10 +29,11 @@ import (
 // the converge lane had never reached TakeOver before, having failed at Verify
 // every previous time for an unrelated reason.
 func TestNothingRunsTofuBeforeAttach(t *testing.T) {
+	light(t)
 	for name, seq := range sequencesWithAttach(t) {
 		takeOverAt := indexOf(seq, "take-over")
 		for i, phase := range seq[:takeOverAt] {
-			if body := phaseSource(t, phase); mentionsTofu(body) {
+			if mentionsTofu(phaseSource(t, phase)) {
 				t.Errorf("%s runs %q at position %d, before take-over at position %d, and %s.go invokes tofu.\n\n"+
 					"tofu in the cluster directory configures the local backend and writes "+
 					"terraform.tfstate, which is the condition take-over refuses. Move it after "+
@@ -62,24 +65,24 @@ func TestNothingRunsTofuBeforeAttach(t *testing.T) {
 // ways to run the rest: they read tofu's -json stream and report an address
 // and a verb per resource.
 func TestOnlyQuietTofuSubcommandsAreStreamed(t *testing.T) {
-	dir := filepath.Join(repoRoot(t), "scripts", "contractor", "internal", "phases")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("reading %s: %v", dir, err)
-	}
+	light(t)
+	tree := repository(t)
 	checked := 0
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
+	for _, rel := range tree.Files(t) {
+		if filepath.Dir(rel) != phasesDir || !strings.HasSuffix(rel, ".go") || strings.HasSuffix(rel, "_test.go") {
 			continue
 		}
 		checked++
-		raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
-		if err != nil {
-			t.Fatalf("reading %s: %v", e.Name(), err)
-		}
-		body := string(raw)
-		for _, at := range streamingTofuCall.FindAllStringIndex(body, -1) {
-			call := body[at[0]:min(at[0]+300, len(body))]
+		name := filepath.Base(rel)
+		fset := token.NewFileSet()
+		ast.Inspect(tree.Go(t, fset, rel), func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok || !streamsTofu(call) {
+				return true
+			}
+			var printed strings.Builder
+			_ = printer.Fprint(&printed, fset, call)
+			shown := firstLine(printed.String())
 			sub, found := firstSubcommand(call)
 			switch {
 			case !found:
@@ -88,15 +91,16 @@ func TestOnlyQuietTofuSubcommandsAreStreamed(t *testing.T) {
 					"elsewhere is exactly how `tofu apply` slipped past the version of "+
 					"this test that searched for the word. Pass the subcommand here, or "+
 					"use run.TofuApply / run.TofuApplyArgs / run.TofuDestroy.",
-					e.Name(), strings.TrimSpace(firstLine(call)))
+					name, shown)
 			case !quietSubcommands[sub]:
 				t.Errorf("%s streams `tofu %s`, which prints resource attributes:\n\n  %s\n\n"+
 					"A converge runs in a public Actions log and a destroy prints the "+
 					"estate's own certificate authorities. Use run.TofuApply, "+
 					"run.TofuApplyArgs or run.TofuDestroy, which report an address and a "+
-					"verb and no values.", e.Name(), sub, strings.TrimSpace(firstLine(call)))
+					"verb and no values.", name, sub, shown)
 			}
-		}
+			return true
+		})
 	}
 	// The phases directory is this guard's whole subject, and reading zero
 	// files from it passes: the loop below asserts something about each file,
@@ -121,23 +125,30 @@ var quietSubcommands = map[string]bool{
 	"fmt": true, "version": true, "providers": true, "workspace": true,
 }
 
-// firstSubcommand returns the first quoted argument in a call that looks like
-// a tofu subcommand - a bare lower-case word, not a flag and not a label.
-func firstSubcommand(call string) (string, bool) {
-	for _, m := range quotedArg.FindAllStringSubmatch(call, -1) {
-		arg := m[1]
-		if strings.HasPrefix(arg, "-") || strings.ContainsAny(arg, " ./=") {
-			continue
+// firstSubcommand returns the first string literal among a call's arguments
+// that looks like a tofu subcommand - a bare lower-case word, not a flag and
+// not a label.
+func firstSubcommand(call *ast.CallExpr) (string, bool) {
+	sub, found := "", false
+	for _, arg := range call.Args {
+		ast.Inspect(arg, func(n ast.Node) bool {
+			lit, ok := n.(*ast.BasicLit)
+			if found || !ok || lit.Kind != token.STRING {
+				return !found
+			}
+			v, err := strconv.Unquote(lit.Value)
+			if err != nil || v == "tofu" || strings.HasPrefix(v, "-") || strings.ContainsAny(v, " ./=") {
+				return true
+			}
+			sub, found = v, true
+			return false
+		})
+		if found {
+			break
 		}
-		if arg == "tofu" {
-			continue // the command name, not its subcommand
-		}
-		return arg, true
 	}
-	return "", false
+	return sub, found
 }
-
-var quotedArg = regexp.MustCompile(`"([^"]*)"`)
 
 func firstLine(s string) string {
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
@@ -150,10 +161,10 @@ func firstLine(s string) string {
 // two tests above locate a phase's code that way, so a phase that broke the
 // convention would be silently exempt from both.
 func TestEveryPhaseHasASourceFileNamedAfterIt(t *testing.T) {
-	dir := filepath.Join(repoRoot(t), "scripts", "contractor", "internal", "phases")
+	light(t)
 	for name, seq := range sequencesWithAttach(t) {
 		for _, phase := range seq {
-			if _, err := os.Stat(filepath.Join(dir, phase+".go")); err != nil {
+			if !repository(t).Exists(phasesDir + "/" + phase + ".go") {
 				t.Errorf("%s names the phase %q but there is no %s.go. The ordering "+
 					"checks find a phase's code by that name, so this phase is not being "+
 					"checked at all.", name, phase, phase)
@@ -162,27 +173,49 @@ func TestEveryPhaseHasASourceFileNamedAfterIt(t *testing.T) {
 	}
 }
 
-// Every way of reaching tofu that streams its output: the thin wrapper, and
-// the general command runner called with tofu directly. Deliberately not
+// Where the converge's phases are.
+const phasesDir = "scripts/contractor/internal/phases"
+
+// streamsTofu reports whether a call is one of the ways of reaching tofu that
+// stream its output: the thin wrapper, and the general command runner called
+// with tofu directly, as its first or second argument. Deliberately not
 // run.TofuApply / TofuApplyArgs / TofuDestroy, which summarise, nor the
 // CmdOutput family, which capture.
-var streamingTofuCall = regexp.MustCompile(`run\.Tofu\(|run\.Cmd\((?:[^,]*,\s*)?"tofu"`)
+func streamsTofu(call *ast.CallExpr) bool {
+	switch callName(call) {
+	case "run.Tofu":
+		return true
+	case "run.Cmd":
+		for i, arg := range call.Args {
+			if lit, ok := arg.(*ast.BasicLit); ok && i < 2 && lit.Kind == token.STRING && lit.Value == `"tofu"` {
+				return true
+			}
+		}
+	}
+	return false
+}
 
-// Anything that shells out to tofu. Deliberately broad: the question is not
+// mentionsTofu reports whether a file shells out to tofu at all: any run.Tofu
+// helper, or the name as a string. Deliberately broad: the question is not
 // which subcommand runs, it is whether the cluster directory acquires a local
 // backend before take-over expects it to be clean.
-var tofuCall = regexp.MustCompile(`run\.Tofu[A-Za-z]*\(|"tofu"`)
+func mentionsTofu(f *ast.File) bool {
+	found := false
+	ast.Inspect(f, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.CallExpr:
+			found = found || strings.HasPrefix(callName(n), "run.Tofu")
+		case *ast.BasicLit:
+			found = found || n.Kind == token.STRING && n.Value == `"tofu"`
+		}
+		return !found
+	})
+	return found
+}
 
-func mentionsTofu(body string) bool { return tofuCall.MatchString(body) }
-
-func phaseSource(t *testing.T, phase string) string {
+func phaseSource(t *testing.T, phase string) *ast.File {
 	t.Helper()
-	path := filepath.Join(repoRoot(t), "scripts", "contractor", "internal", "phases", phase+".go")
-	body, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("reading %s: %v", path, err)
-	}
-	return string(body)
+	return repository(t).Go(t, token.NewFileSet(), phasesDir+"/"+phase+".go")
 }
 
 func indexOf(seq []string, want string) int {
@@ -201,20 +234,32 @@ func indexOf(seq []string, want string) int {
 // nothing.
 func sequencesWithAttach(t *testing.T) map[string][]string {
 	t.Helper()
-	path := filepath.Join(repoRoot(t), "scripts", "contractor", "internal", "phases", "registry.go")
-	body, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("reading %s: %v", path, err)
-	}
-
 	found := map[string][]string{}
-	for _, m := range sequenceDecl.FindAllStringSubmatch(string(body), -1) {
-		seq := phaseName.FindAllString(m[2], -1)
-		for i := range seq {
-			seq[i] = strings.Trim(seq[i], `"`)
+	for _, d := range repository(t).Go(t, token.NewFileSet(), phasesDir+"/registry.go").Decls {
+		gen, ok := d.(*ast.GenDecl)
+		if !ok || gen.Tok != token.VAR {
+			continue
 		}
-		if indexOf(seq, "take-over") >= 0 {
-			found[m[1]] = seq
+		for _, spec := range gen.Specs {
+			vs, ok := spec.(*ast.ValueSpec)
+			if !ok || len(vs.Names) != 1 || len(vs.Values) != 1 || !strings.HasSuffix(vs.Names[0].Name, "Phases") {
+				continue
+			}
+			lit, ok := vs.Values[0].(*ast.CompositeLit)
+			if !ok {
+				continue
+			}
+			var seq []string
+			for _, e := range lit.Elts {
+				if b, ok := e.(*ast.BasicLit); ok && b.Kind == token.STRING {
+					if v, err := strconv.Unquote(b.Value); err == nil {
+						seq = append(seq, v)
+					}
+				}
+			}
+			if indexOf(seq, "take-over") >= 0 {
+				found[vs.Names[0].Name] = seq
+			}
 		}
 	}
 	if len(found) == 0 {
@@ -224,6 +269,3 @@ func sequencesWithAttach(t *testing.T) map[string][]string {
 	}
 	return found
 }
-
-var sequenceDecl = regexp.MustCompile(`(?s)var (\w+Phases) = \[\]string\{(.*?)\}`)
-var phaseName = regexp.MustCompile(`"[a-z-]+"`)

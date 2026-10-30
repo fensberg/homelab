@@ -28,6 +28,8 @@
 # name is what the vault holds. A domain the estate's token cannot see fails
 # here.
 data "cloudflare_zone" "estate" {
+  count = var.offline ? 0 : 1
+
   filter = {
     name = local.domain
   }
@@ -35,11 +37,15 @@ data "cloudflare_zone" "estate" {
 
 # Looked up for the reason the bucket permissions are (sites.tf).
 data "cloudflare_account_api_token_permission_groups_list" "zone_read" {
+  count = var.offline ? 0 : 1
+
   account_id = local.access.account_id
   name       = "Zone Read"
 }
 
 data "cloudflare_account_api_token_permission_groups_list" "dns_write" {
+  count = var.offline ? 0 : 1
+
   account_id = local.access.account_id
   name       = "DNS Write"
 }

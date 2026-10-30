@@ -1,0 +1,13 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_builtin_cni_off
+file: modules/infrastructure/cluster/talos.tf
+find: '          name = "none"'
+replace: '          name = "flannel"'
+mentions: "cluster.network.cni.name"
+why: >
+  Naming Flannel explicitly is the mutation that matters, because it is the
+  thing this estate is moving away from and the thing Talos installs if the
+  setting is lost. Flannel implements no NetworkPolicy controller, so the
+  policies isolating the untrusted workload would be accepted, stored, and
+  never evaluated. The failure is silent by construction: everything comes
+  up healthy and the isolation simply is not there.

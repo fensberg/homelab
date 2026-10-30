@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_heartbeat_cadence
+file: management/estate/watchman/watchman.tf
+find: "  schedules   = [{ cron = \"*/${local.looks_every_minutes} * * * *\" }]\n"
+replace: "  schedules   = [{ cron = \"0 * * * *\" }]\n"
+mentions: "which is not looked round every so many minutes"
+why: >
+  The rule reads how often the watchman looks round from the OpenTofu that
+  schedules it. A value that is not minutes leaves how long a silence lasts
+  unknowable.

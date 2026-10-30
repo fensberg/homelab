@@ -141,7 +141,9 @@ func askAddressPlanAt(root string, sites map[string]Site) (map[string]plannedSit
 	}
 	// A private directory per question: tofu console takes a lock on its state
 	// path even with no state, so two callers sharing the module directory's
-	// default path refuse each other. Each gets its own, and it all goes.
+	// default path refuse each other. Each gets its own, and it all goes. And
+	// no lock at all: console only reads, and when releasing one is slow it
+	// says so on standard output, inside the answer (#811's first runs).
 	scratch, err := os.MkdirTemp("", "address-plan-")
 	if err != nil {
 		return nil, err
@@ -161,7 +163,7 @@ func askAddressPlanAt(root string, sites map[string]Site) (map[string]plannedSit
 
 	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
-	c := exec.Command("tofu", "console", "-no-color", "-state="+filepath.Join(scratch, "none.tfstate"), "-var-file="+vars.Name())
+	c := exec.Command("tofu", "console", "-no-color", "-lock=false", "-state="+filepath.Join(scratch, "none.tfstate"), "-var-file="+vars.Name())
 	c.Dir = dir
 	c.Stdin = strings.NewReader("jsonencode(local.plan.sites)\n")
 	var out, errb bytes.Buffer

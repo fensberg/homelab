@@ -1,0 +1,10 @@
+guard: TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake
+file: .github/pull-request-runner-image/Dockerfile
+find: "kwokctl opa opentofu pre-commit pre-commit-hooks regal semgrep shellcheck zizmor"
+replace: "kwokctl opa opentofu pre-commit pre-commit-hooks regal semgrep shellcheck trufflehog zizmor"
+mentions: "carries trufflehog, which no job of a pool takes delivery of"
+why: >
+  A tool added because a job might want it one day is weight every runner
+  starts with, and a program every pull request's code can run. The image
+  carries what its jobs take, which is what it is held to in both
+  directions.

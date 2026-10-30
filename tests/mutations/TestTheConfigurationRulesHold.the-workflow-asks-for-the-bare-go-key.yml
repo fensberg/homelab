@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: coverage_shim
+file: .github/workflows/pr-validation.yml
+find: '            bash scripts/coverage-gate.sh "go/$module" "$pct"'
+replace: '            bash scripts/coverage-gate.sh go "$pct"'
+mentions: 'asks the coverage gate for the key "go"'
+why: >
+  The rule reads the one workflow that asks the coverage gate, at its path.
+  Asking for a key the baseline does not hold fails the Test lane on every
+  pull request.

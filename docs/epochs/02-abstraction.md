@@ -2148,10 +2148,11 @@ since the last. And each site runs the release its line names.
 - **Site0 moved from its pinned commit to `v2026.10.1` with a plan showing no
   change**, against its as-built record, the release fetched from the
   registry.
-- **The guard:** `TestEverySiteRootRunsItsModulesAsReleased` refuses a root
-  that reaches a module any other way than by the release's digest, a
-  default for where modules come from, a site with no line and a line that
-  is no site's.
+- **The guard:** `policy/conftest/rules/plan_released_modules` refuses a
+  site's plan whose modules come from anywhere but the tree it was handed,
+  a default for where modules come from, a site with no line and a line
+  that is no site's; `policy/semgrep/released-modules.yml` refuses a source
+  that reaches the release any other way than by its digest.
 
 **The criterion is met by the first two, and the epoch closes on them.**
 Each site names the version it runs, a change reaches one site by moving
@@ -2548,14 +2549,16 @@ the objects in site state and having each teardown forget them first, is the
 careful-handling fix: it works until somebody adds an object and not the
 matching forget.
 
-`tests/go/repo/estate_scope_test.go` holds the boundary in both directions.
-It walks every `.tf` file in the repository and refuses:
+`policy/conftest/rules/plan_estate_scope` holds the boundary in both
+directions (it was `tests/go/repo/estate_scope_test.go` until 2026-10-26).
+It judges what each root's plan would make, and what each root is
+initialised with, and refuses:
 
-- an estate type owned (by `resource` or `import`) anywhere but the estate
-  root;
-- any type in the estate root not declared as the estate's.
+- an estate type in a site's plan, or a site's root or module locking the
+  account's providers, which is what it would need to declare one;
+- any type in the estate's plan not declared as the estate's.
 
-A new estate object is therefore a decision written into that test, never an
+A new estate object is therefore a decision written into that rule, never an
 accident. The mutation ledger proves both directions.
 
 What both roots need, they read from a file rather than from each other:
@@ -3344,6 +3347,10 @@ dangerous direction is the quiet one: **a bucket added to the HCL but not the
 table is created, filled, and then destroyed by the next teardown with a zero
 exit code**, because nothing told Sterilize to release it. The reverse is noisy
 and harmless.
+
+Since 2026-10-29 there is nothing to drift: the buckets are written once, in
+`config/facts/buckets.json`. The estate creates them from it and the
+contractor's table is generated from it, so the guard is gone.
 
 The address and fate used to be string literals repeated at each call site - two
 copies at two buckets, which would have been eight at four. That is not a set,
@@ -4238,6 +4245,10 @@ covering. `TestEveryDeclaredControlPlaneListenerIsDialled` reads the
 `extraArgs` patches out of `talos.tf`, finds every component told to listen
 somewhere other than loopback, and fails in both directions: a listener
 declared and not dialled, or dialled and not declared.
+
+Since 2026-10-29 the list cannot go stale: the listeners are written once, in
+`config/facts/control-plane-listeners.json`. The cluster module opens them
+from it and the integration tier dials them from it, so the guard is gone.
 
 Matched on the component rather than the port, because the port is a component
 default that `talos.tf` never states. What the configuration does say is which

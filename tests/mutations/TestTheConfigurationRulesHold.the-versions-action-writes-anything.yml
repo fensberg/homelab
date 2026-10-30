@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: version_exports
+file: .github/actions/versions/action.yml
+find: "_VERSION=[A-Za-z0-9][A-Za-z0-9._+-]*$"
+replace: "_VERSION=.*$"
+mentions: "no longer restricts what it writes to $GITHUB_ENV"
+why: >
+  The rule reads the one action that exports the pins, at its path.
+  Unrestricted, a fork's versions.env writes code into every later step's
+  environment.

@@ -1,0 +1,10 @@
+guard: TestTheCodeRulesHold
+rule: a-connection-string-carries-no-credential-of-its-own
+file: scripts/contractor/internal/phases/teardown.go
+reads_source: true
+find: "\tbucketName := cred.Bucket\n"
+replace: "\tbucketName := cred.Bucket\n\t_ = \"postgres://tofu@db\"\n"
+mentions: "writes a connection string whose user part is not a placeholder"
+why: >
+  The rule reads programs as well as OpenTofu, and a program is where a
+  connection string is most often built.

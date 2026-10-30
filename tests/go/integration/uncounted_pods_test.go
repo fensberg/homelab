@@ -31,7 +31,7 @@ func offered(t *testing.T, name, class, memory string) (string, error) {
 	}
 	file := filepath.Join(t.TempDir(), "pod.yaml")
 	require.NoError(t, os.WriteFile(file, []byte("apiVersion: v1\nkind: Pod\nmetadata:\n  name: "+name+"\nspec:\n"+spec), 0o600))
-	return k8s.RunKubectlAndGetOutputE(t, k8s.NewKubectlOptions("", kubeconfig(t), "default"), "create", "--dry-run=server", "-f", file)
+	return k8s.RunKubectlAndGetOutputE(t, k8s.NewKubectlOptions("", kubeconfig(t), "default"), "create", capacity.DryRunOnServer, "-f", file)
 }
 
 // The cluster refuses a pod it cannot count. tests/go/repo holds the rule to

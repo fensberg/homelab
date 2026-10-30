@@ -33,8 +33,21 @@ tools:
         lists: [skip-check, skip-path]
 
   semgrep:
-    arrives_as: [semgrep/semgrep]
+    arrives_as: [SEMGREP_VERSION]
     marks: ["nosemgrep"]
+
+  regal:
+    arrives_as: [REGAL_VERSION]
+    marks: ["regal ignore:"]
+    config:
+      # A rule is switched off by giving it level: ignore.
+      - file: .regal/config.yaml
+        maps: [rules.*]
+
+  conftest:
+    arrives_as: [CONFTEST_VERSION]
+    # A rule is excused for a file by an exception rule in the policy.
+    marks: ["exception contains"]
 
   hadolint:
     arrives_as: [HADOLINT_VERSION]
@@ -66,7 +79,7 @@ tools:
         keys: [ignore-words-list, skip]
 
   trufflehog:
-    arrives_as: [TRUFFLEHOG_VERSION]
+    arrives_as: [TRUFFLEHOG_VERSION, guard-secrets]
     marks: ["trufflehog:ignore"]
 
   gitleaks:
@@ -158,17 +171,19 @@ judges_nothing:
   CLERK_SWEEP_MODEL_VERSION: a model the clerk asks; it can stop nothing
   INSPECTOR_MODEL_VERSION: a model the inspector asks to explain; the gate does not call it
   CLOUDFLARED_VERSION: the tunnel's connector
+  OPA_VERSION: reads the configuration rules' syntax for a guard; it judges no file itself
   ETCD_VERSION: the store of the cluster a change is tried in
   FLUX_VERSION: the reconciler
   HELM_VERSION: renders charts for validation
   KUBECTL_VERSION: builds manifests and talks to a cluster
   KUSTOMIZE_VERSION: renders an application's directory for the drafter
-  KUBERNETES_VERSION: the API server and scheduler a change is tried with; it is the engineer that refuses on the answer
+  KUBERNETES_VERSION: the Kubernetes a site runs, and the API server and scheduler a change is tried with; it is the engineer that refuses on the answer
   KWOK_VERSION: starts and stops the cluster a change is tried in
   ORAS_VERSION: publishes and fetches packages
   PRE_COMMIT_VERSION: runs the hooks, each of which is named here itself
   RCLONE_DEB_VERSION: copies to object storage
   RUNNER_VERSION: the runner's own agent
+  TALOS_VERSION: the operating system a site's machines run; it is installed, not run over the repository
   TALOSCTL_VERSION: talks to the machines
   TASK_VERSION: runs the taskfile
   TOFU_VERSION: plans and applies; its formatter and validator have nothing to silence

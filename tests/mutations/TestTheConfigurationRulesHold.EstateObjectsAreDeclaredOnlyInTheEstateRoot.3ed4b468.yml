@@ -1,0 +1,11 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_estate_scope
+file: management/platform/.terraform.lock.hcl
+find: 'provider "registry.opentofu.org/hashicorp/kubernetes" {'
+replace: "provider \"registry.opentofu.org/cloudflare/cloudflare\" {\n  version = \"4.52.8\"\n  hashes = [\"h1:x\"]\n}\n\nprovider \"registry.opentofu.org/hashicorp/kubernetes\" {"
+mentions: "locks registry.opentofu.org/cloudflare/cloudflare, the account's"
+why: >
+  A site initialised with the account's provider can declare an estate
+  object in its own state, and the site's demolish then destroys it for
+  every site in the account. That is how the WARP enrollment application
+  was lost and the next build failed (#531).

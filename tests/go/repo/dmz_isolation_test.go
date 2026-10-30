@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/yaml.v3"
-
 	"homelab/details/privatenet"
 )
 
@@ -62,17 +60,10 @@ esac
 // loop variables Ansible would.
 func shippedDMZScript(t *testing.T, subnet, gateway string) string {
 	t.Helper()
-	body, err := os.ReadFile(filepath.Join(repoRoot(t), "management", "hypervisor", "hypervisor-prep.yml"))
-	if err != nil {
-		t.Fatalf("reading the playbook: %v", err)
-	}
-
 	var doc []struct {
 		Tasks []map[string]any `yaml:"tasks"`
 	}
-	if err := yaml.Unmarshal(body, &doc); err != nil {
-		t.Fatalf("parsing the playbook: %v", err)
-	}
+	repository(t).YAMLInto(t, hypervisorPlaybook, &doc)
 
 	for _, play := range doc {
 		for _, task := range play.Tasks {
@@ -152,6 +143,7 @@ func runDMZ(t *testing.T, existing []string) (after []string, stdout string) {
 }
 
 func TestAnUntrustedZoneIsClosedToThePrivateEstate(t *testing.T) {
+	light(t)
 	after, _ := runDMZ(t, nil)
 
 	if len(after) == 0 {
@@ -182,6 +174,7 @@ that closes it.`, private, strings.Join(after, "\n  "))
 // DNS with it - the node comes up, joins nothing, and reports no error anybody
 // is watching.
 func TestAnUntrustedZoneKeepsItsGatewayAndItsOwnSubnet(t *testing.T) {
+	light(t)
 	after, _ := runDMZ(t, nil)
 
 	gateway := indexOfRule(after, "FORWARD -s 198.51.100.0/24 -d 198.51.100.1/32 -j ACCEPT")
@@ -218,6 +211,7 @@ zone's own route. Both accepts have to be reached first.`, strings.Join(after, "
 // unbounded growth the SNAT dedupe beside it exists to clean up after Proxmox,
 // and there would be no dedupe for these.
 func TestClosingTheZoneTwiceAddsNothing(t *testing.T) {
+	light(t)
 	first, _ := runDMZ(t, nil)
 
 	// Feed the first run's output back in, which is what a second run sees.
@@ -266,6 +260,7 @@ func indexOfRule(rules []string, want string) int {
 // exists for node-level compromise, and a port added "while we are here" is
 // the estate's control plane handed to whatever escaped a container.
 func TestAnUntrustedZoneCanJoinTheClusterAndReachNothingElse(t *testing.T) {
+	light(t)
 	after, _ := runDMZ(t, nil)
 	const zone = "FORWARD -s 198.51.100.0/24"
 	drop := indexOfRule(after, zone+" -d 10.0.0.0/8 -j DROP")

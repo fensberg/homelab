@@ -39,6 +39,14 @@ locals {
   #
   # Its own gateway, because it is in its own subnet rather than a band of the
   # node one.
+  # The keys a zone's machine is known by, written once for every language
+  # that names them.
+  untrusted_zone = jsondecode(file("${path.module}/../../../config/facts/untrusted-zone.json"))
+
+  # Every listener a control plane opens off the node, written once for the
+  # machines and for the tier that dials them.
+  control_plane_listeners = jsondecode(file("${path.module}/../../../config/facts/control-plane-listeners.json")).opened
+
   # How a zone's machine is kept for its zone: the taint that keeps other
   # work off it, and the label the work meant for it selects. Said once,
   # under one key, so the two cannot name different zones.
@@ -50,8 +58,8 @@ locals {
       # until the converge has taken its snapshot and lifted it. A machine
       # that ran a job first would have that job's leavings in the state
       # every later job is promised is clean.
-      taint  = "untrusted-zone=${v.zone}:NoSchedule,untrusted-zone/not-yet-clean=true:NoSchedule"
-      labels = { "untrusted-zone" = v.zone }
+      taint  = "${local.untrusted_zone.key}=${v.zone}:NoSchedule,${local.untrusted_zone.not_yet_clean}=true:NoSchedule"
+      labels = { (local.untrusted_zone.key) = v.zone }
     }
   }
 
@@ -363,24 +371,16 @@ data "talos_machine_configuration" "controlplane" {
     # data, is untouched and still refuses everything without a certificate.
     # Narrowing 2381 to the cluster's own ranges needs Talos ingress firewall
     # rules, which is a larger change and is filed rather than bundled (#468).
+    #
+    # Which components, and where each listens, is the fact
+    # config/facts/control-plane-listeners.json, which the integration tier
+    # dials from too. etcd's is the advertised metrics listener: Talos
+    # defaults it to http://127.0.0.1:2381, which nothing off the node can
+    # reach.
     yamlencode({
       cluster = {
-        etcd = {
-          extraArgs = {
-            # The advertised metrics listener. Talos defaults it to
-            # http://127.0.0.1:2381, which nothing off the node can reach.
-            listen-metrics-urls = "http://0.0.0.0:2381"
-          }
-        }
-        controllerManager = {
-          extraArgs = {
-            bind-address = "0.0.0.0"
-          }
-        }
-        scheduler = {
-          extraArgs = {
-            bind-address = "0.0.0.0"
-          }
+        for l in local.control_plane_listeners : l.component => {
+          extraArgs = { (l.argument) = l.value }
         }
       }
     }),

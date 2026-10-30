@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_runner_group
+file: scripts/approved-suppliers.yml
+find: "    - packages\n"
+replace: "    - packaging\n"
+mentions: "inspector.yml asks for the estate's runner and no group admits it"
+why: >
+  A pool is a pool only while the suppliers list names it. Renaming one
+  there while workflows still ask for it by its old name turns their jobs
+  into ones on the estate's own runners, which no group admits.

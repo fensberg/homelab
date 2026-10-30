@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: gitops
+file: config/management.tpl.json
+find: "  \"source_control\": {\n"
+replace: "  \"source_control\": {\n    \"token\": \"{{ op://estate/source-control/token }}\",\n"
+mentions: "declares source_control.token"
+why: >
+  A token declared in the template is rendered to disk on every run whether
+  or not anything reads it, and is the first of the two steps that put a
+  credential back into Flux's sync. The clone it would serve needs none.

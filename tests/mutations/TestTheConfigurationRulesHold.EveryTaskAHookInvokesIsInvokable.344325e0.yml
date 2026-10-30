@@ -1,0 +1,11 @@
+guard: TestTheConfigurationRulesHold
+rule: hook_tasks
+file: taskfile.yml
+find: "  delivery-guard:\n    desc:"
+replace: "  delivery-guard:\n    internal: true\n    desc:"
+mentions: "internal"
+why: >
+  task refuses to run an internal task from the CLI, so the hook fails
+  with a task error rather than a verdict - a guard broken in the
+  direction of noise, which is the direction that gets guards switched
+  off.

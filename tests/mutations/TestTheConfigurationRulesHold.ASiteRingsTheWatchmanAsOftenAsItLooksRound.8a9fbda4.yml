@@ -1,0 +1,12 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_heartbeat_cadence
+file: clusters/core/infrastructure/controllers/kube-prometheus-stack.yaml
+find: "              group_interval: 5m\n              repeat_interval: 9m"
+replace: "              group_interval: 5m\n              repeat_interval: 10m"
+mentions: "waits a whole look more"
+why: >
+  Ten is the figure everybody has in mind, so ten is what gets written.
+  Alertmanager sends on a look, and a look that lands a moment before the
+  ten minutes are up sends nothing and waits for the next: the site rings
+  at fifteen about as often as at ten, one missed ring from being called
+  quiet, and nothing in the manifest shows it.

@@ -1,0 +1,12 @@
+guard: TestTheConfigurationRulesHold
+rule: cni_ipam
+file: clusters/bootstrap/cilium.yaml
+find: '  ipam: "kubernetes"'
+replace: '  ipam: "cluster-pool"'
+mentions: 'not "kubernetes"'
+why: >
+  In kubernetes mode Cilium takes pod addresses from the podSubnets this
+  repository declares. In every other mode it allocates from a pool of
+  its own, and its default pool is 10.0.0.0/8 - which swallows every
+  site subnet. The manifest still renders, still installs and still
+  comes up, so the switch is one word with no other signal.

@@ -27,12 +27,13 @@ import (
 	"sort"
 	"strings"
 
+	thelock "homelab/details/deliveries"
 	"homelab/details/envfile"
 	"homelab/details/suppliers"
 )
 
 const (
-	lockPath     = "scripts/deliveries.lock"
+	lockPath     = thelock.Path
 	versionsPath = "scripts/versions.env"
 )
 
@@ -50,15 +51,6 @@ type lockedDelivery struct {
 	Version    string
 }
 
-// lockSection is one delivery's section of the lock.
-type lockSection struct {
-	Kind       string
-	Name       string
-	VersionKey string
-	Version    string
-	Lines      []string
-}
-
 var pep503 = regexp.MustCompile(`[-_.]+`)
 
 // deliveryKinds are the fields a tools: entry may declare, each with how the
@@ -70,8 +62,7 @@ var deliveryKinds = map[string]func(source, spec string) string{
 }
 
 var (
-	lockHeader = regexp.MustCompile(`^# \[([a-z]+): (\S+) ([A-Z0-9_]+)=(\S+)\]$`)
-	lockHash   = regexp.MustCompile(` --hash=sha256:[0-9a-f]{64}(\s|$)`)
+	lockHash = regexp.MustCompile(` --hash=sha256:[0-9a-f]{64}(\s|$)`)
 )
 
 // declaredDeliveries reads every tools: entry that declares a kind, with its
@@ -156,38 +147,6 @@ func deliveriesIn(listed string, versions map[string]string) ([]lockedDelivery, 
 	return out, nil
 }
 
-// parseDeliveriesLock reads the lock's sections, keyed "kind:name".
-func parseDeliveriesLock(body string) (map[string]lockSection, error) {
-	out := map[string]lockSection{}
-	var cur *lockSection
-	for n, line := range strings.Split(body, "\n") {
-		switch {
-		case lockHeader.MatchString(line):
-			if cur != nil {
-				return nil, fmt.Errorf("line %d opens %q before %s is closed with # [end]", n+1, line, cur.Name)
-			}
-			m := lockHeader.FindStringSubmatch(line)
-			cur = &lockSection{Kind: m[1], Name: m[2], VersionKey: m[3], Version: m[4]}
-		case line == "# [end]":
-			if cur == nil {
-				return nil, fmt.Errorf("line %d closes a section that was never opened", n+1)
-			}
-			key := cur.Kind + ":" + cur.Name
-			if _, dup := out[key]; dup {
-				return nil, fmt.Errorf("%s has two sections", key)
-			}
-			out[key] = *cur
-			cur = nil
-		case cur != nil && strings.TrimSpace(line) != "" && !strings.HasPrefix(line, "#"):
-			cur.Lines = append(cur.Lines, line)
-		}
-	}
-	if cur != nil {
-		return nil, fmt.Errorf("the section for %s is never closed with # [end]", cur.Name)
-	}
-	return out, nil
-}
-
 // checkDeliveriesLock compares the lock with what it must have been made from.
 func checkDeliveriesLock(root string) ([]string, error) {
 	deliveries, err := declaredDeliveries(root)
@@ -201,7 +160,7 @@ func checkDeliveriesLock(root string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", lockPath, err)
 	}
-	sections, err := parseDeliveriesLock(string(body))
+	sections, err := thelock.Parse(string(body))
 	if err != nil {
 		return []string{lockPath + " cannot be read: " + err.Error()}, nil
 	}
@@ -254,6 +213,7 @@ func checkDeliveriesLock(root string) ([]string, error) {
 			}
 		}
 	}
+	findings = append(findings, disagreements(sections)...)
 	var stale []string
 	for key := range sections {
 		if !declared[key] {
@@ -265,6 +225,45 @@ func checkDeliveriesLock(root string) ([]string, error) {
 		findings = append(findings, fmt.Sprintf("the lock has a section for %s, which no tools: entry declares", key))
 	}
 	return findings, nil
+}
+
+// disagreements is every package two Python sections lock differently.
+//
+// take-delivery.sh installs every Python tool it is asked for into one
+// environment, with one pip run, so the sections it is given must be one
+// resolution: a package two tools share is locked by the same line in both.
+// Two orders made apart and merged together each pass on their own and
+// cannot be installed together, and the image that takes both never builds.
+func disagreements(sections map[string]thelock.Section) []string {
+	lines := map[string]map[string][]string{}
+	for _, s := range sections {
+		if s.Kind != "pypi" {
+			continue
+		}
+		for _, l := range s.Lines {
+			pkg, _, _ := strings.Cut(l, "==")
+			if lines[pkg] == nil {
+				lines[pkg] = map[string][]string{}
+			}
+			lines[pkg][l] = append(lines[pkg][l], s.Name)
+		}
+	}
+	var findings []string
+	for pkg, by := range lines {
+		if len(by) < 2 {
+			continue
+		}
+		var each []string
+		for l, tools := range by {
+			sort.Strings(tools)
+			version, _, _ := strings.Cut(strings.TrimPrefix(l, pkg+"=="), " ")
+			each = append(each, version+" for "+strings.Join(tools, ", "))
+		}
+		sort.Strings(each)
+		findings = append(findings, fmt.Sprintf("%s is locked differently by tools installed together (%s), so they cannot be installed together: they were ordered apart", pkg, strings.Join(each, "; ")))
+	}
+	sort.Strings(findings)
+	return findings
 }
 
 func explainDeliveriesLock(findings []string) string {

@@ -1,0 +1,12 @@
+guard: TestTheConfigurationRulesHold
+rule: uncounted_pods
+file: clusters/core/infrastructure/controllers/uncounted-pods.yaml
+find: "  policyName: uncounted-pods\n"
+replace: "  policyName: uncounted-pods\n  matchResources:\n    namespaceSelector:\n      matchLabels:\n        counted: enforced\n"
+mentions: "chooses which pods the rule applies to"
+why: >
+  Applying an admission rule only to namespaces that carry a label is the
+  standard advice, and the first thing done when one refuses a system pod:
+  the system's namespace is simply never given the label. It is also a
+  namespace-sized hole in the count, around the pods a site can least
+  afford to have evicted for reserving nothing.

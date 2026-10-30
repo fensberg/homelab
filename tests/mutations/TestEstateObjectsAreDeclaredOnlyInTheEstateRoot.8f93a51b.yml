@@ -1,9 +1,0 @@
-guard: TestEstateObjectsAreDeclaredOnlyInTheEstateRoot
-file: management/estate/zero-trust.tf
-find: 'resource "cloudflare_zero_trust_device_default_profile" "estate" {'
-replace: 'resource "kubernetes_namespace" "estate" {'
-mentions: "not listed as the estate's"
-why: >
-  Whatever the estate root declares survives every site and is shared by
-  all of them. Something belonging to one site put there instead outlives
-  the site, and is changed for all sites by work meant for one.

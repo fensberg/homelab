@@ -1,0 +1,10 @@
+guard: TestTheCodeRulesHold
+rule: the-installer-does-not-override-a-pinned-version
+file: scripts/install-dependencies.sh
+find: "\tinfo \"installing kubectl ${KUBECTL_VERSION}\""
+replace: "\tKUBECTL_VERSION=\"$(curl -fsSL https://dl.k8s.io/release/stable.txt)\"\n\tinfo \"installing kubectl ${KUBECTL_VERSION}\""
+mentions: "overriding the pin"
+why: >
+  Sourcing versions.env and then overwriting the value is worse than not
+  pinning: the file still claims to be the single declaration while the
+  workstation and the runner image quietly install different versions.

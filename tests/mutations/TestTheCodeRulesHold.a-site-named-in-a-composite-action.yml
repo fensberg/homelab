@@ -1,0 +1,12 @@
+guard: TestTheCodeRulesHold
+rule: no-workflow-or-task-picks-a-site-by-name
+file: .github/workflows/mobilize/action.yml
+find: "name: \"Mobilize\"\n"
+replace: "name: \"Mobilize site0\"\n"
+mentions: "names a site as a value. Take the site from the config template instead - a workflow"
+why: >
+  The workflows' own composite actions live in directories under
+  .github/workflows, and the guard this rule replaced read them. The rule's
+  first include named only the files at the top, so a site written into an
+  action would have passed - found by checking what the rule reads, not by
+  anything failing.

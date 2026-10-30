@@ -483,11 +483,23 @@ tasks:
         mv "${kustomization}.new" "$kustomization"
         echo "resolved $(echo "$images" | wc -l) digest(s) into $kustomization"
 
+  generate:
+    desc: "Regenerate every *.generated.* file from what it is made from"
+    cmds:
+      # A value declared once, copied by a program into a language that
+      # cannot read the declaration where it runs. The generators are found
+      # as tests/go/repo/generated_test.go finds them - every Go package that
+      # says go:generate - and that guard holds each file to what this makes.
+      - |
+        set -euo pipefail
+        git grep -l '^//go:generate ' -- '*.go' | xargs -n1 dirname | sort -u |
+          while read -r dir; do (cd "$dir" && go generate .); done
+
   render-cni:
     desc: "Re-render the committed Cilium manifest from the pinned chart version"
     cmds:
       # The manifest is generated and committed, so its image digests are
-      # reviewable and suppliers_test.go can read them. That only holds while
+      # reviewable and policy/conftest/rules/supplier_images/supplier_images.rego can read them. That only holds while
       # anyone can reproduce it, so the render is a verb rather than a note
       # telling the next person which helm flags were used.
       #

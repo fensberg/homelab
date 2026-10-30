@@ -1,62 +1,13 @@
 package repo
 
 import (
-	"os"
-	"os/exec"
-	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 )
 
-// Every program is built into one ignored directory.
-//
-// The taskfile builds rather than using `go run`, deliberately: `go run`'s
-// wrapper swallows SIGINT, which orphaned real infrastructure once. The cost of
-// that choice used to be a binary beside each program's source and one ignore
-// rule per program - individually forgettable, and two were forgotten. The
-// canary never had one, and survey's was added after the binary was already
-// tracked, so it never took effect and 3.6MB of compiled Go sat on main until a
-// check went looking.
-//
-// One directory cannot be forgotten for a program nobody thought about. These
-// assert the arrangement holds rather than trusting that the next person
-// follows it.
-func TestNothingIsBuiltOutsideTheToolshed(t *testing.T) {
-	body, err := os.ReadFile(filepath.Join(repoRoot(t), "taskfile.yml"))
-	if err != nil {
-		t.Fatalf("reading taskfile.yml: %v", err)
-	}
-
-	found := 0
-	for _, m := range goBuildTarget.FindAllStringSubmatch(string(body), -1) {
-		target := m[1]
-		if target == "/dev/null" {
-			continue // a build that only proves it compiles
-		}
-		found++
-		if !strings.Contains(target, "toolshed/") {
-			t.Errorf("taskfile.yml builds a binary to %q, outside the toolshed.\n\n"+
-				"Then it needs its own ignore rule, which is the arrangement that let a "+
-				"binary reach main. Build into toolshed/ instead.", target)
-		}
-	}
-	if found == 0 {
-		t.Fatal("no builds found in taskfile.yml, so this guards nothing - and passing " +
-			"on an empty set is how a check stops mattering")
-	}
-}
-
-func TestTheToolshedIsIgnored(t *testing.T) {
-	body, err := os.ReadFile(filepath.Join(repoRoot(t), ".gitignore"))
-	if err != nil {
-		t.Fatalf("reading .gitignore: %v", err)
-	}
-	if !regexp.MustCompile(`(?m)^toolshed/?$`).MatchString(string(body)) {
-		t.Fatal("toolshed/ is not ignored, so every build leaves untracked binaries and " +
-			"the next `git add -A` commits them")
-	}
-}
+// Every program is built into toolshed/, which is ignored wholesale; that the
+// taskfile builds there and .gitignore ignores it is a configuration rule
+// (policy/conftest/rules/toolshed/toolshed.rego). These are the half only git can answer.
 
 // A compiled binary that is neither tracked nor ignored is one `git add -A`
 // away from being committed.
@@ -78,38 +29,15 @@ func TestTheToolshedIsIgnored(t *testing.T) {
 // point: an untracked 9 MB executable in the working tree is worth being told
 // about whether or not it was about to be committed.
 func TestNoCompiledBinaryIsUntrackedAndUnignored(t *testing.T) {
-	root := repoRoot(t)
-
-	out, err := exec.Command("git", "-C", root, "ls-files",
-		"--others", "--exclude-standard", "-z").Output()
-	if err != nil {
-		// NOT a skip, except in the one place where it is provably right.
-		//
-		// This skipped on any git error at all, which is fail-open: a guard
-		// that cannot ask its question reports the same green as one that
-		// asked and found nothing. "I could not look" and "there is nothing
-		// there" are different facts and only one is reassuring.
-		//
-		// The mutation ledger copies tracked files into a scratch directory
-		// that is deliberately not a git repository, and it announces that by
-		// setting repoRootEnv. That case is known, named, and the only one.
-		// Anywhere else, a checkout git will not answer about is a broken
-		// environment and saying so is the point.
-		if os.Getenv(repoRootEnv) != "" {
-			t.Skip("inner run: the ledger's scratch tree is not a git repository, " +
-				"so there is no working tree to ask about")
-		}
-		t.Fatalf(`git could not list untracked files in %s: %v
-
-This guard cannot answer its question here, and a guard that cannot look must
-say so rather than pass. If this is a checkout, something is wrong with it.`, root, err)
-	}
-
-	for _, path := range strings.Split(string(out), "\x00") {
-		if path == "" || strings.Contains(path, ".") {
+	light(t)
+	// The scratch tree a meta test judges is a git repository too, so this
+	// asks git everywhere, and a git that cannot answer fails the test.
+	tree := repository(t)
+	for _, path := range tree.Untracked(t) {
+		if strings.Contains(path, ".") {
 			continue
 		}
-		info, statErr := os.Stat(filepath.Join(root, path))
+		info, statErr := tree.Stat(path)
 		if statErr != nil || info.IsDir() || info.Size() < 1<<20 {
 			continue // a megabyte of extensionless file is the signature
 		}
@@ -131,16 +59,18 @@ still building to this path, point it at toolshed/ instead.`, path, info.Size())
 // The ignore rule stops the next one. This catches one that got in before the
 // rule existed - which is exactly what happened to survey.
 func TestNoCompiledBinaryIsTracked(t *testing.T) {
-	root := repoRoot(t)
-	out, err := exec.Command("git", "-C", root, "ls-files").Output()
-	if err != nil {
-		t.Fatalf("listing tracked files: %v", err)
+	light(t)
+	tree := repository(t)
+	files := tree.Files(t)
+	const atLeastAHundredTracked = 100
+	if len(files) < atLeastAHundredTracked {
+		t.Fatalf("only %d tracked files were listed, so this looked at almost nothing", len(files))
 	}
-	for _, path := range strings.Split(string(out), "\n") {
-		if path == "" || strings.HasSuffix(path, ".go") || strings.Contains(path, ".") {
+	for _, path := range files {
+		if strings.HasSuffix(path, ".go") || strings.Contains(path, ".") {
 			continue
 		}
-		info, err := os.Stat(filepath.Join(root, path))
+		info, err := tree.Stat(path)
 		if err != nil || info.IsDir() || info.Size() < 1<<20 {
 			continue // a megabyte of extensionless file is the signature
 		}
@@ -152,6 +82,3 @@ func TestNoCompiledBinaryIsTracked(t *testing.T) {
 			"because non_fast_forward applies to every branch here.", path, info.Size())
 	}
 }
-
-// `go build -C <dir> -o <target> .`
-var goBuildTarget = regexp.MustCompile(`go build -C \S+ -o (\S+)`)

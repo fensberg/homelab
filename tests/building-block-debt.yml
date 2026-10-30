@@ -26,8 +26,7 @@ debt:
   - "pull_request"
   - "refs/heads/main"
 
-  # --- Git test isolation - required in every test that runs git, and copied into each (16)
-  - '"refs/signing/"'
+  # --- Git test isolation - required in every test that runs git, and copied into each (15)
   - "--abbrev-ref"
   - "--allow-empty"
   - "--is-ancestor"
@@ -44,14 +43,13 @@ debt:
   - "refs/signing/"
   - "user.email=a@example.com"
 
-  # --- Paths into this repository (17)
+  # --- Paths into this repository (16)
   - "backend_pg.tf"
   - ".pre-commit-config.yaml"
   - "age-encryption.org/v1"
   - "approved-suppliers.yml"
   - "epoch/03-workload"
   - "http://127.0.0.1:1"
-  - "hypervisor-prep.yml"
   - "management.rendered.json"
   - "management.tpl.json"
   - "modules/infrastructure/cluster/talos.tf"
@@ -61,7 +59,7 @@ debt:
   - "scripts/versions.env"
   - "site.auto.yml"
 
-  # --- Everything else: tool flags, vendor identifiers, status wording (52)
+  # --- Everything else: tool flags, vendor identifiers, status wording (51)
   - "demolish-site"
   - "-refresh=false"
   - " --hash=sha256:"
@@ -72,8 +70,6 @@ debt:
   - "TF_ENCRYPTION"
   - "ansible-playbook"
   - "does not exist"
-  - "enforce-push"
-  - "enforce-standing-order"
   - "expected an error"
   - "guard-egress"
   - 'json:"IsDir"'
@@ -104,16 +100,12 @@ debt:
   - "no tools: entry in "
   - "north-street-office"
   - "nothing at all"
-  - "proxmox_virtual_environment_vm.talos_cp"
-  - "set -euo pipefail"
   - "source_control.repo_url"
-  - "source_control.token"
   - "state_conn_str"
   - "tag:homelab-router"
   - "terraform.tfstate"
 
-  # --- Field names two separate documents happen to share (12)
-  - "talos_version"
+  # --- Field names two separate documents happen to share (11)
   #
   # The estate's rendered config (config/estate.tpl.json, read by the lawyer)
   # and a site's (config/management.tpl.json, read by the contractor) describe
@@ -136,17 +128,9 @@ debt:
   - 'json:"state"'
   - 'json:"vault_provider"'
 
-  # --- The resource type a site's buckets are (1)
-  #
-  # The lawyer finds the buckets it adopts and releases by this type, and the
-  # estate scope guard declares the type the estate's. A Go constant cannot be
-  # shared: the lawyer is a main package, which nothing may import.
-  - "cloudflare_r2_bucket"
-
   # --- A Kubernetes kind two readers of the releases file both name (1)
   #
   # The superintendent reads production's release pins to judge a delivery,
   # and the test tier holds every release pin to a digest. A kind is the API's
   # vocabulary rather than a fact this repository decides, and each reader
   # needs only the pins, so neither takes the other's parser.
-  - "OCIRepository"

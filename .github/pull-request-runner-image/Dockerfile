@@ -70,7 +70,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # Unpinned for the reason .github/runner-image/Dockerfile gives - the archive
 # keeps only the current version of a package - and on a base that cannot
 # move.
-# proved by TestAnImageThatInstallsUnpinnedPackagesStartsFromAPinnedBase
+# proved by TestTheConfigurationRulesHold (policy/conftest/rules/image_bases/image_bases.rego)
 # hadolint ignore=DL3008
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -117,16 +117,17 @@ ENV PATH=/home/runner/.local/bin:/opt/hostedtoolcache/go/${GO_VERSION}/x64/bin:/
 # reads, the fabricator hands them over as the context called reads, and a
 # change to either is a new image.
 #
-# Every delivery a pull request's job takes is here;
-# TestThePullRequestRunnerCarriesEveryDeliveryAPullRequestsJobTakes holds
-# this list to the workflows.
+# Every delivery a pull request's job takes is here, and nothing else;
+# TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake holds this list to
+# the workflows. kubectl is among them for the cluster the plan tries a
+# change in, which it starts itself and which holds nothing.
 RUN --mount=type=bind,from=reads,target=/reads \
     bash /reads/scripts/take-delivery.sh \
-        checkov codespell etcd hadolint kube-apiserver kube-scheduler kubeconform kustomize kwokctl \
-        opentofu pre-commit pre-commit-hooks shellcheck trufflehog zizmor
+        checkov codespell conftest etcd hadolint kube-apiserver kube-scheduler kubeconform kubectl kustomize \
+        kwokctl opa opentofu pre-commit pre-commit-hooks regal semgrep shellcheck zizmor
 
 # Each one runs, as the account a job runs as, before the image is published.
-RUN for b in go node git envsubst tofu checkov codespell etcd hadolint kube-apiserver kube-scheduler \
-        kubeconform kustomize kwokctl pre-commit shellcheck trufflehog zizmor; do \
+RUN for b in go node git envsubst tofu checkov codespell conftest etcd hadolint kube-apiserver kube-scheduler \
+        kubeconform kubectl kustomize kwokctl opa pre-commit regal semgrep shellcheck zizmor; do \
         command -v "$b" >/dev/null || { echo "missing: $b"; exit 1; }; \
     done

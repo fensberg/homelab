@@ -27,6 +27,17 @@ variable "core_routes_path" {
   EOT
 }
 
+variable "offline" {
+  type        = bool
+  default     = false
+  description = <<-EOT
+    Planned offline: from nothing, with a stand-in for every value the vault
+    supplies and no credential, so nothing of the vendors' is read. The rule
+    harness plans the estate this way to judge it, as it plans a site. Each
+    read stands in through local.read.
+  EOT
+}
+
 variable "config_path" {
   type        = string
   default     = "../../config/estate.rendered.json"

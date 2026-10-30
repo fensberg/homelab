@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: rendered_stand_ins
+file: clusters/core/infrastructure/controllers/kube-prometheus-stack.yaml
+find: "      endpoints: ${ETCD_ENDPOINTS}\n"
+replace: "      endpoints: ${ETCD_MEMBERS}\n"
+mentions: "uses ${ETCD_MEMBERS}, and tests/flux-substitutions.env has no stand-in for it"
+why: >
+  A variable renamed in a manifest and not among the stand-ins substitutes
+  to nothing in validation, and the manifest still parses, so what is
+  validated is not what Flux applies.

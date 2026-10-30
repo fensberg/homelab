@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: runner_namespaces
+file: clusters/core/infrastructure/controllers/sweeper.yaml
+find: "            - -runners\n            - pull-request-runners\n"
+replace: "            - -runners\n            - arc-runners\n"
+mentions: 'is told the pull-request runners are in "arc-runners"'
+why: >
+  The sweeper decides a machine is free when none of the pull-request
+  runners' pods is on it. Told another namespace, it sees none there,
+  and puts back a machine in the middle of a pull request's job.

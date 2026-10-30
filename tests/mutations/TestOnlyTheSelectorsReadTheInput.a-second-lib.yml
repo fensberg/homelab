@@ -1,0 +1,16 @@
+guard: TestOnlyTheSelectorsReadTheInput
+file: policy/conftest/more_lib.rego
+create: |
+  package lib
+
+  import rego.v1
+
+  mine contains f if {
+  	some f in input
+  	f.path == "taskfile.yml"
+  }
+mentions: "all declare package lib"
+why: >
+  Rego joins every file declaring a package into one, so a second file
+  declaring lib is lib: it reads the input freely, and the rules reading
+  through it read a place no one file holds.

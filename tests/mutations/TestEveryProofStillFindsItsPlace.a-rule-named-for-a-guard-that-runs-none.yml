@@ -1,0 +1,8 @@
+guard: TestEveryProofStillFindsItsPlace
+file: tests/mutations/TestHeavyGuardsRunOnEveryPullRequest.139f9741.yml
+find: "guard: TestHeavyGuardsRunOnEveryPullRequest\n"
+replace: "guard: TestHeavyGuardsRunOnEveryPullRequest\nrule: suppliers\n"
+mentions: "runs no rules"
+why: >
+  A rule named on a proof whose guard runs none is never checked, and reads as
+  though it were.

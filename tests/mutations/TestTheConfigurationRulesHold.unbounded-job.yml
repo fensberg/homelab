@@ -1,0 +1,15 @@
+guard: TestTheConfigurationRulesHold
+rule: job_timeout
+file: .github/workflows/zz-an-unbounded-job.yml
+create: |
+  name: planted
+  on: push
+  jobs:
+    planted:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: step-security/harden-runner@0123456789abcdef0123456789abcdef01234567
+mentions: "declares no timeout-minutes"
+why: >
+  A job with no timeout-minutes inherits GitHub's six hours, in which a stuck
+  job keeps calling whatever it can reach, metered vendors included.

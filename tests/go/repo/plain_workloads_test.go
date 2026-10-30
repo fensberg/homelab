@@ -3,12 +3,9 @@ package repo
 import (
 	"fmt"
 	"homelab/details/capacity"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 
 	"homelab/details/applications"
 )
@@ -58,6 +55,7 @@ type plainWorkload struct {
 }
 
 func TestEveryPlainWorkloadIsSizedPlacedAndGivenAPriority(t *testing.T) {
+	light(t)
 	declared := declaredPriorityClasses(t)
 	found := plainWorkloads(t)
 	if len(found) == 0 {
@@ -117,56 +115,42 @@ func TestEveryPlainWorkloadIsSizedPlacedAndGivenAPriority(t *testing.T) {
 // not a kustomize patch fragment, which carries only the fields it changes.
 func plainWorkloads(t *testing.T) []plainWorkload {
 	t.Helper()
-	root := repoRoot(t)
-	patches := kustomizePatchFiles(t, root)
+	tree := repository(t)
+	patches := kustomizePatchFiles(t)
 	elsewhere := plainWorkloadsOwnedElsewhere(t)
 
 	var out []plainWorkload
-	for _, dir := range []string{fluxTree, "modules"} {
-		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() || !(strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")) {
-				return err
+	for _, rel := range workloadManifests(t) {
+		if elsewhere[rel] || patches[rel] || !(strings.HasSuffix(rel, ".yaml") || strings.HasSuffix(rel, ".yml")) {
+			continue
+		}
+		docs, isYAML := tree.MaybeYAML(t, rel)
+		if !isYAML {
+			continue // not a manifest; the YAML lint owns that
+		}
+		for _, d := range docs {
+			var doc struct {
+				Kind     string `yaml:"kind"`
+				Metadata struct {
+					Name string `yaml:"name"`
+				} `yaml:"metadata"`
+				Spec map[string]any `yaml:"spec"`
 			}
-			rel, _ := filepath.Rel(root, path)
-			if elsewhere[filepath.ToSlash(rel)] || patches[rel] {
-				return nil
+			if as(d, &doc) != nil || !plainWorkloadKinds[doc.Kind] {
+				continue
 			}
-			body, err := os.ReadFile(path)
-			if err != nil {
-				return err
+			spec := doc.Spec
+			if doc.Kind == "CronJob" {
+				jt, _ := spec["jobTemplate"].(map[string]any)
+				spec, _ = jt["spec"].(map[string]any)
 			}
-			dec := yaml.NewDecoder(strings.NewReader(string(body)))
-			for {
-				var doc struct {
-					Kind     string `yaml:"kind"`
-					Metadata struct {
-						Name string `yaml:"name"`
-					} `yaml:"metadata"`
-					Spec map[string]any `yaml:"spec"`
-				}
-				if dec.Decode(&doc) != nil {
-					break
-				}
-				if !plainWorkloadKinds[doc.Kind] {
-					continue
-				}
-				spec := doc.Spec
-				if doc.Kind == "CronJob" {
-					jt, _ := spec["jobTemplate"].(map[string]any)
-					spec, _ = jt["spec"].(map[string]any)
-				}
-				tmpl, _ := spec["template"].(map[string]any)
-				pod, _ := tmpl["spec"].(map[string]any)
-				if pod == nil {
-					t.Errorf("%s: %s %q has no pod template, so it cannot be checked", rel, doc.Kind, doc.Metadata.Name)
-					continue
-				}
-				out = append(out, plainWorkload{rel, doc.Kind, doc.Metadata.Name, pod})
+			tmpl, _ := spec["template"].(map[string]any)
+			pod, _ := tmpl["spec"].(map[string]any)
+			if pod == nil {
+				t.Errorf("%s: %s %q has no pod template, so it cannot be checked", rel, doc.Kind, doc.Metadata.Name)
+				continue
 			}
-			return nil
-		})
-		if err != nil {
-			t.Fatalf("walking %s: %v", dir, err)
+			out = append(out, plainWorkload{rel, doc.Kind, doc.Metadata.Name, pod})
 		}
 	}
 	return out
@@ -174,44 +158,33 @@ func plainWorkloads(t *testing.T) []plainWorkload {
 
 // kustomizePatchFiles is every file a kustomization names as a patch. Those
 // hold only the fields they change, so they are not whole workloads.
-func kustomizePatchFiles(t *testing.T, root string) map[string]bool {
+func kustomizePatchFiles(t *testing.T) map[string]bool {
 	t.Helper()
+	tree := repository(t)
 	out := map[string]bool{}
-	for _, dir := range []string{fluxTree, "modules"} {
-		_ = filepath.WalkDir(filepath.Join(root, dir), func(path string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() || filepath.Base(path) != applications.Kustomization {
-				return err
+	for _, rel := range workloadManifests(t) {
+		if filepath.Base(rel) != applications.Kustomization {
+			continue
+		}
+		var k struct {
+			Patches []struct {
+				Path string `yaml:"path"`
+			} `yaml:"patches"`
+			PatchesStrategicMerge []string `yaml:"patchesStrategicMerge"`
+		}
+		tree.YAMLInto(t, rel, &k)
+		base := filepath.Dir(rel)
+		add := func(p string) {
+			if p != "" {
+				out[filepath.ToSlash(filepath.Join(base, p))] = true
 			}
-			body, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			var k struct {
-				Patches []struct {
-					Path string `yaml:"path"`
-				} `yaml:"patches"`
-				PatchesStrategicMerge []string `yaml:"patchesStrategicMerge"`
-			}
-			if err := yaml.Unmarshal(body, &k); err != nil {
-				t.Errorf("parsing %s: %v", path, err)
-				return nil
-			}
-			base := filepath.Dir(path)
-			add := func(p string) {
-				if p == "" {
-					return
-				}
-				rel, _ := filepath.Rel(root, filepath.Join(base, p))
-				out[rel] = true
-			}
-			for _, p := range k.Patches {
-				add(p.Path)
-			}
-			for _, p := range k.PatchesStrategicMerge {
-				add(p)
-			}
-			return nil
-		})
+		}
+		for _, p := range k.Patches {
+			add(p.Path)
+		}
+		for _, p := range k.PatchesStrategicMerge {
+			add(p)
+		}
 	}
 	return out
 }
@@ -219,12 +192,26 @@ func kustomizePatchFiles(t *testing.T, root string) map[string]bool {
 // Every file declared as owned elsewhere still exists, or the declaration is
 // a hole with a reason attached to nothing.
 func TestEveryPlainWorkloadExemptionNamesARealFile(t *testing.T) {
+	light(t)
 	for _, e := range plainWorkloadsElsewhere {
 		if strings.TrimSpace(e.why) == "" {
 			t.Errorf("the %s %s is exempted with no reason", e.kind, e.name)
 		}
-		if _, err := fluxObjectPath(e.kind, e.name); err != nil {
+		if _, err := fluxObjectPath(t, e.kind, e.name); err != nil {
 			t.Errorf("the file declaring the %s %s is exempted from the plain-workload guard, and %v: delete the entry", e.kind, e.name, err)
 		}
 	}
+}
+
+// workloadManifests is every tracked file under the directories Flux and
+// Talos read.
+func workloadManifests(t *testing.T) []string {
+	t.Helper()
+	var out []string
+	for _, rel := range repository(t).Files(t) {
+		if strings.HasPrefix(rel, fluxTree+"/") || strings.HasPrefix(rel, "modules/") {
+			out = append(out, rel)
+		}
+	}
+	return out
 }

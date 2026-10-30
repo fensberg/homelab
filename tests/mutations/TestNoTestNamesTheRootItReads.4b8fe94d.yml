@@ -1,8 +1,8 @@
 guard: TestNoTestNamesTheRootItReads
-file: tests/go/repo/pools_test.go
+file: tests/go/repo/application_tests_test.go
 reads_source: true
-find: "	_, compute := tofuDeclaring(t, declMachines)"
-replace: '	compute := readRepoFile(t, "management/cluster/root.tf")'
+find: "\theavy(t, \"compiles and runs each application's own test module, whole seconds apiece\")\n\ttree := repository(t)\n"
+replace: "\theavy(t, \"compiles and runs each application's own test module, whole seconds apiece\")\n\ttree, _ := repository(t), tofuFile(t, \"management/cluster/root.tf\")\n"
 mentions: "a path into the root management/cluster"
 why: "reads_source, because the guard parses the test files for what they name.
 

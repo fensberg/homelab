@@ -40,7 +40,8 @@ concurrency:
   group: warm-caches
   cancel-in-progress: true
 # GitHub's default shell for `run:` is `bash -e {0}`, which has no pipefail.
-# tests/go/repo/pipefail_test.go asserts this is present on every workflow.
+# policy/conftest/rules/workflow_pipefail/workflow_pipefail.rego asserts this
+# is present on every workflow.
 defaults:
   run:
     shell: bash

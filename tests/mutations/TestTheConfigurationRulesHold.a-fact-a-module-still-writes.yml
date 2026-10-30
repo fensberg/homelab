@@ -1,0 +1,13 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_restated_facts
+file: config/facts/namespaces.json
+create: |
+  {
+    "monitoring": "monitoring"
+  }
+mentions: 'writes "monitoring" as a constant'
+why: >
+  A value moved into a fact while a module still writes it out is two
+  copies again, and the fact is the one nobody notices is not read: change
+  it and the module goes on making what it made. Planted, because the
+  mistake is a fact made for a value, and no fact here says this one yet.

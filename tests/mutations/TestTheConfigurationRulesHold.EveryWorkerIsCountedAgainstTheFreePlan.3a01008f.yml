@@ -1,0 +1,13 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_free_plan
+file: management/estate/free-plan.tf
+find: "  uses = {\n    watchman = module.watchman.use\n  }\n"
+replace: "  uses = {}\n"
+mentions: "use is not among what the free_plan_use output adds up"
+why: >
+  A second Worker is added beside the first, or the first's line is
+  dropped from the sum while its use is reworked, and the plan-time
+  refusal goes on passing: it adds up what it is given. The Worker runs
+  and uses its share of the day's requests and writes all the same, and
+  what goes over is refused at the vendor for everything on the account,
+  part way through a day, with nothing saying so.

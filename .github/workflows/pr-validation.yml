@@ -21,20 +21,19 @@ on:
   # this workflow again on each pull request as it would land, on top of
   # whatever is ahead of it, and merges it only if that passes.
   merge_group:
-  # The heavy lanes, tried on the estate's own pools while nobody is waiting
-  # on them, so that how long each takes there and what it uses are known
-  # before pull requests are moved onto them (docs/epochs/08-agent-roles.md).
-  # Only the lanes written in the nightly form change runner; everything
-  # else runs where it always does.
-  schedule:
-    - cron: "17 3 * * *"
 
 permissions: read-all
 # The meta-tests, named once. The Repository invariants lane skips them and
 # the Meta-tests lane runs only them, both through this variable, so a test
 # cannot be dropped by the two lists disagreeing.
 env:
-  META_TESTS: "^(TestTheLedgerProvesEachGuardFailsWhenItShould|TestNoTestIsSatisfiedByAComment)$"
+  META_TESTS: "^(TestTheLedgerProvesEachGuardFailsWhenItShould)$"
+  # The guards that judge what another lane already ran, named once in the
+  # same way: the Go modules lane runs every module's tests with coverage, so
+  # the guard over that coverage runs there, on the profiles it wrote, and the
+  # invariants lane skips it rather than running every module's tests again
+  # (#815).
+  OWN_LANE_TESTS: "^(TestEveryUncoveredFunctionIsDeclared)$"
 
 # Cancel in-progress runs if a new commit is pushed to the PR
 concurrency:
@@ -75,7 +74,8 @@ concurrency:
 # rather than errors. It is set on every workflow, including those with no
 # `run:` step today, so the one added tomorrow is already covered.
 #
-# tests/go/repo/pipefail_test.go asserts this is present.
+# policy/conftest/rules/workflow_pipefail/workflow_pipefail.rego asserts this
+# is present.
 defaults:
   run:
     shell: bash
@@ -100,7 +100,7 @@ jobs:
   already-tested:
     name: "Already tested (merge queue)"
     if: github.event_name == 'merge_group'
-    runs-on: ubuntu-latest
+    runs-on: pr-source-${{ vars.pull_request_runners_site }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -122,7 +122,7 @@ jobs:
       - name: Compare what the queue would land with what the pull request tested
         id: compare
         env:
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           QUEUED: ${{ github.event.merge_group.head_ref }}
         run: |
@@ -138,7 +138,11 @@ jobs:
             if [ "$(git rev-parse 'HEAD^{tree}')" != "$(git rev-parse 'FETCH_HEAD^{tree}')" ]; then
               echo "::notice::what would land differs from pull request ${number} as it was tested, so everything runs"
             else
-              passed="$(gh api "repos/${REPO}/actions/workflows/pr-validation.yml/runs?head_sha=${tested}&event=pull_request&status=success&per_page=1" --jq '.total_count')"
+              # curl and jq rather than gh, which the pull-request pools'
+              # image does not carry.
+              passed="$(curl --proto '=https' -fsS -H "Authorization: Bearer ${GITHUB_TOKEN}" -H 'Accept: application/vnd.github+json' \
+                "https://api.github.com/repos/${REPO}/actions/workflows/pr-validation.yml/runs?head_sha=${tested}&event=pull_request&status=success&per_page=1" |
+                jq '.total_count')"
               if [ "${passed}" -ge 1 ]; then
                 identical=true
                 echo "::notice::what would land is, file for file, pull request ${number} at ${tested}, which passed. Nothing is run again."
@@ -354,7 +358,7 @@ jobs:
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Validate (tofu, kustomize, kubeconform, go)"
-    runs-on: ${{ github.event_name == 'schedule' && format('pr-builds-{0}', vars.pull_request_runners_site) || 'ubuntu-latest' }}
+    runs-on: pr-builds-${{ vars.pull_request_runners_site }}
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.
     timeout-minutes: 20
@@ -620,10 +624,13 @@ jobs:
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Test (Go modules, OpenTofu)"
-    runs-on: ${{ github.event_name == 'schedule' && format('pr-builds-{0}', vars.pull_request_runners_site) || 'ubuntu-latest' }}
+    runs-on: pr-builds-${{ vars.pull_request_runners_site }}
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.
-    timeout-minutes: 15
+    # Thirty on the builds pool, where it took past fifteen at a quarter of a
+    # processor (the nightly runs before 2026-10-22). Set again from what it
+    # takes there now.
+    timeout-minutes: 30
     permissions:
       contents: read
     env:
@@ -679,7 +686,7 @@ jobs:
       # The engineer's own tests run a real scheduler over a small site, so
       # that what it reads is what a scheduler really says.
       - name: Take delivery of the scheduler a change is tried with
-        run: scripts/take-delivery.sh kwokctl etcd kube-apiserver kube-scheduler
+        run: scripts/take-delivery.sh kwokctl etcd kube-apiserver kube-scheduler kubectl
 
       # Every OpenTofu root with a tests/ directory, discovered rather than
       # listed - the cluster and estate roots and every module. A list of
@@ -699,12 +706,21 @@ jobs:
       # A list of what to test is an allow list, and everything missing from it
       # is invisible rather than red. taskfile.yml sweeps scripts/*/go.mod for
       # the same reason; #281 covers removing this duplicate of it.
+      #
+      # Each module's tests run once, here, and write their coverage to one
+      # directory: the gate below and the uncovered-function guard after it
+      # read what this run measured. They ran three times - here, in the gate
+      # and in the guard - and the third was most of the invariants lane
+      # (#815).
       - name: Unit and contract tests (Go)
+        env:
+          GO_COVERAGE_PROFILES: ${{ runner.temp }}/go-coverage
         run: |
+          mkdir -p "$GO_COVERAGE_PROFILES"
           for dir in scripts/*/; do
             [ -f "$dir/go.mod" ] || continue
             echo "::group::$dir"
-            go test -C "$dir" -covermode=atomic -coverprofile=coverage-go.out ./...
+            go test -C "$dir" -covermode=atomic -coverprofile="$GO_COVERAGE_PROFILES/$(basename "$dir").out" ./...
             echo "::endgroup::"
           done
 
@@ -716,15 +732,43 @@ jobs:
       # all. The gate refuses a key it has no baseline for, so a new module
       # fails here until its floor is written into tests/coverage-baseline.json.
       - name: Coverage gate (Go)
+        env:
+          GO_COVERAGE_PROFILES: ${{ runner.temp }}/go-coverage
         run: |
           for dir in scripts/*/; do
             [ -f "$dir/go.mod" ] || continue
             module="$(basename "$dir")"
-            go test -C "$dir" -covermode=atomic -coverprofile=coverage-go.out ./...
-            pct="$(go -C "$dir" tool cover -func=coverage-go.out \
+            pct="$(go -C "$dir" tool cover -func="$GO_COVERAGE_PROFILES/$module.out" \
               | awk '/^total:/ {print substr($3, 1, length($3)-1)}')"
             bash scripts/coverage-gate.sh "go/$module" "$pct"
           done
+
+      # The guards' helpers, held to their floor as the modules are. A bug in
+      # one makes a guard wrong rather than absent, which looks green, and
+      # tests/go/parsed is the one reader every guard reads the repository
+      # through. The floor sat in tests/coverage-baseline.json while no lane
+      # measured it (#792). Measured as task test counts it: each package
+      # that holds code, by its own tests; Go instruments no _test.go file, so
+      # the guards themselves are not in the figure. The packages are found,
+      # not listed.
+      - name: Coverage gate (the guards' helpers)
+        env:
+          GO_COVERAGE_PROFILES: ${{ runner.temp }}/go-coverage
+        run: |
+          mapfile -t packages < <(go -C tests/go list -f '{{if .GoFiles}}{{.ImportPath}}{{end}}' ./...)
+          go -C tests/go test -covermode=atomic -coverprofile="$GO_COVERAGE_PROFILES/tests-helpers.out" "${packages[@]}"
+          pct="$(go -C tests/go tool cover -func="$GO_COVERAGE_PROFILES/tests-helpers.out" \
+            | awk '/^total:/ {print substr($3, 1, length($3)-1)}')"
+          bash scripts/coverage-gate.sh "go/tests-helpers" "$pct"
+
+      # Every function the tests above did not run is declared, judged on the
+      # profiles they wrote. The invariants lane skips it by $OWN_LANE_TESTS.
+      - name: Every uncovered function is declared
+        working-directory: tests/go
+        env:
+          GO_COVERAGE_PROFILES: ${{ runner.temp }}/go-coverage
+          GOFLAGS: -v
+        run: go test ./repo/ -run "$OWN_LANE_TESTS"
 
       # --- OpenTofu --------------------------------------------------------
       - name: Invariant tests (OpenTofu)
@@ -742,10 +786,13 @@ jobs:
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Vet (every tier)"
-    runs-on: ${{ github.event_name == 'schedule' && format('pr-builds-{0}', vars.pull_request_runners_site) || 'ubuntu-latest' }}
+    runs-on: pr-builds-${{ vars.pull_request_runners_site }}
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.
-    timeout-minutes: 15
+    # Thirty on the builds pool, where it took past fifteen at a quarter of a
+    # processor (the nightly runs before 2026-10-22). Set again from what it
+    # takes there now.
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -799,10 +846,14 @@ jobs:
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Repository invariants"
-    runs-on: ${{ github.event_name == 'schedule' && format('pr-builds-{0}', vars.pull_request_runners_site) || 'ubuntu-latest' }}
+    # The primary pool: the job every pull request waits on longest, so it
+    # never waits for one of the builds pool's runners (2026-10-23).
+    runs-on: pr-builds-primary-${{ vars.pull_request_runners_site }}
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
-    # which is what GitHub's default timeout allows.
-    timeout-minutes: 15
+    # which is what GitHub's default timeout allows; above Go's own bound
+    # on the tests below, so a slow run fails as a timeout that names the
+    # test rather than as a cancelled job that names nothing.
+    timeout-minutes: 35
     permissions:
       contents: read
     steps:
@@ -815,13 +866,18 @@ jobs:
           # pre-step, before any step of this job can run.
           egress-policy: block
           disable-sudo-and-containers: "true"
+          # All of it, for the tags: the configuration rules plan each site
+          # with the release it runs, read from that release's tag (#843).
+          fetch-depth: 0
           allowed-endpoints: >
             api.github.com:443
+            files.pythonhosted.org:443
             get.opentofu.org:443
             github.com:443
             go.dev:443
             objects.githubusercontent.com:443
             proxy.golang.org:443
+            pypi.org:443
             registry.opentofu.org:443
             release-assets.githubusercontent.com:443
             storage.googleapis.com:443
@@ -840,12 +896,18 @@ jobs:
           # scripts/contractor has none, so there is no go.sum of its own to key on.
           cache-dependency-path: tests/go/go.sum
 
-      - name: Install OpenTofu and kustomize
+      - name: Install OpenTofu, kustomize, Conftest, OPA and Semgrep
         # The installer script from scripts/deliveries.lock by hash, run into
         # directories the runner account owns - this job runs with sudo
         # removed (#410). Until #416 the script was fetched and executed with
         # nothing checking what arrived.
-        run: scripts/take-delivery.sh opentofu kustomize
+        # Conftest and Semgrep run the configuration and code rules in
+        # policy/, which the guards here prove like any other
+        # (TestTheConfigurationRulesHold, TestTheCodeRulesHold), OPA reads
+        # the configuration rules themselves (TestOnlyTheSelectorsReadTheInput)
+        # and Regal lints them
+        # (TestTheConfigurationRulesAreWrittenAsTheirLinterWouldHaveThem).
+        run: scripts/take-delivery.sh opentofu kustomize conftest opa regal semgrep
 
       # Untagged, so this compiles and runs only the hermetic tests in
       # tests/go: the repository-invariant checks and the state-encryption
@@ -856,21 +918,44 @@ jobs:
       # drives a real `tofu` against a scratch workspace.
       - name: Repository invariants and the encryption rehearsal
         working-directory: tests/go
-        # The two meta-tests run in the lane below, in parallel with this one.
-        # They are skipped by the same variable that selects them there, so
-        # one declaration decides both and no test can fall between the two.
-        run: go test ./... -skip "$META_TESTS"
+        # The two meta-tests run in the lane below, in parallel with this one,
+        # and the coverage guard in the Go modules lane. Each set is skipped
+        # by the same variable that selects it there, so one declaration
+        # decides both and no test can fall between the two.
+        env:
+          # Go's default of ten minutes is not a budget anybody set, and the
+          # guards passed it on #790 while they moved onto tests/parsed: the
+          # application-removal guard runs every guard once per application.
+          # This is a ceiling for a stuck run, not the target. -v prints each
+          # guard's time, which is what says where the time went.
+          GOFLAGS: -timeout=30m -v
+        run: go test ./... -skip "$META_TESTS|$OWN_LANE_TESTS"
 
   meta:
     # Skipped, which the queue reads as passed, when the queue would land
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
-    name: "Meta-tests (mutation ledger, comment stripping)"
-    runs-on: ${{ github.event_name == 'schedule' && format('pr-builds-{0}', vars.pull_request_runners_site) || 'ubuntu-latest' }}
+    name: "Meta-tests (mutation ledger, part ${{ matrix.part }})"
+    runs-on: pr-builds-${{ vars.pull_request_runners_site }}
+    # The parts share the ledger's proofs, each in a job of its own. One job,
+    # it ran past ten minutes. Each job learns which part it is from GitHub's
+    # own count (META_PART, below), so no number written here can come to
+    # disagree with how many parts there are, and a proof falls in exactly
+    # one of them.
+    #
+    # Four ledger parts, not sixteen. On GitHub's runners a part was free and
+    # sixteen ran at once. In the builds pool four run at once, so more parts
+    # only queue, and each pays its own setup before it proves anything.
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [0, 1, 2, 3]
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
-    # which is what GitHub's default timeout allows.
-    timeout-minutes: 15
+    # which is what GitHub's default timeout allows. Above the tests' own
+    # bound below, so that a slow run is reported by Go, naming the test,
+    # rather than cut off by the runner.
+    timeout-minutes: 35
     permissions:
       contents: read
     steps:
@@ -883,13 +968,18 @@ jobs:
           # pre-step, before any step of this job can run.
           egress-policy: block
           disable-sudo-and-containers: "true"
+          # All of it, for the tags: the configuration rules plan each site
+          # with the release it runs, read from that release's tag (#843).
+          fetch-depth: 0
           allowed-endpoints: >
             api.github.com:443
+            files.pythonhosted.org:443
             get.opentofu.org:443
             github.com:443
             go.dev:443
             objects.githubusercontent.com:443
             proxy.golang.org:443
+            pypi.org:443
             registry.opentofu.org:443
             release-assets.githubusercontent.com:443
             storage.googleapis.com:443
@@ -908,20 +998,34 @@ jobs:
           # scripts/contractor has none, so there is no go.sum of its own to key on.
           cache-dependency-path: tests/go/go.sum
 
-      - name: Install OpenTofu and kustomize
+      - name: Install OpenTofu, kustomize, Conftest, OPA and Semgrep
         # The installer script from scripts/deliveries.lock by hash, run into
         # directories the runner account owns - this job runs with sudo
         # removed (#410). Until #416 the script was fetched and executed with
         # nothing checking what arrived.
-        run: scripts/take-delivery.sh opentofu kustomize
+        # Conftest and Semgrep run the configuration and code rules in
+        # policy/, which the guards here prove like any other
+        # (TestTheConfigurationRulesHold, TestTheCodeRulesHold), OPA reads
+        # the configuration rules themselves (TestOnlyTheSelectorsReadTheInput)
+        # and Regal lints them
+        # (TestTheConfigurationRulesAreWrittenAsTheirLinterWouldHaveThem).
+        run: scripts/take-delivery.sh opentofu kustomize conftest opa regal semgrep
 
-      # The two tests that prove the other tests: the mutation ledger breaks
-      # each guarded file and checks its guard fails, and the comment test
-      # strips every comment and re-runs the guards to prove none is satisfied
-      # by prose. Each re-runs a large part of the tier, so together they were
-      # about half its time, and here they run beside it instead of after it.
+      # The test that proves the other tests: the mutation ledger breaks each
+      # guarded file and checks its guard fails. It re-runs a large part of
+      # the tier, so it was about half its time, and here it runs beside it
+      # instead of after it.
       - name: Prove the guards fail when they should
         working-directory: tests/go
+        env:
+          # Go's default of ten minutes is not a budget anybody set, and the
+          # two tests together passed it on #779 while the ledger was being
+          # made faster: the bound stopped the work that shortens it. This is
+          # a ceiling for a stuck run, not the target; the lane's own time is.
+          GOFLAGS: -timeout=30m
+          # Which part this job is, as <index>/<total>; empty for one job,
+          # which is then the whole of both tests.
+          META_PART: ${{ strategy.job-total > 1 && format('{0}/{1}', strategy.job-index, strategy.job-total) || '' }}
         run: go test ./repo/ -run "$META_TESTS"
 
   test-js:
@@ -930,7 +1034,7 @@ jobs:
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Test (vitest)"
-    runs-on: ${{ github.event_name == 'schedule' && format('pr-packages-{0}', vars.pull_request_runners_site) || 'ubuntu-latest' }}
+    runs-on: pr-packages-${{ vars.pull_request_runners_site }}
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.
     timeout-minutes: 15
@@ -996,7 +1100,7 @@ jobs:
     # always(), or a failed lane would SKIP this job - and a skipped required
     # check counts as passing. The result is read explicitly instead.
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: pr-source-${{ vars.pull_request_runners_site }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -1238,13 +1342,11 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
-    container:
-      # Pinned by digest for Scorecard's Pinned-Dependencies check. Nothing
-      # bumps this automatically - Dependabot's docker ecosystem covers
-      # Dockerfiles/compose files, not an image reference embedded in a
-      # workflow's container: block - so this needs a manual version+digest
-      # refresh occasionally.
-      image: semgrep/semgrep:1.172.0@sha256:65dcd4408adda7c183a6b4550cb1e9b19f7f627a6fbb7e0559bd466bedc44d7b
+    # Semgrep is taken the way every Python tool here is - pinned in
+    # scripts/versions.env, its closure hashed in scripts/deliveries.lock -
+    # so this lane, the code rules' harness and a workstation run the one
+    # version. It ran in a container whose tag was a second copy of that
+    # version, refreshed by hand.
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
@@ -1261,8 +1363,12 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: audit
-          disable-sudo-and-containers: "false"
+          disable-sudo-and-containers: "true"
           fetch-depth: 0
+      - name: Read pinned versions
+        uses: $/.github/actions/versions
+      - name: Take delivery of Semgrep
+        run: scripts/take-delivery.sh semgrep
       - name: Run Semgrep CI
         # clusters/bootstrap/ is Cilium's chart output, committed verbatim so a
         # version bump is a reviewable diff rather than a one-line pin change.
@@ -1373,9 +1479,7 @@ jobs:
     # Skipped, which the queue reads as passed, when the queue would land
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
-    # Scans what a pull request adds, between its two commits; a nightly run
-    # has neither.
-    if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' && github.event_name != 'schedule' }}
+    if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Secrets Scan (TruffleHog)"
     runs-on: ubuntu-latest
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
@@ -1419,20 +1523,20 @@ jobs:
       - name: Install trufflehog (locked)
         run: scripts/take-delivery.sh trufflehog
 
-      # Same flags the marketplace action passed internally. base/head come
-      # straight from the pull_request event - this workflow no longer has a
-      # push trigger (see the on: block above), so that is the only case
-      # worth handling.
+      - name: Setup Go
+        uses: $/.github/workflows/setup-go
+
+      # The scan the push hook runs, by the same verb, so the two cannot come
+      # to differ: security guard-secrets holds the flags, and writes its
+      # findings as annotations here. base/head come straight from the
+      # pull_request event - this workflow no longer has a push trigger (see
+      # the on: block above), so that is the only case worth handling.
       - name: Run TruffleHog
         env:
           # A pull request's own two ends, or a place in the merge queue's.
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
-        run: |
-          trufflehog git "file://$(pwd)" \
-            --since-commit "${BASE_SHA}" \
-            --branch "${HEAD_SHA}" \
-            --fail --no-update --github-actions --results=verified,unknown
+        run: go run -C scripts/security . guard-secrets -base "${BASE_SHA}" -head "${HEAD_SHA}"
 
   # -----------------------------------------------------------------
   # EGRESS PROOF: that the shared first step still does what it claims.
@@ -1624,6 +1728,46 @@ jobs:
   pool-builds:
     name: "Pool Proof (builds)"
     runs-on: pr-builds-${{ vars.pull_request_runners_site }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # harden-runner does nothing in the estate's pools. What is
+          # declared here is what the pool's own policy is held to, in
+          # scripts/approved-suppliers.yml under `egress:`.
+          egress-policy: block
+          disable-sudo-and-containers: "true"
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            proxy.golang.org:443
+
+      - name: Prove the pool holds
+        uses: $/.github/workflows/pool-proof
+        with:
+          reaches: https://proxy.golang.org
+
+  # ---------------------------------------------------------------------
+  # POOL PROOF (builds-primary) - one of the estate's own pools for a pull
+  # request's jobs, tried from inside. The pool for the job every pull
+  # request waits on longest, which downloads what a build needs.
+  #
+  # On the untrusted zone's machine, held to its pool's hosts by the
+  # cluster's network (clusters/core, pull-requests-builds-primary.yaml).
+  # The site is the estate's to say (management/estate, the repository's
+  # variable).
+  #
+  # AFTER THAT JOB, and nothing waits on this. The pool has one runner, and
+  # a proof that took it first would hold up the job the pool is for.
+  # ---------------------------------------------------------------------
+  pool-builds-primary:
+    needs: invariants
+    if: ${{ !cancelled() }}
+    name: "Pool Proof (builds-primary)"
+    runs-on: pr-builds-primary-${{ vars.pull_request_runners_site }}
     timeout-minutes: 5
     permissions:
       contents: read

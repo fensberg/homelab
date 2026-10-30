@@ -6,9 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"homelab/tests/parsed"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -31,8 +31,9 @@ import (
 // covers: shell:scripts/take-delivery.sh
 
 type deliveryFixture struct {
-	root, serve, home, ghPath, pipArgs string
-	env                                []string
+	root                         *parsed.Tree
+	serve, home, ghPath, pipArgs string
+	env                          []string
 }
 
 func sha256Hex(b []byte) string {
@@ -44,30 +45,19 @@ func newDeliveryFixture(t *testing.T, lock string) *deliveryFixture {
 	t.Helper()
 	dir := t.TempDir()
 	f := &deliveryFixture{
-		root:    filepath.Join(dir, "repo"),
+		root:    repository(t).CopyOf(t, "scripts/take-delivery.sh"),
 		serve:   filepath.Join(dir, "serve"),
 		home:    filepath.Join(dir, "home"),
 		ghPath:  filepath.Join(dir, "github-path"),
 		pipArgs: filepath.Join(dir, "pip-args"),
 	}
 	bin := filepath.Join(dir, "bin")
-	for _, d := range []string{filepath.Join(f.root, "scripts"), f.serve, f.home, bin} {
+	for _, d := range []string{f.serve, f.home, bin} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	script, err := os.ReadFile(filepath.Join(repoRoot(t), "scripts", "take-delivery.sh"))
-	if err != nil {
-		t.Fatalf("reading scripts/take-delivery.sh: %v", err)
-	}
-	for name, body := range map[string]string{
-		"scripts/take-delivery.sh": string(script),
-		"scripts/deliveries.lock":  lock,
-	} {
-		if err := os.WriteFile(filepath.Join(f.root, name), []byte(body), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
+	f.root.Write(t, "scripts/deliveries.lock", lock)
 	stubs := map[string]string{
 		// Serves the file named by the URL's last element, and fails like
 		// curl -f when there is none.
@@ -110,10 +100,8 @@ func (f *deliveryFixture) serveFile(t *testing.T, name string, body []byte) {
 
 func (f *deliveryFixture) run(t *testing.T, args ...string) (string, error) {
 	t.Helper()
-	cmd := exec.Command("bash", append([]string{filepath.Join(f.root, "scripts", "take-delivery.sh")}, args...)...)
-	cmd.Env = f.env
-	out, err := cmd.CombinedOutput()
-	return string(out), err
+	stdout, stderr, err := f.root.Invoke(parsed.Run{Env: f.env, Bare: true, Outside: true}, "bash", append([]string{parsed.Here("scripts/take-delivery.sh")}, args...)...)
+	return string(stdout) + string(stderr), err
 }
 
 // installed reads what take-delivery.sh put in ~/.local/bin, or nil when it
@@ -163,6 +151,7 @@ type stringWriter struct{ b *strings.Builder }
 func (w *stringWriter) Write(p []byte) (int, error) { return w.b.Write(p) }
 
 func TestTakeDeliveryInstallsOnlyTheFileTheLockWasOrderedWith(t *testing.T) {
+	light(t)
 	binary := []byte("#!/bin/sh\necho the real tool\n")
 	lock := "# [fetch: tool TOOL_VERSION=1.0]\n" +
 		"https://example.com/v1.0/tool-linux-x86_64 --hash=sha256:" + sha256Hex(binary) + "\n# [end]\n"
@@ -208,6 +197,7 @@ func TestTakeDeliveryInstallsOnlyTheFileTheLockWasOrderedWith(t *testing.T) {
 // moved since is a different delivery and is fetched; and a run that was
 // refused records nothing, so what it did not install is not taken as here.
 func TestTakeDeliveryDoesNotFetchWhatIsAlreadyHereAsTheLockOrdersIt(t *testing.T) {
+	light(t)
 	binary := []byte("#!/bin/sh\necho the first tool\n")
 	lockFor := func(version string, body []byte) string {
 		return "# [fetch: tool TOOL_VERSION=" + version + "]\n" +
@@ -236,9 +226,7 @@ func TestTakeDeliveryDoesNotFetchWhatIsAlreadyHereAsTheLockOrdersIt(t *testing.T
 	}
 
 	moved := []byte("#!/bin/sh\necho the second tool\n")
-	if err := os.WriteFile(filepath.Join(f.root, "scripts", "deliveries.lock"), []byte(lockFor("2.0", moved)), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	f.root.Write(t, "scripts/deliveries.lock", lockFor("2.0", moved))
 	if out, err := f.run(t, "tool"); err == nil {
 		t.Fatalf("the lock moved and the old tool was kept as the new one:\n%s", out)
 	}
@@ -263,6 +251,7 @@ func TestTakeDeliveryDoesNotFetchWhatIsAlreadyHereAsTheLockOrdersIt(t *testing.T
 }
 
 func TestTakeDeliveryTakesTheNamedFileOutOfAnArchive(t *testing.T) {
+	light(t)
 	archive := tarGz(t, map[string]string{"LICENSE": "text", "tool": "#!/bin/sh\necho from the archive\n"})
 	lock := "# [fetch: tool TOOL_VERSION=2.0]\n" +
 		"https://example.com/v2.0/tool_2.0_linux_amd64.tar.gz --hash=sha256:" + sha256Hex(archive) + "\n# [end]\n"
@@ -280,6 +269,7 @@ func TestTakeDeliveryTakesTheNamedFileOutOfAnArchive(t *testing.T) {
 }
 
 func TestTakeDeliveryHandsPipEveryHashAndEachSharedLineOnce(t *testing.T) {
+	light(t)
 	lock := "# [pypi: alpha ALPHA_VERSION=1]\n" +
 		"alpha==1 --hash=sha256:" + strings.Repeat("a", 64) + "\n" +
 		"shared==3 --hash=sha256:" + strings.Repeat("c", 64) + "\n# [end]\n" +
@@ -330,6 +320,7 @@ func TestTakeDeliveryHandsPipEveryHashAndEachSharedLineOnce(t *testing.T) {
 }
 
 func TestTakeDeliveryRefusesWhatTheLockDoesNotDecide(t *testing.T) {
+	light(t)
 	script := []byte("#!/bin/sh\ntouch \"$HOME/ran\"\n")
 	lock := "# [fetch: stranger STRANGER_VERSION=1]\n" +
 		"https://example.com/install.sh --hash=sha256:" + sha256Hex(script) + "\n# [end]\n" +

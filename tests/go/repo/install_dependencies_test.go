@@ -1,10 +1,10 @@
 package repo
 
 import (
+	"homelab/tests/parsed"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -44,13 +44,16 @@ var setupTools = []string{
 // true` against `$(dirname $0)/..`, so a test running it in place would rewrite
 // the developer's own checkout.
 type setupFixture struct {
-	repo string
+	repo *parsed.Tree
 	env  []string
 }
 
+// noAccount is gh on a machine signed in to no GitHub account: every
+// question it is asked fails.
+const noAccount = "#!/usr/bin/env bash\nexit 1\n"
+
 func newSetupFixture(t *testing.T, ghBehaviour string) *setupFixture {
 	t.Helper()
-	root := repoRoot(t)
 	dir := t.TempDir()
 	resolved, err := filepath.EvalSymlinks(dir)
 	if err != nil {
@@ -58,15 +61,9 @@ func newSetupFixture(t *testing.T, ghBehaviour string) *setupFixture {
 	}
 	dir = resolved
 
-	repo := filepath.Join(dir, "repo")
 	bin := filepath.Join(dir, "bin")
 	home := filepath.Join(dir, "home")
-	for _, d := range []string{
-		filepath.Join(repo, "scripts"),
-		filepath.Join(repo, "githooks"),
-		filepath.Join(repo, "management", "hypervisor"),
-		bin, home, filepath.Join(home, ".ssh"),
-	} {
+	for _, d := range []string{bin, home, filepath.Join(home, ".ssh")} {
 		if mkErr := os.MkdirAll(d, 0o755); mkErr != nil {
 			t.Fatalf("creating %s: %v", d, mkErr)
 		}
@@ -74,26 +71,13 @@ func newSetupFixture(t *testing.T, ghBehaviour string) *setupFixture {
 
 	// The script and the one file it sources, copied so `dirname $0/..` is the
 	// throwaway repository rather than this one.
-	for _, name := range []string{"install-dependencies.sh", "versions.env"} {
-		body, readErr := os.ReadFile(filepath.Join(root, "scripts", name))
-		if readErr != nil {
-			t.Fatalf("reading scripts/%s: %v", name, readErr)
-		}
-		if wErr := os.WriteFile(filepath.Join(repo, "scripts", name), body, 0o755); wErr != nil {
-			t.Fatalf("writing %s: %v", name, wErr)
-		}
-	}
+	repo := repository(t).CopyOf(t, installDependencies, versionPins)
+	repo.Write(t, "githooks/.keep", "")
 	// take-delivery.sh downloads and installs for real, and the script calls it
 	// for every locked tool on every run (#416). Stubbed to record what it was
 	// asked for, so the delivery half is observable without a network.
-	if wErr := os.WriteFile(filepath.Join(repo, "scripts", "take-delivery.sh"),
-		[]byte("#!/usr/bin/env bash\necho \"$*\" >>\"$(dirname \"$0\")/deliveries-taken\"\n"), 0o755); wErr != nil {
-		t.Fatal(wErr)
-	}
-	if wErr := os.WriteFile(filepath.Join(repo, "management", "hypervisor", "requirements.yml"),
-		[]byte("collections: []\n"), 0o644); wErr != nil {
-		t.Fatal(wErr)
-	}
+	repo.WriteExecutable(t, "scripts/take-delivery.sh", "#!/usr/bin/env bash\necho \"$*\" >>\"$(dirname \"$0\")/deliveries-taken\"\n")
+	repo.Write(t, "management/hypervisor/requirements.yml", "collections: []\n")
 
 	// A stub that answers any version query and otherwise succeeds quietly.
 	stub := "#!/usr/bin/env bash\ncase \"$1\" in\n  --version|-version|version) echo \"stub 0.0.0\" ;;\nesac\nexit 0\n"
@@ -114,10 +98,10 @@ func newSetupFixture(t *testing.T, ghBehaviour string) *setupFixture {
 	//
 	// The pin key is named rather than derived from the tool name. rclone's is
 	// RCLONE_DEB_VERSION, because RCLONE_VERSION is a name rclone itself reads
-	// as `--version` (#487, and versions_test.go guards the namespace), so
+	// as `--version` (#487, and policy/conftest/rules/rclone_namespace/rclone_namespace.rego guards the namespace), so
 	// upper-casing the tool name would ask for a key that is deliberately not
 	// there.
-	pins := pinnedVersions(t, filepath.Join(root, "scripts", "versions.env"))
+	pins := versionsPinned(t)
 	for tool, stub := range map[string]struct{ key, format string }{
 		"rclone": {"RCLONE_DEB_VERSION", "rclone v%s\n- os/version: stub\n"},
 		"task":   {"TASK_VERSION", "Task version: v%s\n"},
@@ -133,10 +117,17 @@ func newSetupFixture(t *testing.T, ghBehaviour string) *setupFixture {
 			t.Fatalf("writing the %s stub: %v", tool, wErr)
 		}
 	}
-	if ghBehaviour != "" {
-		if wErr := os.WriteFile(filepath.Join(bin, "gh"), []byte(ghBehaviour), 0o755); wErr != nil {
-			t.Fatalf("writing the gh stub: %v", wErr)
-		}
+	// gh is always stubbed, like every other tool the script looks for. Left
+	// out, the script found whatever gh the machine had: a real one, signed
+	// in to nothing, on GitHub's runners, and none at all in a pull-request
+	// pool's pod, where it went on to install one with sudo and failed. A
+	// test that does not say how gh behaves gets that first machine's: a gh
+	// that is present and signed in to no account.
+	if ghBehaviour == "" {
+		ghBehaviour = noAccount
+	}
+	if wErr := os.WriteFile(filepath.Join(bin, "gh"), []byte(ghBehaviour), 0o755); wErr != nil {
+		t.Fatalf("writing the gh stub: %v", wErr)
 	}
 
 	env := []string{
@@ -146,28 +137,18 @@ func newSetupFixture(t *testing.T, ghBehaviour string) *setupFixture {
 		"GIT_CONFIG_SYSTEM=/dev/null",
 	}
 
-	init := exec.Command("git", "init", "-q", repo)
-	init.Env = env
-	if out, initErr := init.CombinedOutput(); initErr != nil {
-		t.Fatalf("git init: %v\n%s", initErr, out)
-	}
 	return &setupFixture{repo: repo, env: env}
 }
 
 func (f *setupFixture) run(t *testing.T) (string, error) {
 	t.Helper()
-	cmd := exec.Command("bash", f.repo+"/scripts/install-dependencies.sh")
-	cmd.Dir = f.repo
-	cmd.Env = f.env
-	out, err := cmd.CombinedOutput()
-	return string(out), err
+	stdout, stderr, err := f.repo.Invoke(parsed.Run{Env: f.env, Bare: true}, "bash", parsed.Here(filepath.Join("scripts", "install-dependencies.sh")))
+	return string(stdout) + string(stderr), err
 }
 
 func (f *setupFixture) gitConfig(t *testing.T, key string) string {
 	t.Helper()
-	cmd := exec.Command("git", "-C", f.repo, "config", "--get", key)
-	cmd.Env = f.env
-	out, err := cmd.Output()
+	out, _, err := f.repo.Invoke(parsed.Run{Env: f.env, Bare: true}, "git", "config", "--get", key)
 	if err != nil {
 		return ""
 	}
@@ -182,6 +163,7 @@ func (f *setupFixture) gitConfig(t *testing.T, key string) string {
 // only because this script sets core.hooksPath - without it the supplier guard
 // is a file nobody invokes and every shim tested elsewhere is unreachable.
 func TestSetupWiresTheHooksAndSigning(t *testing.T) {
+	light(t)
 	f := newSetupFixture(t, "")
 
 	out, err := f.run(t)
@@ -220,20 +202,26 @@ readable reason.`, want.key, got, want.value)
 	// each is already present. Presence is not the locked version, and
 	// .pre-commit-config.yaml runs pre-commit-hooks as local hooks from this
 	// install - a machine that skipped it fails every commit (#416).
-	taken, _ := os.ReadFile(filepath.Join(f.repo, "scripts", "deliveries-taken"))
 	asked := map[string]bool{}
-	for _, name := range strings.Fields(string(taken)) {
-		asked[name] = true
+	if f.repo.Exists("scripts/deliveries-taken") {
+		for _, name := range strings.Fields(f.repo.OwnText(t, "scripts/deliveries-taken")) {
+			asked[name] = true
+		}
 	}
-	lock := readFile(t, filepath.Join(repoRoot(t), "scripts", "deliveries.lock"))
-	pypi := regexp.MustCompile(`(?m)^# \[pypi: (\S+) `).FindAllStringSubmatch(lock, -1)
+	var pypi []string
+	for _, s := range repository(t).DeliveriesLock(t) {
+		if s.Kind == "pypi" {
+			pypi = append(pypi, s.Name)
+		}
+	}
+	sort.Strings(pypi)
 	if len(pypi) == 0 {
 		t.Fatal("scripts/deliveries.lock has no pypi: section, so this cannot tell whether the workstation takes delivery of them")
 	}
-	for _, m := range pypi {
-		if !asked[m[1]] {
+	for _, name := range pypi {
+		if !asked[name] {
 			t.Errorf("install-dependencies.sh never takes delivery of %s, which scripts/deliveries.lock locks; "+
-				"a machine set up by it runs whatever %s it already had, or none", m[1], m[1])
+				"a machine set up by it runs whatever %s it already had, or none", name, name)
 		}
 	}
 }
@@ -245,7 +233,8 @@ readable reason.`, want.key, got, want.value)
 // behalf. A warning there would be noise on every run, and a warning that is
 // always present is one nobody reads.
 func TestSetupSaysNothingToRegisterWhereThereIsNoAccount(t *testing.T) {
-	f := newSetupFixture(t, "#!/usr/bin/env bash\nexit 1\n")
+	light(t)
+	f := newSetupFixture(t, noAccount)
 
 	out, err := f.run(t)
 	if err != nil {
@@ -268,6 +257,7 @@ func TestSetupSaysNothingToRegisterWhereThereIsNoAccount(t *testing.T) {
 // unsigned one - and the operator's editor pushed into that refusal with no
 // readable reason.
 func TestSetupSaysPushesWillBeRefusedWithoutARegisteredKey(t *testing.T) {
+	light(t)
 	gh := "#!/usr/bin/env bash\ncase \"$1\" in\n  api) echo someone; exit 0 ;;\n  ssh-key) [ \"$2\" = list ] && exit 0; exit 1 ;;\nesac\nexit 0\n"
 	f := newSetupFixture(t, gh)
 
@@ -297,6 +287,7 @@ exactly like an unsigned one.`, out)
 // Regenerating a signing key on a second run would replace the one GitHub knows
 // about, turning a working setup into refused pushes.
 func TestSetupIsSafeToReRun(t *testing.T) {
+	light(t)
 	f := newSetupFixture(t, "")
 
 	if out, err := f.run(t); err != nil {
@@ -319,25 +310,5 @@ and the script says in its own header that it is safe to re-run.`, first, second
 	}
 }
 
-// pinnedVersions reads scripts/versions.env the way the script itself does.
-func pinnedVersions(t *testing.T, path string) map[string]string {
-	t.Helper()
-	body, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("reading %s: %v", path, err)
-	}
-	pins := map[string]string{}
-	for _, line := range strings.Split(string(body), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		if key, value, ok := strings.Cut(line, "="); ok {
-			pins[strings.TrimSpace(key)] = strings.TrimSpace(value)
-		}
-	}
-	if len(pins) == 0 {
-		t.Fatalf("%s declares no versions, so this fixture would impersonate nothing", path)
-	}
-	return pins
-}
+// installDependencies is the script that provisions a workstation.
+var installDependencies = filepath.ToSlash(filepath.Join("scripts", "install-dependencies.sh"))

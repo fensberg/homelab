@@ -1,9 +1,0 @@
-guard: TestEveryCheckAMergeIsHeldToIsAJobThatRuns
-file: management/estate/repository/rulesets.tf
-find: "    \"Plan\",\n"
-replace: "    \"The Plan\",\n"
-mentions: "no job in any workflow reports under that name"
-why: >
-  A check required under a name no job reports holds every pull request
-  for ever, and nobody may pass the checks by. A name written a little
-  differently from the job's is the plausible way to get there.

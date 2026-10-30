@@ -13,7 +13,8 @@
 # persist-credentials is not an input. No job here needs the token left on
 # disk, and leaving it lets any later step, or anything a later step runs, push
 # with the job's credentials - silently, because the checkout succeeds either
-# way. tests/go/repo/joblaw_test.go reads through this action to hold that.
+# way. policy/conftest/rules/job_checkouts/job_checkouts.rego reads through
+# this action to hold that.
 name: "Checkout"
 description: Check out the repository without leaving the job's token on disk.
 

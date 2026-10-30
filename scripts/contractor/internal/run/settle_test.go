@@ -91,3 +91,31 @@ func TestARenameIsSettledByAnApplyThatCanBuildNothing(t *testing.T) {
 		t.Errorf("the rename was settled with:\n%s\nwant:\n%s", calls, want)
 	}
 }
+
+// An apply is aimed at what it is told to aim at, and replaces only what it
+// is told to replace: an apply told nothing to replace replaces nothing.
+func TestAnApplyReplacesOnlyWhatItIsTold(t *testing.T) {
+	bin := t.TempDir()
+	script := "#!/bin/sh\necho \"$*\" >> calls\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(bin, "tofu"), []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	ctx := NewContext(t.TempDir(), "site0")
+	if err := os.MkdirAll(ctx.Dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := TofuApplyReplacing(ctx, "an apply", []string{`a.config["k"]`}, "a.config"); err != nil {
+		t.Fatal(err)
+	}
+	if err := TofuApply(ctx, "an apply", "a.machine"); err != nil {
+		t.Fatal(err)
+	}
+	calls, _ := os.ReadFile(filepath.Join(ctx.Dir, "calls"))
+	want := "apply -input=false -auto-approve -json -target=a.config -replace=a.config[\"k\"]\n" +
+		"apply -input=false -auto-approve -json -target=a.machine\n"
+	if string(calls) != want {
+		t.Errorf("tofu was asked:\n%s\nwant:\n%s", calls, want)
+	}
+}

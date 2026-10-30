@@ -1,13 +1,13 @@
 package repo
 
 import (
-	"os"
-	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 
-	"homelab/details/workorders"
+	"homelab/details/applications"
+	"homelab/tests/parsed"
 )
 
 // ghcr.io/fensberg/homelab-runner is a PUBLIC package. Anything that reaches a
@@ -26,32 +26,23 @@ import (
 // removed.
 
 var (
-	copyOrAdd     = regexp.MustCompile(`(?mi)^\s*(COPY|ADD)\s`)
 	secretishName = regexp.MustCompile(`(?i)(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE|_KEY\b|APIKEY|API_KEY)`)
-	argOrEnv      = regexp.MustCompile(`(?m)^\s*(?:ARG|ENV)\s+([A-Za-z_][A-Za-z0-9_]*)`)
 )
 
 func TestRunnerImageCannotReceiveASecret(t *testing.T) {
-	root := repoRoot(t)
+	light(t)
+	tree := repository(t)
 	// Every image the estate orders for itself: the one a converge runs in
 	// and any other a runner starts from. An application's image is its
 	// application's to answer for.
-	body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(workorders.Path)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	own, err := workorders.Parse(body)
-	if err != nil {
-		t.Fatal(err)
-	}
 	checked := 0
-	for _, order := range own {
-		if order.Context == "" {
+	for _, order := range tree.WorkOrders(t) {
+		if order.Context == "" || strings.HasPrefix(order.Context, applications.Dir+"/") {
 			continue
 		}
 		checked++
 		rel := order.Context + "/Dockerfile"
-		dockerfile := instructions(readFile(t, filepath.Join(root, filepath.FromSlash(rel))))
+		built := dockerfile(t, rel)
 
 		// 1. Nothing from the repository is copied into the image. A COPY
 		//    reaches whatever is in the build context, including what an
@@ -60,14 +51,16 @@ func TestRunnerImageCannotReceiveASecret(t *testing.T) {
 		//    image; a file of the repository's that a build needs is mounted
 		//    for the step that reads it, and is in no layer.
 		stages := map[string]bool{}
-		for _, m := range regexp.MustCompile(`(?mi)^FROM\s+\S+\s+AS\s+(\S+)`).FindAllStringSubmatch(dockerfile, -1) {
-			stages[m[1]] = true
+		for _, i := range built {
+			if i.Cmd == "from" && len(i.Value) == 3 && strings.EqualFold(i.Value[1], "as") {
+				stages[i.Value[2]] = true
+			}
 		}
-		for _, line := range strings.Split(dockerfile, "\n") {
-			if !copyOrAdd.MatchString(line) {
+		for _, i := range built {
+			if i.Cmd != "copy" && i.Cmd != "add" {
 				continue
 			}
-			if from := regexp.MustCompile(`^\s*COPY\s+(?:--\S+\s+)*--from=(\S+)`).FindStringSubmatch(line); from != nil && stages[from[1]] {
+			if from := copiedFrom(i); i.Cmd == "copy" && stages[from] {
 				continue
 			}
 			t.Errorf(`%s: %s
@@ -76,19 +69,19 @@ The image is published publicly. Nothing from the repository or the workspace
 may enter a layer: a rendered config, a kubeconfig or an op-injected file would
 become world-readable, and deleting it in a later layer does not remove it from
 the published image. If a file genuinely must be baked in, that is an epoch-level
-decision, not a line in a Dockerfile.`, rel, strings.TrimSpace(line))
+decision, not a line in a Dockerfile.`, rel, i)
 		}
 
 		// 2. No build argument or environment variable is named like a
 		//    secret. Build arguments are visible in `docker history` on a
 		//    public image.
-		for _, m := range argOrEnv.FindAllStringSubmatch(dockerfile, -1) {
-			if secretishName.MatchString(m[1]) {
+		for _, name := range declaredNames(built) {
+			if secretishName.MatchString(name) {
 				t.Errorf(`%s declares %s, which is named like a secret.
 
 Build arguments are readable with `+"`docker history`"+` on a published image, and
 this one is public. Versions and architectures are the only things that belong
-here.`, rel, m[1])
+here.`, rel, name)
 			}
 		}
 	}
@@ -98,8 +91,7 @@ here.`, rel, m[1])
 
 	// 3. The workflow hands the build no secret. `docker login` legitimately
 	//    uses one, so this looks only at the docker build invocation.
-	workflow := workflowText(t, fabricatorWorkflow)
-	build, ok := dockerBuildCommand(workflow)
+	build, ok := dockerBuild(t)
 	if !ok {
 		t.Fatal("could not find the `docker build` invocation in fabricator.yml.\n\nThe publish step was restructured; re-check by hand that no secret is passed to the build, then update this test to the new shape.")
 	}
@@ -114,53 +106,76 @@ registry login step, which is separate and may keep using them.`, bad)
 	}
 }
 
-// dockerBuildCommand returns the `docker build ...` invocation, following
-// backslash continuations to the end of the command.
-func dockerBuildCommand(workflow string) (string, bool) {
-	lines := strings.Split(workflow, "\n")
-	for i, line := range lines {
-		if !strings.Contains(line, "docker build") {
-			continue
-		}
-		var b strings.Builder
-		for j := i; j < len(lines); j++ {
-			b.WriteString(lines[j])
-			b.WriteString("\n")
-			if !strings.HasSuffix(strings.TrimSpace(lines[j]), `\`) {
-				break
+// dockerBuild is the fabricator's `docker build ...` invocation, from the
+// steps' scripts as the shell parses them: the command's words, joined.
+func dockerBuild(t *testing.T) (string, bool) {
+	t.Helper()
+	return dockerBuildIn(t, fabricatorWorkflow)
+}
+
+// dockerBuildIn is the first `docker build` command a workflow's steps run.
+func dockerBuildIn(t *testing.T, workflow string) (string, bool) {
+	t.Helper()
+	var wf struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				Run string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	repository(t).YAMLInto(t, workflowPath(workflow), &wf)
+	names := make([]string, 0, len(wf.Jobs))
+	for name := range wf.Jobs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		for _, step := range wf.Jobs[name].Steps {
+			commands, err := parsed.WorkflowCommands(workflow, step.Run)
+			if err != nil {
+				t.Fatalf("a step of %s is not shell that can be read: %v", workflow, err)
+			}
+			for _, c := range commands {
+				if len(c.Words) > 1 && c.Words[0] == "docker" && (c.Words[1] == "build" || len(c.Words) > 2 && c.Words[1] == "buildx" && c.Words[2] == "build") {
+					return strings.Join(c.Words, " "), true
+				}
 			}
 		}
-		return b.String(), true
 	}
 	return "", false
 }
 
-// A tag is a pointer somebody can move; the digest is the image. The scale set
-// is what a converge actually runs in, so a mutable reference there means the
-// estate can be changed by a registry push that never touched this repository -
-// which is the one pin that silently is not one.
+// copiedFrom is the stage a COPY takes from, or "" for the build context.
+func copiedFrom(i dockerInstruction) string {
+	for _, f := range i.Flags {
+		if from, ok := strings.CutPrefix(f, "--from="); ok {
+			return from
+		}
+	}
+	return ""
+}
+
+// declaredNames is every build argument and environment variable a
+// Dockerfile declares, by name.
+func declaredNames(built []dockerInstruction) []string {
+	var out []string
+	for _, i := range built {
+		switch i.Cmd {
+		case "arg":
+			for _, v := range i.Value {
+				name, _, _ := strings.Cut(v, "=")
+				out = append(out, name)
+			}
+		case "env":
+			// Conftest gives each as its key, its value and "=".
+			for k := 0; k+1 < len(i.Value); k += 3 {
+				out = append(out, i.Value[k])
+			}
+		}
+	}
+	return out
+}
+
+// scaleSetImage is the image a scale set's manifest names. That every one is
+// pinned by digest is a configuration rule (policy/conftest/rules/runner_images/runner_images.rego).
 var scaleSetImage = regexp.MustCompile(`(?m)^\s*image:\s*(\S+)`)
-
-func TestRunnerScaleSetPinsItsImageByDigest(t *testing.T) {
-	// Every set of runners, not the one this was written for.
-	for _, release := range runnerSets(t) {
-		t.Run(release, func(t *testing.T) { runnerImageIsPinned(t, release) })
-	}
-}
-
-// runnerImageIsPinned is that rule for one set of runners, by its release.
-func runnerImageIsPinned(t *testing.T, release string) {
-	_, manifest := fluxObject(t, kindHelmRelease, release)
-	m := scaleSetImage.FindStringSubmatch(manifest)
-	if m == nil {
-		t.Fatal("runner-scale-set.yaml names no image.\n\nWithout one the scale set silently falls back to the chart's default runner, which carries none of the toolchain the program shells out to - a converge would fail at Render with \"1Password CLI not found on PATH\".")
-	}
-	if !strings.Contains(m[1], "@sha256:") {
-		t.Errorf(`the runner scale set image %q is not pinned by digest.
-
-A tag can be moved by anyone who can push to the registry, so the estate would
-be converged by whatever that tag resolves to on the day - a change nothing in
-this repository would record or review. Use image@sha256:...; :latest is for
-humans reading the registry.`, m[1])
-	}
-}

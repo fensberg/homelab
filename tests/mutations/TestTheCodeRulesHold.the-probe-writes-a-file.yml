@@ -1,0 +1,9 @@
+guard: TestTheCodeRulesHold
+rule: the-vault-check-writes-no-files
+file: scripts/details/onepassword/probe.go
+reads_source: true
+find: "import (\n\t\"os/exec\"\n\t\"strings\"\n)\n"
+replace: "import (\n\t\"os\"\n\t\"os/exec\"\n\t\"strings\"\n)\n\nfunc keep(ref string, out []byte) { _ = os.WriteFile(ref, out, 0o600) }\n"
+mentions: "writes a file. The vault check writes nothing"
+why: >
+  The probe holds a value for a moment; writing it down leaves it on disk.

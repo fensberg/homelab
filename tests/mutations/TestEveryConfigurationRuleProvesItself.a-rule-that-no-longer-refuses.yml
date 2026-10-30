@@ -1,0 +1,12 @@
+guard: TestEveryConfigurationRuleProvesItself
+file: policy/conftest/rules/job_hardening/job_hardening.rego
+find: |
+  deny contains msg if {
+  	count(lib.jobs) == 0
+replace: |
+  deny contains msg if {
+  	count(lib.jobs) == -1
+mentions: "a configuration rule's own tests fail"
+why: >
+  A rule weakened until it refuses nothing passes every real file just the
+  same. Its own tests are what notice, and they must run.

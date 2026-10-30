@@ -1,0 +1,9 @@
+guard: TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake
+file: .github/pull-request-runner-image/Dockerfile
+find: "kwokctl opa opentofu pre-commit pre-commit-hooks regal semgrep shellcheck zizmor"
+replace: "kwokctl opa opentofu pre-commit pre-commit-hooks regal semgrep shellcheck"
+mentions: "take delivery of zizmor"
+why: >
+  An image that falls behind its jobs fails nothing. The job installs what
+  is missing, as it always could, on every run and on the pool's network -
+  and the image goes on being called the one with the tools in it.

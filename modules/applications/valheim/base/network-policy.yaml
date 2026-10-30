@@ -131,7 +131,7 @@ spec:
     # Widening to 10.0.0.0/8 is the obvious-looking fix for the next player who
     # cannot connect, looks symmetrical with the two ranges beside it, and
     # nothing about the manifest would object - so it is refused by
-    # TestTheGameServerCannotBeGivenAPathIntoTheEstate rather than by this
+    # TestNoApplicationCanBeGivenAPathIntoTheEstate rather than by this
     # paragraph, and that guard is proved in tests/mutations.yml.
     #
     # Both ranges are written whole rather than naming the house subnet, because

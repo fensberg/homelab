@@ -1,0 +1,9 @@
+guard: TestEveryProofStillFindsItsPlace
+file: tests/mutations/TestTheConfigurationRulesHold.EveryProviderIsADeclaredSupplier.e059c08e.yml
+find: "guard: TestTheConfigurationRulesHold\nrule: supplier_providers\n"
+replace: "guard: TestTheConfigurationRulesHold\n"
+mentions: "this entry has no rule, so it proves nothing"
+why: >
+  The configuration rules all run at once, so a failure with the right words
+  in it could be any rule's. A proof that names no rule cannot be held to the
+  one it is about.

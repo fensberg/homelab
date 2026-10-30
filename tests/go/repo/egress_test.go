@@ -1,8 +1,7 @@
 package repo
 
 import (
-	"os/exec"
-	"path/filepath"
+	"homelab/tests/parsed"
 	"strings"
 	"testing"
 )
@@ -19,22 +18,19 @@ import (
 // rule drift, and the copy that runs in CI would be the one nobody notices is
 // wrong.
 func TestEveryJobsEgressIsDeclaredInTheSuppliersList(t *testing.T) {
+	light(t)
 	// A workflow change arrives as a patch, and the suppliers list that must
 	// agree with it travels in the same patch, so the tree agrees with itself
 	// before the patch is applied and after.
-	root := repoRoot(t)
-
 	// -root, because the ledger runs this against a scratch copy of the
 	// repository that has no .git for the verb's walk upwards to find.
-	cmd := exec.Command("go", "run", "-C", filepath.Join(root, "scripts", "security"), ".",
-		"guard-egress", "-root", root)
-	cmd.Dir = root
-	out, err := cmd.CombinedOutput()
+	stdout, stderr, err := repository(t).Invoke(parsed.Run{Dir: "scripts/security"},
+		"go", "run", ".", "guard-egress", "-root", parsed.Here("."))
 	if err == nil {
 		return
 	}
 
-	body := string(out)
+	body := string(stdout) + string(stderr)
 	if strings.Contains(body, "no jobs were found") || strings.Contains(body, "declares no egress at all") {
 		t.Fatalf("guard-egress could not see the repository, so nothing was checked:\n%s", body)
 	}

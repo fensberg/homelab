@@ -1,0 +1,8 @@
+guard: TestEveryPlaceACodeRuleReadsIsProved
+file: policy/semgrep/site-names-text.yml
+find: "        - /taskfile.yml\n"
+replace: "        - /taskfile.yml\n        - /scripts/\n"
+mentions: "includes /scripts/, and no proof breaks a file there"
+why: >
+  A rule widened to a place no proof breaks a file in has not been shown to
+  read it; the place is a claim.

@@ -1,8 +1,9 @@
 package repo
 
 import (
+	"errors"
 	"fmt"
-	"os"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -24,7 +25,8 @@ import (
 // Held of every application's declaration, found by reading them all, so the
 // next workload that declares one is held to it too.
 func TestEveryDeclaredBackupNamesAContainerAndLabelsTheWorkloadHas(t *testing.T) {
-	root := repoRoot(t)
+	light(t)
+	tree := repository(t)
 	// Read by the contractor's own reader, so what is held to the manifest is
 	// exactly what a teardown would run.
 	//
@@ -32,21 +34,14 @@ func TestEveryDeclaredBackupNamesAContainerAndLabelsTheWorkloadHas(t *testing.T)
 	// none, and an estate with no application has none. What this refuses is
 	// proved against a declaration written here, in
 	// TestBackupProblemsNamesWhatADeclarationGetsWrong.
-	declarations, err := applications.Backups(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	declarations := tree.Backups(t)
 	for _, d := range declarations {
 		workload := filepath.Dir(d.Path)
 		containers, labels := map[string]bool{}, map[string]bool{}
 		for _, manifest := range tracked(t, func(m string) bool {
 			return strings.HasPrefix(m, workload+"/") && (strings.HasSuffix(m, ".yaml") || strings.HasSuffix(m, ".yml"))
 		}) {
-			body, err := os.ReadFile(filepath.Join(root, manifest))
-			if err != nil {
-				t.Fatal(err)
-			}
-			podTemplates(t, manifest, body, containers, labels)
+			podTemplates(t, manifest, tree.YAMLDocuments(t, manifest), containers, labels)
 		}
 		for _, problem := range backupProblems(d, containers, labels) {
 			t.Error(problem)
@@ -73,8 +68,9 @@ func backupProblems(d applications.BeforeTeardown, containers, labels map[string
 // backup in a sidecar the pod has, picked by labels it carries, is accepted,
 // and a container or a label the pod does not have is named.
 func TestBackupProblemsNamesWhatADeclarationGetsWrong(t *testing.T) {
+	light(t)
 	containers, labels := map[string]bool{}, map[string]bool{}
-	podTemplates(t, "thing.yaml", []byte("kind: ConfigMap\n---\nkind: Deployment\nspec:\n  template:\n    metadata:\n      labels: {app: thing, tier: data}\n    spec:\n      initContainers:\n        - name: saver\n      containers:\n        - name: server\n"), containers, labels)
+	podTemplates(t, "thing.yaml", fixtureDocuments(t, "kind: ConfigMap\n---\nkind: Deployment\nspec:\n  template:\n    metadata:\n      labels: {app: thing, tier: data}\n    spec:\n      initContainers:\n        - name: saver\n      containers:\n        - name: server\n"), containers, labels)
 	for name, c := range map[string]struct {
 		container, selector string
 		want                []string
@@ -101,10 +97,9 @@ func TestBackupProblemsNamesWhatADeclarationGetsWrong(t *testing.T) {
 // podTemplates collects, from one manifest, the name of every container a pod
 // template declares - init containers included, since a sidecar is one - and
 // every label a pod template carries, as "key=value".
-func podTemplates(t *testing.T, rel string, body []byte, containers, labels map[string]bool) {
+func podTemplates(t *testing.T, rel string, docs []any, containers, labels map[string]bool) {
 	t.Helper()
-	dec := yaml.NewDecoder(strings.NewReader(string(body)))
-	for {
+	for _, decoded := range docs {
 		var doc struct {
 			Spec struct {
 				Template struct {
@@ -122,9 +117,9 @@ func podTemplates(t *testing.T, rel string, body []byte, containers, labels map[
 				} `yaml:"template"`
 			} `yaml:"spec"`
 		}
-		// The end of the file, or a document that is not a workload's.
-		if dec.Decode(&doc) != nil {
-			return
+		// A document that is not a workload's has no pods to give.
+		if as(decoded, &doc) != nil {
+			continue
 		}
 		for _, c := range doc.Spec.Template.Spec.InitContainers {
 			containers[c.Name] = true
@@ -134,6 +129,36 @@ func podTemplates(t *testing.T, rel string, body []byte, containers, labels map[
 		}
 		for k, v := range doc.Spec.Template.Metadata.Labels {
 			labels[k+"="+v] = true
+		}
+	}
+}
+
+// as decodes a document already parsed into the shape a guard reads it as.
+func as(doc any, into any) error {
+	b, err := yaml.Marshal(doc)
+	if err != nil {
+		return err
+	}
+	return yaml.Unmarshal(b, into)
+}
+
+// fixtureDocuments is every document of YAML a test writes out, decoded: a fixture's
+// text, never a file's.
+func fixtureDocuments(t *testing.T, text string) []any {
+	t.Helper()
+	dec := yaml.NewDecoder(strings.NewReader(text))
+	var docs []any
+	for {
+		var doc any
+		err := dec.Decode(&doc)
+		if errors.Is(err, io.EOF) {
+			return docs
+		}
+		if err != nil {
+			t.Fatalf("a fixture is not YAML: %v", err)
+		}
+		if doc != nil {
+			docs = append(docs, doc)
 		}
 	}
 }

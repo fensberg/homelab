@@ -251,7 +251,8 @@ mutations:
       the startup budget runs out, and the server is restarted every
       fifteen minutes forever with a manifest that validates.
 
-  - guard: TestEverythingThatKeepsDataSaysWhatItHolds
+  - guard: TestTheConfigurationRulesHold
+    rule: holds
     file: modules/applications/valheim/application.json
     find: '"held_by": "PersistentVolumeClaim/world"'
     replace: '"held_by": "PersistentVolumeClaim/saves"'

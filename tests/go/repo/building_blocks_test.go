@@ -2,8 +2,6 @@ package repo
 
 import (
 	"go/ast"
-	"go/parser"
-	"go/scanner"
 	"go/token"
 	"os"
 	"path/filepath"
@@ -11,8 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 // Three shapes a non-reusable block takes, refused where they are found.
@@ -47,6 +43,7 @@ import (
 // longer has with its zero value and says nothing. The config's own top-level
 // keys are distinctive enough to find any second declaration of it.
 func TestTheConfigDocumentHasOneReader(t *testing.T) {
+	light(t)
 	const home = "scripts/contractor/config/"
 	// Keys only the management config uses. A struct field carrying either is
 	// a reader of that document, whatever the struct is named. Real struct tags
@@ -81,10 +78,7 @@ func TestTheConfigDocumentHasOneReader(t *testing.T) {
 // counts as json:"sites".
 func structTags(t *testing.T, rel string) map[string]bool {
 	t.Helper()
-	f, err := parser.ParseFile(token.NewFileSet(), rel, readRepoFile(t, rel), parser.SkipObjectResolution)
-	if err != nil {
-		t.Fatalf("parsing %s: %v", rel, err)
-	}
+	f := repository(t).Go(t, token.NewFileSet(), rel)
 	out := map[string]bool{}
 	ast.Inspect(f, func(n ast.Node) bool {
 		field, ok := n.(*ast.Field)
@@ -110,63 +104,6 @@ func structTags(t *testing.T, rel string) map[string]bool {
 
 // --- the repository root is found, not counted -----------------------------------
 
-// Nothing finds the repository root by counting directories.
-//
-// A fixed-depth climb is correct until the file holding it moves, and then it
-// is wrong without a word. Nine copies of that answer existed across three
-// modules, in two spellings - a chain of ".." and nested filepath.Dir - and the
-// guard's first version knew only the first, which let the one copy in the
-// shipped binary through. repopath.Root walks up to the marker instead.
-//
-// No debt: every copy has been replaced.
-func TestNothingFindsTheRepositoryByCountingDirectories(t *testing.T) {
-	found := map[string]bool{}
-	for _, rel := range goFiles(t) {
-		if climbsFixedDepth(t, rel) {
-			found[rel] = true
-		}
-	}
-	ratchet(t, "a fixed-depth climb to the repository root", found, map[string]bool{},
-		"Use repopath.Root or repopath.Join from homelab/details/repopath.")
-}
-
-// climbsFixedDepth reports whether a file climbs a fixed number of
-// directories, in either spelling: two ".." literals in a row, as
-// filepath.Join("..", "..", ...) takes, or filepath.Dir(filepath.Dir(...)).
-// Tokenized rather than matched, so explaining the pattern in a comment is not
-// a violation.
-func climbsFixedDepth(t *testing.T, rel string) bool {
-	t.Helper()
-	src := []byte(readRepoFile(t, rel))
-	var s scanner.Scanner
-	fset := token.NewFileSet()
-	s.Init(fset.AddFile(rel, -1, len(src)), src, nil, 0)
-
-	// The last seven tokens: enough to see Dir ( filepath . Dir.
-	var window []string
-	for {
-		_, tok, lit := s.Scan()
-		if tok == token.EOF {
-			return false
-		}
-		cur := tok.String()
-		if tok == token.STRING || tok == token.IDENT {
-			cur = lit
-		}
-		window = append(window, cur)
-		if len(window) > 7 {
-			window = window[1:]
-		}
-		n := len(window)
-		if n >= 3 && window[n-1] == `".."` && window[n-2] == "," && window[n-3] == `".."` {
-			return true
-		}
-		if n >= 7 && strings.Join(window[n-7:], " ") == "filepath . Dir ( filepath . Dir" {
-			return true
-		}
-	}
-}
-
 // --- a fact crossing a module boundary is declared once ----------------------------
 
 // A string restated in more than one Go module is a building block nobody
@@ -183,15 +120,13 @@ func climbsFixedDepth(t *testing.T, rel string) bool {
 // without deleting its entry, so the list only ever shrinks and every change
 // that shrinks it shows in its diff.
 func TestAFactCrossingAModuleBoundaryIsDeclared(t *testing.T) {
+	light(t)
 	crossing := crossModuleLiterals(t)
 
 	var declared struct {
 		Debt []string `yaml:"debt"`
 	}
-	raw := readRepoFile(t, "tests/building-block-debt.yml")
-	if err := yaml.Unmarshal([]byte(raw), &declared); err != nil {
-		t.Fatalf("tests/building-block-debt.yml does not parse: %v", err)
-	}
+	repository(t).YAMLInto(t, "tests/building-block-debt.yml", &declared)
 	debt := map[string]bool{}
 	for _, d := range declared.Debt {
 		if debt[d] {
@@ -280,46 +215,23 @@ func crossModuleLiterals(t *testing.T) map[string][]string {
 // declarations, unquoted.
 func stringLiterals(t *testing.T, rel string) []string {
 	t.Helper()
-	src := []byte(readRepoFile(t, rel))
-	var s scanner.Scanner
-	fset := token.NewFileSet()
-	s.Init(fset.AddFile(rel, -1, len(src)), src, nil, 0)
-
+	f := repository(t).Go(t, token.NewFileSet(), rel)
 	var out []string
-	inImport, depth := false, 0
-	for {
-		_, tok, lit := s.Scan()
-		switch tok {
-		case token.EOF:
-			return out
-		case token.IMPORT:
-			inImport = true
-			continue
-		case token.LPAREN:
-			if inImport {
-				depth++
+	ast.Inspect(f, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.ImportSpec:
+			return false
+		case *ast.BasicLit:
+			if n.Kind != token.STRING {
+				return true
 			}
-		case token.RPAREN:
-			if inImport {
-				depth--
-				if depth == 0 {
-					inImport = false
-				}
-			}
-		case token.SEMICOLON:
-			// A single-line import ends at its semicolon.
-			if inImport && depth == 0 {
-				inImport = false
-			}
-		case token.STRING:
-			if inImport {
-				continue
-			}
-			if v, err := strconv.Unquote(lit); err == nil {
+			if v, err := strconv.Unquote(n.Value); err == nil {
 				out = append(out, v)
 			}
 		}
-	}
+		return true
+	})
+	return out
 }
 
 // --- shared plumbing for the three -----------------------------------------------
@@ -329,7 +241,9 @@ func goFiles(t *testing.T) []string {
 	t.Helper()
 	var out []string
 	for _, rel := range trackedFiles(t) {
-		if strings.HasSuffix(rel, ".go") {
+		// A code rule's example is written to be refused and is compiled by
+		// no module: semgrep --test reads it (TestEveryCodeRuleProvesItself).
+		if strings.HasSuffix(rel, ".go") && !strings.HasPrefix(rel, semgrepExamples+"/") {
 			out = append(out, rel)
 		}
 	}

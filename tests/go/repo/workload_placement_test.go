@@ -221,6 +221,26 @@ var workloadPods = []workloadPod{
 		ContainerSecurityKey:  "securityContext",
 	},
 	{
+		What:                  "the listener for a pull request's job that every pull request waits on longest",
+		Release:               "pull-requests-builds-primary",
+		ChartVersion:          "0.14.2",
+		Values:                []string{"listenerTemplate", "spec"},
+		ResourcesInContainers: true,
+		Priority:              "critical",
+		PodSecurityKey:        "securityContext",
+		ContainerSecurityKey:  "securityContext",
+	},
+	{
+		What:                  "a runner for a pull request's job that every pull request waits on longest",
+		Release:               "pull-requests-builds-primary",
+		ChartVersion:          "0.14.2",
+		Values:                []string{"template", "spec"},
+		ResourcesInContainers: true,
+		Priority:              "interactive",
+		PodSecurityKey:        "securityContext",
+		ContainerSecurityKey:  "securityContext",
+	},
+	{
 		What:                  "the listener for a pull request's jobs that reach the package registries",
 		Release:               "pull-requests-packages",
 		ChartVersion:          "0.14.2",
@@ -419,11 +439,10 @@ type helmRelease struct {
 func readHelmReleases(t *testing.T, rel string) map[string]helmRelease {
 	t.Helper()
 	out := map[string]helmRelease{}
-	dec := yaml.NewDecoder(strings.NewReader(readRepoFile(t, rel)))
-	for {
+	for _, d := range repository(t).YAMLDocuments(t, rel) {
 		var doc helmRelease
-		if err := dec.Decode(&doc); err != nil {
-			break
+		if err := as(d, &doc); err != nil {
+			t.Fatalf("reading %s: %v", rel, err)
 		}
 		if doc.Kind == "HelmRelease" {
 			out[doc.Metadata.Name] = doc
@@ -481,6 +500,7 @@ func requestsAreComplete(t *testing.T, resources any) error {
 }
 
 func TestEveryWorkloadIsSizedPlacedAndGivenAPriority(t *testing.T) {
+	light(t)
 	declared := declaredPriorityClasses(t)
 
 	for _, w := range workloadPods {
@@ -616,16 +636,15 @@ func declaredPriorityClasses(t *testing.T) map[string]bool {
 	out := map[string]bool{}
 	// Found by a class it declares; every class in that file is read.
 	_, classes := fluxObject(t, capacity.KindPriorityClass, "critical")
-	dec := yaml.NewDecoder(strings.NewReader(classes))
-	for {
+	for _, d := range classes {
 		var doc struct {
 			Kind     string `yaml:"kind"`
 			Metadata struct {
 				Name string `yaml:"name"`
 			} `yaml:"metadata"`
 		}
-		if err := dec.Decode(&doc); err != nil {
-			break
+		if err := as(d, &doc); err != nil {
+			t.Fatalf("reading a priority class: %v", err)
 		}
 		if doc.Kind == capacity.KindPriorityClass {
 			out[doc.Metadata.Name] = true
@@ -644,6 +663,7 @@ func declaredPriorityClasses(t *testing.T) map[string]bool {
 // like adding a chart that is fine. That is the shape of every guard this
 // repository has had to repair: silence and success were indistinguishable.
 func TestEveryHelmReleaseSaysWhereItsPodSpecLives(t *testing.T) {
+	light(t)
 	described := map[string]bool{}
 	for _, w := range workloadPods {
 		described[w.file(t)+"#"+w.Release] = true
@@ -657,7 +677,7 @@ func TestEveryHelmReleaseSaysWhereItsPodSpecLives(t *testing.T) {
 	// authoredHere drops flux-system, which holds Flux's own generated install:
 	// not a HelmRelease at all, and checked separately below.
 	for _, rel := range trackedMatching(t, func(rel string) bool {
-		return authoredHere(rel) && strings.HasPrefix(rel, "clusters/") &&
+		return authoredHere(t, rel) && strings.HasPrefix(rel, "clusters/") &&
 			strings.HasSuffix(rel, ".yaml")
 	}) {
 		for name := range readHelmReleases(t, rel) {
@@ -716,6 +736,7 @@ are the same silence from here.`, len(undescribed), strings.Join(undescribed, "\
 // builds perfectly and covers three controllers, or none, because a Flux
 // upgrade renamed one or added a fifth.
 func TestEveryFluxControllerIsPlacedAndGivenAPriority(t *testing.T) {
+	light(t)
 	declared := declaredPriorityClasses(t)
 	install, components := fluxObject(t, fluxInstallKind, fluxInstallName)
 	overlay := beside(install, applications.Kustomization)
@@ -733,11 +754,10 @@ func TestEveryFluxControllerIsPlacedAndGivenAPriority(t *testing.T) {
 		} `yaml:"spec"`
 	}
 	deployments := map[string]map[string]any{}
-	dec := yaml.NewDecoder(strings.NewReader(components))
-	for {
+	for _, d := range components {
 		var doc deployment
-		if err := dec.Decode(&doc); err != nil {
-			break
+		if err := as(d, &doc); err != nil {
+			t.Fatalf("reading the generated install: %v", err)
 		}
 		if doc.Kind == "Deployment" {
 			deployments[doc.Metadata.Name] = doc.Spec.Template.Spec
@@ -757,9 +777,7 @@ func TestEveryFluxControllerIsPlacedAndGivenAPriority(t *testing.T) {
 			Patch string `yaml:"patch"`
 		} `yaml:"patches"`
 	}
-	if err := yaml.Unmarshal([]byte(readRepoFile(t, overlay)), &k); err != nil {
-		t.Fatalf("parsing %s: %v", overlay, err)
-	}
+	repository(t).YAMLInto(t, overlay, &k)
 	for _, p := range k.Patches {
 		if p.Target.Kind != "Deployment" {
 			continue
@@ -821,8 +839,8 @@ anything that fails a build.`, name, overlay)
 	}
 }
 
-// Generic since a second caller wanted it over a different value type
-// (talos_listeners_test.go). One helper rather than two that sort the same way.
+// Generic, so that it serves a map of any value type: one helper rather than
+// two that sort the same way.
 func sortedKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
@@ -850,6 +868,7 @@ func sortedKeys[V any](m map[string]V) []string {
 // was checked in, so a chart bump re-opens the question instead of carrying
 // the old answer forward.
 func TestEveryWorkloadRequiresItsSecurityPropertiesRatherThanInheritingThem(t *testing.T) {
+	light(t)
 	for _, w := range workloadPods {
 		t.Run(w.What, func(t *testing.T) {
 			if w.PodSecurityKey == "" && w.ContainerSecurityKey == "" {

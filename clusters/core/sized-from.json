@@ -98,6 +98,12 @@
         "basis": "A guess, and a low one on purpose: the zone's machine has about 3 GiB for work, and at what the estate's other runners ask it would hold one runner. For jobs that build; nothing has run in this pool yet, and what its jobs use is to be read off the machine once the first of them does."
       }
     },
+    "HelmRelease/pull-requests-builds-primary": {
+      "*": {
+        "kind": "estimate",
+        "basis": "One of the builds pool's runners, moved to a pool of its own on 2026-10-23, at the builds pool's size: two gibibytes and one core, for the job every pull request waits on longest. Not yet read off the machine for that job alone."
+      }
+    },
     "HelmRelease/pull-requests-packages": {
       "*": {
         "kind": "estimate",

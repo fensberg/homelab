@@ -1,0 +1,11 @@
+guard: TestTheConfigurationRulesHold
+rule: rendered_platform_dependencies
+file: modules/infrastructure/platform/tunnel.tf
+find: "resource \"kubernetes_namespace\" \"tunnel\" {\n  metadata {\n    name = \"tunnel\"\n"
+replace: "resource \"kubernetes_namespace\" \"tunnel\" {\n  metadata {\n    name = \"tunnels\"\n"
+mentions: "needs the Namespace tunnel, which the release a site runs makes and the checkout's modules no longer do"
+why: >
+  The platform module stops making a namespace what Flux applies is in. The
+  site runs the release that still makes it, so nothing breaks on the merge;
+  it breaks when the site's line moves, a long way from the change that did
+  it.

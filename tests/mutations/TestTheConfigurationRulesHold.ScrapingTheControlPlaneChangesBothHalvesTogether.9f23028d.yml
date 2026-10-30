@@ -1,0 +1,11 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_control_plane_metrics
+file: config/facts/control-plane-listeners.json
+find: '"argument": "listen-metrics-urls",'
+replace: '"argument": "listen-metrics-urls-disabled",'
+mentions: "not every control plane's configuration sets cluster.etcd.extraArgs.listen-metrics-urls"
+why: >
+  The chart scraping etcd and Talos exposing it are two changes in two
+  tiers, applied by two different mechanisms. Losing the machine
+  configuration half leaves a target permanently red, which is how a
+  cluster teaches everybody to stop reading red targets.

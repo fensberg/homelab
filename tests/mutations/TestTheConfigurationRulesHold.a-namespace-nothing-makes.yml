@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: rendered_platform_dependencies
+file: clusters/core/infrastructure/configs/runner-scale-set.yaml
+find: "  name: a-converge-in-flight\n  namespace: arc-runners\n"
+replace: "  name: a-converge-in-flight\n  namespace: arc-runner\n"
+mentions: "needs the Namespace arc-runner, and nothing makes it"
+why: >
+  An object put in a namespace nothing makes is refused when Flux applies
+  it, and with it the layer it is in. A namespace misspelt is the plausible
+  way to get there.

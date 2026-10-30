@@ -1,14 +1,11 @@
 package repo
 
 import (
-	"os"
-	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 
-	"gopkg.in/yaml.v3"
+	"homelab/tests/parsed"
 )
 
 // The CNI this estate runs is not the one Talos ships, and four things have to
@@ -17,12 +14,15 @@ import (
 // than as an error.
 //
 // See docs/epochs/03-workload.md, "Cilium arrives from OpenTofu, between
-// bootstrap and the health gate".
+// bootstrap and the health gate". That the health gate waits for it, that its
+// agent reaches every node, that its MTU is pinned and that its addresses come
+// from Kubernetes are configuration rules (policy/conftest/rules/cni,
+// cni_mtu and cni_ipam); that every machine turns the built-in CNI and
+// kube-proxy off and declares KubePrism on Cilium's port are rules over the
+// plan (policy/conftest/rules/plan_builtin_cni_off/plan_builtin_cni_off.rego, plan_kubeprism.rego). What
+// is left here is the render.
 
-const (
-	cniApply   = "terraform_data.cilium"
-	cniVersion = "CILIUM_VERSION"
-)
+const cniVersion = "CILIUM_VERSION"
 
 // The rendered CNI manifest, found by the agent it declares, and the values it
 // was rendered from, which sit beside it.
@@ -32,190 +32,40 @@ func cniPath(t *testing.T) string {
 	return path
 }
 
-func cniBody(t *testing.T) string {
+// cniImages is every image the rendered CNI manifest runs: each value
+// under an image key, in every document of the file.
+func cniImages(t *testing.T) []string {
 	t.Helper()
-	_, body := fluxObject(t, cniKind, cniName)
-	return body
-}
-
-func cniValuesPath(t *testing.T) string {
-	t.Helper()
-	return beside(cniPath(t), "cilium-values.yaml")
-}
-
-// hclBlock returns the text of the top-level block whose header line starts
-// with prefix, from that line to the closing brace in column zero.
-//
-// Regex over HCL is crude and is chosen deliberately over parsing: the
-// alternative is a third-party HCL library in a module whose whole point is
-// that it has no third-party anything.
-func hclBlock(t *testing.T, body, prefix string) string {
-	t.Helper()
-	lines := strings.Split(body, "\n")
-	for i, line := range lines {
-		if !strings.HasPrefix(line, prefix) {
-			continue
-		}
-		for j := i + 1; j < len(lines); j++ {
-			if lines[j] == "}" {
-				return strings.Join(lines[i:j+1], "\n")
-			}
-		}
-		t.Fatalf("block %q is never closed by a brace in column zero", prefix)
-	}
-	t.Fatalf("no top-level block starting %q found.\n\n"+
-		"If it was renamed, this test needs to move with it - it is asserting an "+
-		"ordering constraint, not a spelling.", prefix)
-	return ""
-}
-
-// Nothing may ask whether the cluster is healthy before the CNI is installed.
-//
-// A node with no CNI never reaches Ready. `data.talos_cluster_health` waits for
-// every node to be Ready and is given a ten-minute timeout, so removing this
-// dependency does not produce an error - it produces an ignition that appears
-// to hang, ten minutes from the phase that was actually at fault.
-//
-// This is the single edge holding the sequence together: bootstrap, apply the
-// CNI, nodes go Ready, gate passes. It is one line, and deleting it is the kind
-// of tidy-up that looks harmless in a diff.
-func TestTheHealthGateWaitsForTheCNI(t *testing.T) {
-	talosFile, talos := tofuDeclaring(t, declClusterHealth)
-	block := hclBlock(t, talos, declClusterHealth)
-
-	if !strings.Contains(block, cniApply) {
-		t.Errorf("%s: the health gate does not depend on %s.\n\n"+
-			"Talos is configured with no built-in CNI, so no node reaches Ready until "+
-			"Cilium is applied. Without this edge the gate starts first and waits its "+
-			"full ten-minute timeout before failing, blaming the cluster rather than "+
-			"the missing dependency.\n\nAdd %s to its depends_on.",
-			talosFile, cniApply, cniApply)
-	}
-}
-
-// The built-in CNI and kube-proxy must both be off, and off together.
-//
-// These are two settings and one decision. Talos ships Flannel and kube-proxy;
-// Cilium replaces both. Disabling one without the other leaves either two CNIs
-// fighting over pod networking, or kube-proxy and Cilium both programming
-// service routing - and the second is the quieter of the two failures.
-func TestTheClusterDeclaresNoBuiltInCNIAndNoKubeProxy(t *testing.T) {
-	talosFile, body := tofuDeclaring(t, declMachineConfig)
-
-	// yamlencode renders these as nested YAML keys, so assert on the HCL that
-	// produces them rather than on rendered output nobody can see from here.
-	cniOff := regexp.MustCompile(`(?s)cni\s*=\s*\{[^}]*name\s*=\s*"none"`)
-	proxyOff := regexp.MustCompile(`(?s)proxy\s*=\s*\{[^}]*disabled\s*=\s*true`)
-
-	if !cniOff.MatchString(body) {
-		t.Errorf("%s: the cluster does not set cluster.network.cni.name = \"none\".\n\n"+
-			"Talos would then install Flannel, which enforces no NetworkPolicy - the "+
-			"whole reason this estate moved to Cilium. Two CNIs would also both claim "+
-			"pod networking.", talosFile)
-	}
-	if !proxyOff.MatchString(body) {
-		t.Errorf("%s: the cluster does not set cluster.proxy.disabled = true.\n\n"+
-			"Cilium is configured with kubeProxyReplacement, so leaving kube-proxy "+
-			"running means two things programming service routing on every node.",
-			talosFile)
-	}
-}
-
-// KubePrism is declared even though Talos enables it by default.
-//
-// With kube-proxy gone, every Cilium agent reaches the API server through
-// KubePrism on localhost:7445. That is load-bearing: the alternative address is
-// the cluster endpoint, which this estate hardcodes to one control plane
-// (#316), and using it would turn a known API single point of failure into a
-// pod-network one.
-//
-// Relying on an upstream default for that is a blind spot. The day it changes,
-// the pod network fails and nothing in this repository ever said it was
-// required.
-func TestKubePrismIsDeclaredRatherThanAssumed(t *testing.T) {
-	talosFile, body := tofuDeclaring(t, declMachineConfig)
-
-	// Every collection of machine patches that is a machine's whole list, so
-	// a machine class added later cannot quietly skip it. There were two
-	// such lists, a zone's and everybody else's, and this judged each. There
-	// is one now, which every kind of machine is configured from
-	// (TestEveryKindOfMachineIsConfiguredFromTheOneList holds that), and a
-	// second collection is a fragment added to it: what makes a zone's
-	// machine the zone's. A fragment declares nothing of its own and is told
-	// from a list by being one the whole list draws on.
-	all := regexp.MustCompile(`(?m)^  ([a-z_]*patches) = \{`).FindAllStringSubmatch(body, -1)
-	allBlocks := regexp.MustCompile(`(?m)^  [a-z_]*patches = \{`).Split(body, -1)[1:]
-	var sets [][]string
-	var blocks []string
-	for i, name := range all {
-		fragment := false
-		for j, other := range allBlocks {
-			fragment = fragment || (j != i && strings.Contains(other, "local."+name[1]+"["))
-		}
-		if !fragment {
-			sets, blocks = append(sets, name), append(blocks, allBlocks[i])
+	_, docs := fluxObject(t, cniKind, cniName)
+	var out []string
+	for _, v := range parsed.Scalars(docs) {
+		if v.Key() == "image" {
+			out = append(out, v.Value)
 		}
 	}
-	if len(sets) == 0 {
-		t.Fatalf("found no machine-patch collection in %s, so this checked nothing", talosFile)
-	}
-
-	// Each is judged on its own contents.
-	for i, name := range sets {
-		block := blocks[i]
-		if !strings.Contains(block, "kubePrism") {
-			t.Errorf("%s: %s never declares KubePrism.\n\n"+
-				"With kube-proxy gone there is no ClusterIP for these machines' agents to "+
-				"reach the API through, and the alternative address is one control plane "+
-				"(#316). It is enabled by default, which is exactly why it is written "+
-				"down: a default is not a declaration.", talosFile, name[1])
-			continue
-		}
-		if !strings.Contains(block, "7445") {
-			t.Errorf("%s: %s declares KubePrism without naming port 7445.\n\n"+
-				"The Cilium values in %s point k8sServicePort at 7445. If the port moves, "+
-				"every half has to move with it.", talosFile, name[1], cniValuesPath(t))
-		}
-	}
+	return out
 }
 
-// The committed manifest must be the one the pinned chart version renders.
-//
-// The manifest is generated by `task render-cni` and committed so its image
-// digests are reviewable and the supplier guard can read them. A generated file
-// that nobody can prove is current is worse than no file: it silently becomes
-// the source of truth while claiming to be a copy.
-//
-// The header alone would be a change detector - a comment anyone can edit. The
-// image tags are the evidence that cannot be faked without changing what
-// actually gets deployed, so both are checked and the tags are what would catch
-// a bumped version and a forgotten re-render.
 func TestTheRenderedCNIManifestMatchesThePinnedChartVersion(t *testing.T) {
-	root := repoRoot(t)
+	heavy(t, "semgrep reads the rendered file's header, a few seconds")
+	want := pinned(t, cniVersion)
 
-	env, err := os.ReadFile(filepath.Join(root, "scripts", "versions.env"))
-	if err != nil {
-		t.Fatalf("reading versions.env: %v", err)
-	}
-	pin := regexp.MustCompile(`(?m)^` + cniVersion + `=(.+)$`).FindStringSubmatch(string(env))
-	if pin == nil {
-		t.Fatalf("scripts/versions.env declares no %s.\n\n"+
-			"Every version this estate takes is pinned in that one file.", cniVersion)
-	}
-	want := strings.TrimSpace(pin[1])
-
-	manifest := cniBody(t)
-
-	if !strings.Contains(manifest, "cilium "+want) {
+	if !strings.Contains(header(t, cniPath(t)), "cilium "+want) {
 		t.Errorf("%s: its provenance header does not name chart version %s.\n\n"+
 			"Re-render it with `task render-cni`.", cniPath(t), want)
 	}
 
 	// cilium-envoy carries its own upstream version and is deliberately not
 	// checked here; the agent and the operator are the chart's own images.
-	tagged := regexp.MustCompile(`quay\.io/cilium/(cilium|operator-generic):v([0-9][^@"\s]*)`)
+	tagged := regexp.MustCompile(`^quay\.io/cilium/(cilium|operator-generic):v([0-9][^@]*)(@sha256:[0-9a-f]{64})?$`)
 	found := 0
-	for _, m := range tagged.FindAllStringSubmatch(manifest, -1) {
+	var images [][]string
+	for _, image := range cniImages(t) {
+		if m := tagged.FindStringSubmatch(image); m != nil {
+			images = append(images, m)
+		}
+	}
+	for _, m := range images {
 		found++
 		if m[2] != want {
 			t.Errorf("%s: image %s is tagged v%s, but %s pins %s.\n\n"+
@@ -227,138 +77,5 @@ func TestTheRenderedCNIManifestMatchesThePinnedChartVersion(t *testing.T) {
 	if found == 0 {
 		t.Fatalf("%s contains no quay.io/cilium image references, so this test proves nothing.\n\n"+
 			"Either the manifest is empty or the images moved registry.", cniPath(t))
-	}
-}
-
-// Every node gets an agent, including one that is tainted.
-//
-// This is the DMZ node's readiness, asserted before that node exists.
-//
-// docs/epochs/03-workload.md puts the untrusted workload on a dedicated worker
-// carrying a NoSchedule taint, with the toleration held only by workloads in
-// that zone - deliberately, so the scheduler cannot quietly widen the blast
-// radius by putting something else there. A CNI is the one thing that must
-// ignore that rule: a node with no agent has no pod network, never reaches
-// Ready, and never joins the cluster at all.
-//
-// So the agent DaemonSet tolerating every taint is load-bearing rather than
-// sloppy. This estate has refused a blanket `operator: Exists` toleration
-// before - on an unpinned debug image proposed for a control plane - and the
-// distinction is worth stating: there it was a convenience that widened where
-// untrusted code could run, here it is the condition on a machine having a
-// network. If a chart version or a values change ever drops it, the DMZ node
-// will simply never come up, and nothing else in this repository would say why.
-func TestTheCNIReachesEveryNodeIncludingTaintedOnes(t *testing.T) {
-	var checked int
-
-	for _, doc := range strings.Split(cniBody(t), "\n---\n") {
-		var d struct {
-			Kind     string `yaml:"kind"`
-			Metadata struct {
-				Name string `yaml:"name"`
-			} `yaml:"metadata"`
-			Spec struct {
-				Template struct {
-					Spec struct {
-						Tolerations []struct {
-							Key      string `yaml:"key"`
-							Operator string `yaml:"operator"`
-						} `yaml:"tolerations"`
-					} `yaml:"spec"`
-				} `yaml:"template"`
-			} `yaml:"spec"`
-		}
-		if err := yaml.Unmarshal([]byte(doc), &d); err != nil {
-			continue // not a document this test has anything to say about
-		}
-		if d.Kind != "DaemonSet" || d.Metadata.Name != "cilium" {
-			continue
-		}
-		checked++
-
-		blanket := false
-		for _, tol := range d.Spec.Template.Spec.Tolerations {
-			// No key plus Exists is "tolerate everything". A keyed toleration
-			// covers one taint, which is exactly the regression this catches:
-			// it looks correct and silently excludes the zone it was not told
-			// about.
-			if tol.Key == "" && tol.Operator == "Exists" {
-				blanket = true
-			}
-		}
-		if !blanket {
-			t.Errorf("%s: the cilium DaemonSet does not tolerate every taint.\n\n"+
-				"A tainted node would get no agent, and a node with no CNI never "+
-				"reaches Ready - so it would never join the cluster. The untrusted "+
-				"zone in docs/epochs/03-workload.md is a NoSchedule-tainted worker, "+
-				"so this is the line that lets it exist at all.", cniPath(t))
-		}
-	}
-
-	if checked == 0 {
-		t.Fatalf("%s contains no DaemonSet named cilium, so this test proves nothing.\n\n"+
-			"Either the manifest is empty or the agent was renamed.", cniPath(t))
-	}
-}
-
-// The pod MTU is pinned, and the rendered manifest carries the number.
-//
-// Since v1.17 Cilium hands every pod the LOWEST link MTU it finds on the node.
-// These nodes carry `tailscale0` at 1280, which is not how a pod reaches
-// anything: pod traffic leaves over eth0 at 1450. Detection therefore sizes
-// every pod for an interface it does not use.
-//
-// The damage is not only lost throughput. 1280 minus Cilium's tunnel overhead
-// is 1230, below the 1252-byte initial packet quic-go insists on, so every
-// QUIC handshake from the tunnel connector timed out and it fell back to
-// HTTP/2 - which carries no UDP, and so cannot serve the game server (#455).
-// Cilium tracks the regression as cilium/cilium#37529, open and unfixed on
-// 1.18, and `MTU` is the escape hatch its maintainers point at.
-//
-// So the value is declared, and the committed render has to agree with it: a
-// value edited without `task render-cni` is a pin that changes nothing, and
-// the cluster keeps whatever the last render said.
-var (
-	pinnedMTUValue    = regexp.MustCompile(`(?m)^MTU:\s*(\d+)\s*$`)
-	renderedMTUConfig = regexp.MustCompile(`(?m)^\s+mtu:\s*"(\d+)"\s*$`)
-)
-
-func TestThePodMTUIsPinnedRatherThanDetected(t *testing.T) {
-	values := readRepoFile(t, cniValuesPath(t))
-	m := pinnedMTUValue.FindStringSubmatch(values)
-	if m == nil {
-		t.Fatal(`clusters/bootstrap/cilium-values.yaml pins no MTU.
-
-Cilium then detects one, and on these nodes it detects tailscale0's 1280 and
-gives it to every pod. That is below what quic-go will start a connection
-with once Cilium's tunnel overhead comes off it, so the tunnel connector
-cannot use QUIC, and without QUIC it carries no UDP at all (#455,
-cilium/cilium#37529).
-
-Pin MTU to the MTU of the interface pods actually leave by, and re-render.`)
-	}
-	pinned, err := strconv.Atoi(m[1])
-	if err != nil {
-		t.Fatalf("the pinned MTU %q is not a number: %v", m[1], err)
-	}
-	// 1280 is the floor quic-go's initial packet plus Cilium's tunnel
-	// overhead needs; anything at or below it puts the connector back on the
-	// HTTP/2 fallback with no UDP.
-	if pinned <= 1280 {
-		t.Errorf("the pinned MTU is %d, which leaves less than quic-go's 1252-byte initial packet "+
-			"once Cilium's tunnel overhead comes off it. The tunnel connector would fall back to "+
-			"HTTP/2 and carry no UDP (#455).", pinned)
-	}
-
-	rendered := cniBody(t)
-	r := renderedMTUConfig.FindStringSubmatch(rendered)
-	if r == nil {
-		t.Fatal("clusters/bootstrap/cilium.yaml carries no mtu in its config, so the pinned value " +
-			"never reached the manifest. Re-render with `task render-cni`.")
-	}
-	if r[1] != m[1] {
-		t.Errorf("cilium-values.yaml pins MTU %s and the committed manifest says %s.\n\n"+
-			"The cluster runs the manifest, so the pin is not in effect. Re-render with "+
-			"`task render-cni`.", m[1], r[1])
 	}
 }

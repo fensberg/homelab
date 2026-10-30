@@ -1,0 +1,34 @@
+{
+  "_comment": [
+    "Every bucket a site is granted, in the order a reader should meet them:",
+    "the cluster's own working data first, then what outlives it. The estate",
+    "creates one bucket per key and grants a site a credential for each",
+    "(management/estate/site/object-storage.tf); the contractor knows which",
+    "granted bucket is which, and which one a teardown empties, from the Go",
+    "generated from this file. The reasons each is its own bucket, and why",
+    "only the workload buckets split by environment, are beside the",
+    "contractor's reading of it, scripts/contractor/config/buckets.go."
+  ],
+  "granted": [
+    {
+      "key": "database",
+      "emptied_at_teardown": true,
+      "holds": "the state database's WAL archive and base backups"
+    },
+    {
+      "key": "state",
+      "emptied_at_teardown": false,
+      "holds": "age-encrypted OpenTofu state dumps"
+    },
+    {
+      "key": "staging",
+      "emptied_at_teardown": false,
+      "holds": "staging workload data"
+    },
+    {
+      "key": "production",
+      "emptied_at_teardown": false,
+      "holds": "production workload data"
+    }
+  ]
+}

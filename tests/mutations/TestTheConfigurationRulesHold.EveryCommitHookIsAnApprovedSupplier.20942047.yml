@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: supplier_hooks
+file: .pre-commit-config.yaml
+find: "repos:"
+replace: "repos:\n  - repo: https://github.com/example/undeclared\n    rev: v1.0.0\n    hooks:\n      - id: whatever"
+mentions: "approved-suppliers"
+why: >
+  This is the static half of the delivery gate - the half CI can answer
+  without cloning anything. If it stops noticing an undeclared repository,
+  an unapproved supplier reaches every developer's machine and the runner.

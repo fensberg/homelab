@@ -1,0 +1,15 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_pool_destroy_order
+file: modules/infrastructure/cluster/pools.tf
+find: "vm_id   = proxmox_virtual_environment_vm.talos_worker[each.key].vm_id"
+replace: "vm_id   = each.value.vm_id"
+mentions: "creates no dependency edge"
+why: >
+  The number is identical either way, so nothing about the estate that gets
+  built changes and no plan looks different. What is lost is the ordering on
+  destroy: without the edge OpenTofu deletes the membership and the machine
+  concurrently, Proxmox drops a destroyed VM out of its pool as a side
+  effect, and the delete that loses the race asks the API to remove a VM
+  that is no longer a member. Proxmox answers HTTP 500 and the teardown
+  stops half-done, leaving state and secrets in place on purpose. It failed
+  exactly this way twice in one session.

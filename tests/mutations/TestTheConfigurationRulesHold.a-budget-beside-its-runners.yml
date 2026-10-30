@@ -1,0 +1,11 @@
+guard: TestTheConfigurationRulesHold
+rule: runner_namespaces
+file: clusters/core/infrastructure/configs/runner-scale-set.yaml
+find: "  name: a-converge-in-flight\n  namespace: arc-runners\n"
+replace: "  name: a-converge-in-flight\n  namespace: arc-systems\n"
+mentions: 'which are in "arc-runners", from "arc-systems"'
+why: >
+  The budget that keeps a converge's runner from being evicted mid-apply
+  selects only in its own namespace. Moved away from the runners, it
+  applies cleanly, protects nothing, and the next drain stops a converge
+  half way.

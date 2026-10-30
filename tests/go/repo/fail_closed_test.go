@@ -3,9 +3,7 @@ package repo
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -47,11 +45,7 @@ import (
 var skipIsHonest = map[string]string{
 	"mutation_ledger_test.go": "the ledger runs each guard twice - once as the harness " +
 		"and once as the subject - and the inner run must not recurse. The skip is " +
-		"keyed on repoRootEnv, which only the harness sets.",
-
-	"build_artifacts_test.go": "one skip, keyed on the same repoRootEnv: the ledger's " +
-		"scratch tree is deliberately not a git repository, so there is no working " +
-		"tree to ask git about. Every other git failure is a Fatal.",
+		"keyed on parsed.Inner, which only the harness's runs answer yes to.",
 
 	"heavy_test.go": "a guard that costs seconds skips only under -short, which is the " +
 		"pre-push hook's budget, and says so with its reason. TestHeavyGuardsRunOnEveryPullRequest " +
@@ -66,27 +60,21 @@ var skipIsHonest = map[string]string{
 }
 
 func TestNoGuardSkipsWithoutSayingWhyItIsHonest(t *testing.T) {
-	dir := filepath.Join(repoRoot(t), "tests", "go", "repo")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("reading %s: %v", dir, err)
-	}
-
+	light(t)
+	tree := repository(t)
 	fset := token.NewFileSet()
 	skipping := map[string]int{}
 	examined := 0
 
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), "_test.go") {
+	for _, rel := range tree.Files(t) {
+		if filepath.Dir(rel) != guardsDir || !strings.HasSuffix(rel, "_test.go") {
 			continue
 		}
-		if e.Name() == "fail_closed_test.go" {
+		name := filepath.Base(rel)
+		if name == "fail_closed_test.go" {
 			continue // this file names the call in order to refuse it
 		}
-		f, parseErr := parser.ParseFile(fset, filepath.Join(dir, e.Name()), nil, 0)
-		if parseErr != nil {
-			t.Fatalf("parsing %s: %v", e.Name(), parseErr)
-		}
+		f := tree.Go(t, fset, rel)
 		examined++
 
 		ast.Inspect(f, func(n ast.Node) bool {
@@ -96,7 +84,7 @@ func TestNoGuardSkipsWithoutSayingWhyItIsHonest(t *testing.T) {
 			}
 			switch callName(call) {
 			case "t.Skip", "t.Skipf", "t.SkipNow":
-				skipping[e.Name()]++
+				skipping[name]++
 			}
 			return true
 		})
@@ -243,42 +231,31 @@ func looksLikeAnErrorCheck(cond ast.Expr) bool {
 //
 // Found by this guard on the day it was written: 25 across 13 files.
 var droppedErrors = map[string]int{
-	"build_artifacts_test.go":    2,
-	"cni_test.go":                1,
-	"duplicates_test.go":         1,
-	"estate_surfaces_test.go":    2,
-	"gitops_test.go":             1,
-	"go_invocation_test.go":      4,
-	"mutation_ledger_test.go":    5,
-	"pinned_endpoints_test.go":   2,
-	"placeholder_config_test.go": 1,
-	"recovery_paths_test.go":     1,
-	"sensitivepaths_test.go":     1,
-	"workload_placement_test.go": 3,
+	"build_artifacts_test.go": 2,
+	"mutation_ledger_test.go": 2,
+	"sensitivepaths_test.go":  1,
 }
 
 // The ceiling on the whole debt. It may only fall.
-const droppedErrorCeiling = 26
+const droppedErrorCeiling = 5
 
 func TestNoGuardDropsAnErrorFromItsOwnSubject(t *testing.T) {
-	dir := filepath.Join(repoRoot(t), "tests", "go", "repo")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("reading %s: %v", dir, err)
-	}
-
+	light(t)
+	// The guards, and the package they read the repository through: an error
+	// dropped in the reader is dropped for every guard reading through it.
+	tree := repository(t)
 	fset := token.NewFileSet()
 	dropping := map[string][]int{}
 	examined := 0
 
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), "_test.go") || e.Name() == "fail_closed_test.go" {
+	for _, rel := range tree.Files(t) {
+		guard := filepath.Dir(rel) == guardsDir && strings.HasSuffix(rel, "_test.go")
+		reader := filepath.Dir(rel) == readerDir && strings.HasSuffix(rel, ".go")
+		if !guard && !reader || filepath.Base(rel) == "fail_closed_test.go" {
 			continue
 		}
-		f, parseErr := parser.ParseFile(fset, filepath.Join(dir, e.Name()), nil, 0)
-		if parseErr != nil {
-			t.Fatalf("parsing %s: %v", e.Name(), parseErr)
-		}
+		name := filepath.Base(rel)
+		f := tree.Go(t, fset, rel)
 		examined++
 
 		ast.Inspect(f, func(n ast.Node) bool {
@@ -287,7 +264,7 @@ func TestNoGuardDropsAnErrorFromItsOwnSubject(t *testing.T) {
 				return true
 			}
 			if swallowsTheError(ifStmt.Body) {
-				dropping[e.Name()] = append(dropping[e.Name()], fset.Position(ifStmt.Pos()).Line)
+				dropping[name] = append(dropping[name], fset.Position(ifStmt.Pos()).Line)
 			}
 			return true
 		})

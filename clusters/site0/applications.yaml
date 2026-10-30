@@ -36,11 +36,11 @@ spec:
   interval: 1m
   # No secretRef. The release packages are public, like the images they pin,
   # and a secretRef naming a secret nothing creates fails the source closed
-  # rather than falling back to anonymous access (flux_source_secret_test.go).
+  # rather than falling back to anonymous access (policy/conftest/rules/plan_flux_source_secret/plan_flux_source_secret.rego).
   url: oci://${RELEASE_REPOSITORY}-valheim-release
   ref:
-    tag: "1.0.20-1"
-    digest: "sha256:2a8f327c88ea9cf9d0c84ffdef6a53ea269fd70bd1f3822ed8faea23691300d4"
+    tag: "1.0.20-4"
+    digest: "sha256:9589ac0b413e65ed565bf688668dcec1531900aea68d66e481dbf440fda333ee"
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
