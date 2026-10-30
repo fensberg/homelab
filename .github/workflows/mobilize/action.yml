@@ -61,12 +61,6 @@ inputs:
     description: How much history to check out; 0 is all of it.
     required: false
     default: "1"
-  fetch-tags:
-    description: >-
-      "true" to fetch the release tags too, for a lane that plans a site with
-      the release it runs (#843).
-    required: false
-    default: "false"
 
 outputs:
   held:
@@ -221,4 +215,3 @@ runs:
       uses: $/.github/workflows/checkout
       with:
         fetch-depth: ${{ inputs.fetch-depth }}
-        fetch-tags: ${{ inputs.fetch-tags }}
