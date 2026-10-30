@@ -23,6 +23,13 @@ inputs:
     description: How much history to check out; 0 is all of it.
     required: false
     default: "1"
+  fetch-tags:
+    description: >-
+      "true" to fetch the release tags as well, each at the same depth: a
+      lane whose rules plan a site with the release it runs reads that
+      release's files from its tag.
+    required: false
+    default: "false"
 
 runs:
   using: composite
@@ -31,4 +38,5 @@ runs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         fetch-depth: ${{ inputs.fetch-depth }}
+        fetch-tags: ${{ inputs.fetch-tags }}
         persist-credentials: false
