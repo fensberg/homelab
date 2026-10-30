@@ -1,0 +1,76 @@
+diff --git a/.github/workflows/checkout/action.yml b/.github/workflows/checkout/action.yml
+index 4f0170f9..86d97c59 100644
+--- a/.github/workflows/checkout/action.yml
++++ b/.github/workflows/checkout/action.yml
+@@ -23,13 +23,6 @@ inputs:
+     description: How much history to check out; 0 is all of it.
+     required: false
+     default: "1"
+-  fetch-tags:
+-    description: >-
+-      "true" to fetch the release tags as well, each at the same depth: a
+-      lane whose rules plan a site with the release it runs reads that
+-      release's files from its tag.
+-    required: false
+-    default: "false"
+ 
+ runs:
+   using: composite
+@@ -38,5 +31,4 @@ runs:
+       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+       with:
+         fetch-depth: ${{ inputs.fetch-depth }}
+-        fetch-tags: ${{ inputs.fetch-tags }}
+         persist-credentials: false
+diff --git a/.github/workflows/mobilize/action.yml b/.github/workflows/mobilize/action.yml
+index 5b806a32..01c5b758 100644
+--- a/.github/workflows/mobilize/action.yml
++++ b/.github/workflows/mobilize/action.yml
+@@ -61,12 +61,6 @@ inputs:
+     description: How much history to check out; 0 is all of it.
+     required: false
+     default: "1"
+-  fetch-tags:
+-    description: >-
+-      "true" to fetch the release tags too, for a lane that plans a site with
+-      the release it runs (#843).
+-    required: false
+-    default: "false"
+ 
+ outputs:
+   held:
+@@ -221,4 +215,3 @@ runs:
+       uses: $/.github/workflows/checkout
+       with:
+         fetch-depth: ${{ inputs.fetch-depth }}
+-        fetch-tags: ${{ inputs.fetch-tags }}
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index 9f0c9df8..3b40a424 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -866,9 +866,9 @@ jobs:
+           # pre-step, before any step of this job can run.
+           egress-policy: block
+           disable-sudo-and-containers: "true"
+-          # The configuration rules plan each site with the release it runs,
+-          # read from that release's tag (#843).
+-          fetch-tags: "true"
++          # All of it, for the tags: the configuration rules plan each site
++          # with the release it runs, read from that release's tag (#843).
++          fetch-depth: 0
+           allowed-endpoints: >
+             api.github.com:443
+             files.pythonhosted.org:443
+@@ -968,9 +968,9 @@ jobs:
+           # pre-step, before any step of this job can run.
+           egress-policy: block
+           disable-sudo-and-containers: "true"
+-          # The configuration rules plan each site with the release it runs,
+-          # read from that release's tag (#843).
+-          fetch-tags: "true"
++          # All of it, for the tags: the configuration rules plan each site
++          # with the release it runs, read from that release's tag (#843).
++          fetch-depth: 0
+           allowed-endpoints: >
+             api.github.com:443
+             files.pythonhosted.org:443
