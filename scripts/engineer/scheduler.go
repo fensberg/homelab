@@ -19,9 +19,9 @@ import (
 // runs, started and stopped by the tool Kubernetes' own project keeps for
 // trying a scheduler against machines that are not there.
 const (
-	starter   = "kwokctl"
+	starter   = capacity.TrialStarter
 	asker     = "kubectl"
-	store     = "etcd"
+	store     = capacity.TrialStore
 	apiServer = capacity.APIServer
 	scheduler = capacity.Scheduler
 )
@@ -109,35 +109,11 @@ func realScheduler(t trial) (map[string]string, error) {
 // gives where it works, what each program needs to find it, and how it is
 // stopped and removed, which is to be done whatever happens.
 func trialCluster() (dir string, env []string, stop func(), err error) {
-	dir, err = os.MkdirTemp("", "engineer-trial-")
+	trial, err := capacity.StartTrial(apiServer, scheduler)
 	if err != nil {
-		return "", nil, nil, err
-	}
-	name := filepath.Base(dir)
-	kubeconfig := filepath.Join(dir, "kubeconfig")
-	// What each program needs to find the cluster.
-	env = []string{"KWOK_WORKDIR=" + filepath.Join(dir, "work"), "KUBECONFIG=" + kubeconfig}
-
-	start := []string{"create", "cluster", "--name", name, "--runtime", "binary",
-		"--components", strings.Join([]string{store, apiServer, scheduler}, ","), "--kubeconfig", kubeconfig}
-	// Each program is the one already delivered, where there is one: the
-	// starter would otherwise fetch its own, unpinned, from the network.
-	for _, program := range []string{store, apiServer, scheduler} {
-		if path, err := exec.LookPath(program); err == nil {
-			start = append(start, "--"+program+"-binary", path)
-		}
-	}
-	if _, err := asking(starter, env, start...); err != nil {
-		_ = os.RemoveAll(dir)
 		return "", nil, nil, fmt.Errorf("the cluster a change is tried in could not be started: %w", err)
 	}
-	// If it will not stop there is nothing to do about it here, and the
-	// directory it lives in is removed in any case.
-	stop = func() {
-		_, _ = asking(starter, env, "delete", "cluster", "--name", name)
-		_ = os.RemoveAll(dir)
-	}
-	return dir, env, stop, nil
+	return trial.Dir, trial.Env, trial.Stop, nil
 }
 
 // asking runs one of the trial's programs with what it needs to find the

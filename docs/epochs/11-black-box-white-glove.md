@@ -184,8 +184,9 @@ slack; and six days for a trial on a server the operator rents and
 provisions. Exactly thirty would want another issuer and was not pursued.
 
 **Only the operator can renew, and that part can be guaranteed.** "Me,
-Jamie, is the only one that holds the power to renew." A certificate for a
-name under a domain is issued to whoever can change that domain's DNS, so:
+[the operator], is the only one that holds the power to renew." A
+certificate for a name under a domain is issued to whoever can change that
+domain's DNS, so:
 
 - the credential that can change it is never in any estate, any site or
   anything shipped, and a guard refuses whatever would hand it to one, as
@@ -206,8 +207,8 @@ kept is the credential and not the name, and a name never carries what a
 site is called.
 
 **And a certificate is the licence, not the lock.** "This is all a stupid
-gimmick unless we can LOCK DOWN and GUARANTEE the 'only jamie can renew' ...
-no client can ever inject their own cert." A client who holds the machine
+gimmick unless we can LOCK DOWN and GUARANTEE the 'only [the operator] can
+renew' ... no client can ever inject their own cert." A client who holds the machine
 can stand something of their own in front of it, under a certificate of
 their own, and have it overlook that the operator's has run out. Nothing
 in a certificate prevents that. What prevents it is the box: it reads the

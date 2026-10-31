@@ -1,0 +1,44 @@
+---
+# Every etcd member a voting member, and one for every control plane. Asked
+# before the roll starts and after every machine.
+#
+# Read by the LEARNER column's place in the header, as the converge's own
+# health check reads it: PEER URLS has a space in it, so splitting a row into
+# words puts the value somewhere the header does not.
+- name: Ask etcd who its members are
+  ansible.builtin.command:
+    argv:
+      - talosctl
+      - --talosconfig
+      - "{{ talosconfig }}"
+      - --nodes
+      - "{{ hostvars['localhost'].machines | selectattr('control_plane') | map(attribute='address') | first }}"
+      - etcd
+      - members
+  register: etcd
+  changed_when: false
+
+- name: Read whether each member votes
+  ansible.builtin.set_fact:
+    etcd_rows: >-
+      {%- set ns = namespace(at=-1, rows=[]) -%}
+      {%- for line in etcd.stdout.splitlines() -%}
+      {%- if ns.at < 0 -%}
+      {%- if 'LEARNER' in line -%}{%- set ns.at = line.find('LEARNER') -%}{%- endif -%}
+      {%- elif line.strip() -%}
+      {%- set ns.rows = ns.rows + [((line[ns.at:].split() or ['unreadable'])[0]) | lower] -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ ns.rows }}
+    control_planes: "{{ hostvars['localhost'].machines | selectattr('control_plane') | list | length }}"
+
+- name: Refuse an etcd member that does not vote, or one missing
+  ansible.builtin.assert:
+    that:
+      - etcd_rows | length == control_planes | int
+      - etcd_rows | reject('equalto', 'false') | list | length == 0
+    fail_msg: >-
+      etcd has {{ etcd_rows | length }} members, {{ etcd_rows | reject('equalto', 'false') | list | length }}
+      of them not voting, for {{ control_planes }} control planes. Taking a
+      machine down now could lose quorum.
+    quiet: true

@@ -31,6 +31,25 @@ rules:
         - /scripts/take-delivery.sh
         - /tests/mutations/
 
+  - id: nothing-installs-a-collection-outside-take-delivery
+    # Galaxy has no lockfile: a version range in a requirements file, which is
+    # how this estate took its collections until the machine roll, installs
+    # whatever Galaxy serves inside it, checked against nothing. Read as the
+    # rule above is, for the same reasons.
+    languages: [generic]
+    severity: ERROR
+    message: >-
+      installs an Ansible collection outside scripts/take-delivery.sh. Galaxy
+      has no lockfile, so a version written anywhere else installs whatever
+      Galaxy serves for it. The collections come in Ansible's own release on
+      PyPI, the ansible package, locked by hash; a collection it does not carry
+      is a decision to make, not a line to add. Install them with
+      scripts/take-delivery.sh ansible.
+    pattern-regex: (?m)^(?![ \t]*(?:#|//|\*|<!--|--)).*?\bansible-galaxy\s+(?:(?:collection|role)\s+)?install\b
+    paths:
+      exclude:
+        - /tests/mutations/
+
   - id: the-installer-does-not-override-a-pinned-version
     # The pin is only a pin if the thing installing it reads it.
     # install-dependencies.sh sourced versions.env and then overwrote

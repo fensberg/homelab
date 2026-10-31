@@ -1,0 +1,9 @@
+guard: TestATeardownThatDoesNotFinishSaysHowToFreeTheMachine
+file: workstation/provision.yml
+find: '              - "Clear a stale lock with:     qm unlock {{ vmid }}"'
+replace: '              - "Clear a stale lock."'
+mentions: "did not say how to free the machine"
+why: >
+  qm destroy refuses while a disk is locked and leaves the machine as it was;
+  a teardown that stops there without the command that frees it leaves an
+  unexplained exit for whoever is at the keyboard.

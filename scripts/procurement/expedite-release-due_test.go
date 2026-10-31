@@ -5,15 +5,16 @@ import (
 	"time"
 )
 
-// 4am in Chicago, on both sides of the daylight-saving change.
+// 4am in a zone with a daylight-saving change, on both sides of it. The zone
+// is one with a change on known dates; any site's would do as well.
 //
 // This is the whole reason the gate is a function instead of a cron
 // expression. GitHub's scheduler speaks UTC only, so the workflow asks at 09:00
 // and at 10:00 and this decides which one is really 4am today. Get it wrong and
 // the release lands at 3am or 5am - or, in the version where the gate assumed
 // UTC, at ten in the evening with everybody online.
-func TestDueAnswersFourInTheMorningInChicagoThroughTheDstChange(t *testing.T) {
-	const zone = "America/Chicago"
+func TestDueAnswersFourInTheMorningThroughTheDstChange(t *testing.T) {
+	const zone = dstZone
 
 	cases := []struct {
 		name string
@@ -27,7 +28,7 @@ func TestDueAnswersFourInTheMorningInChicagoThroughTheDstChange(t *testing.T) {
 		{"10:00 UTC in January is 4am CST", "2026-01-15T10:00:00Z", true},
 		{"09:00 UTC in January is 3am CST", "2026-01-15T09:00:00Z", false},
 		// The evening this must never fire in.
-		{"23:00 UTC is six in the evening in Chicago", "2026-07-15T23:00:00Z", false},
+		{"23:00 UTC is six in the evening there", "2026-07-15T23:00:00Z", false},
 		// The day the clocks go forward, 2am CST -> 3am CDT.
 		{"09:00 UTC on the spring change is 4am CDT", "2026-03-08T09:00:00Z", true},
 		{"10:00 UTC on the spring change is 5am CDT", "2026-03-08T10:00:00Z", false},
@@ -75,7 +76,7 @@ func TestExactlyOneCandidateIsFourAmEveryDayOfTheYear(t *testing.T) {
 		due := 0
 		for _, hour := range []int{9, 10} {
 			at := time.Date(day.Year(), day.Month(), day.Day(), hour, 0, 0, 0, time.UTC)
-			ok, err := Due(at, "America/Chicago", 4)
+			ok, err := Due(at, dstZone, 4)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -84,7 +85,7 @@ func TestExactlyOneCandidateIsFourAmEveryDayOfTheYear(t *testing.T) {
 			}
 		}
 		if due != 1 {
-			t.Fatalf("%s: %d of the two candidate hours are 4am in Chicago, want exactly one",
+			t.Fatalf("%s: %d of the two candidate hours are 4am there, want exactly one",
 				day.Format("2006-01-02"), due)
 		}
 		day = day.AddDate(0, 0, 1)
@@ -104,19 +105,25 @@ func TestDueRefusesAZoneItCannotLoad(t *testing.T) {
 
 // The verb itself, including the flag that lets a test name an instant.
 func TestReleaseDueVerbJudgesTheInstantItIsGiven(t *testing.T) {
-	if rc := expediteReleaseDue([]string{"-at", "2026-07-15T09:00:00Z"}); rc != 0 {
+	if rc := expediteReleaseDue([]string{"-zone", dstZone, "-at", "2026-07-15T09:00:00Z"}); rc != 0 {
 		t.Errorf("a due instant exited %d", rc)
 	}
-	if rc := expediteReleaseDue([]string{"-at", "2026-07-15T23:00:00Z"}); rc != 0 {
+	if rc := expediteReleaseDue([]string{"-zone", dstZone, "-at", "2026-07-15T23:00:00Z"}); rc != 0 {
 		t.Errorf("an early instant is not an error, it is an answer: exited %d", rc)
 	}
-	if rc := expediteReleaseDue([]string{"-at", "the small hours"}); rc == 0 {
+	if rc := expediteReleaseDue([]string{"-zone", dstZone, "-at", "the small hours"}); rc == 0 {
 		t.Error("an unparsable instant was accepted")
 	}
 	if rc := expediteReleaseDue([]string{"-zone", "America/Chigard", "-at", "2026-07-15T09:00:00Z"}); rc == 0 {
 		t.Error("an unknown zone was accepted")
 	}
+	if rc := expediteReleaseDue([]string{"-at", "2026-07-15T09:00:00Z"}); rc == 0 {
+		t.Error("no zone was accepted, so the release would keep a clock nobody declared")
+	}
 }
+
+// dstZone is a zone whose clocks change on dates the cases above name.
+const dstZone = "America/Chicago"
 
 func mustLoad(t *testing.T, zone string) *time.Location {
 	t.Helper()

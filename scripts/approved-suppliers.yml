@@ -738,6 +738,30 @@ egress:
       list to transcribe. Egress for these pods has to be controlled at the
       cluster's network layer instead (#411); until then it is uncontrolled
       and unrecorded, and this entry says so rather than implying otherwise.
+  - job: deploy-infrastructure.yml/roll
+    policy: audit
+    reason: >-
+      The machine roll, on the site's own runners: reaches 1Password, the
+      Talos and Kubernetes APIs at addresses deliberately not in git, the
+      cluster's own Prometheus and Alertmanager through its API, GitHub's API,
+      and PyPI for the roll's tools. Harden-runner does nothing on this runner,
+      as the converge's entry says, so its egress is the cluster's network
+      layer's to control (#411).
+
+  - job: deploy-infrastructure.yml/roll-handover
+    policy: audit
+    reason: >-
+      The machine roll's second job, which finishes the machine the first ran
+      on. The same reaches as the roll's, for the same reason.
+
+  - job: deploy-infrastructure.yml/roll-aftermath
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+      - objects.githubusercontent.com:443
+      - release-assets.githubusercontent.com:443
+
   - job: deploy-infrastructure.yml/aftermath
     policy: block
     hosts:
@@ -1080,6 +1104,7 @@ egress:
     policy: block
     hosts:
       - api.github.com:443
+      - dl.k8s.io:443
       - files.pythonhosted.org:443
       - get.opentofu.org:443
       - github.com:443
@@ -1097,6 +1122,7 @@ egress:
     policy: block
     hosts:
       - api.github.com:443
+      - dl.k8s.io:443
       - files.pythonhosted.org:443
       - get.opentofu.org:443
       - github.com:443
@@ -1312,6 +1338,12 @@ egress:
 #   binary: <name>    with fetch:, the file an archive gives up when it is not
 #                     named for the repository - fluxcd/flux2 ships `flux`.
 #                     It is also the name take-delivery.sh is asked for.
+#   command: <name>  with pypi:, the program it gives when that is not the
+#                     package's own name - ansible-core gives ansible-playbook.
+#   library: <package> a Python package with no command, which a pypi: tool
+#                     imports - the Kubernetes client, and Ansible's
+#                     collections. Resolved and locked with the pypi: tools,
+#                     and installed beside them; nothing is put on PATH.
 #
 # scripts/take-delivery.sh installs from the lock and nowhere else, refusing a
 # file whose hash the lock does not list, and `security guard-deliveries`
@@ -1489,10 +1521,27 @@ tools:
   - source: ansible/ansible
     version: ANSIBLE_CORE_VERSION
     pypi: ansible-core
+    command: ansible-playbook
     reason: >-
       Runs management/hypervisor/hypervisor-prep.yml, the only thing that
       configures a hypervisor. Already installed by
       scripts/install-dependencies.sh and never written down here.
+  - source: kubernetes-client/python
+    version: PYTHON_KUBERNETES_VERSION
+    library: kubernetes
+    reason: >-
+      The Kubernetes client the kubernetes.core collection's modules import,
+      in the delivered Python beside ansible-core. The machine roll
+      (management/roll) drains and reads the cluster through those modules.
+  - source: ansible-community/ansible-build-data
+    version: ANSIBLE_VERSION
+    library: ansible
+    reason: >-
+      Ansible's own release of the collections, tested together and published
+      to PyPI: kubernetes.core for the machine roll (management/roll), and
+      community.crypto and ansible.posix for hypervisor-prep.yml. A library in
+      the delivered Python beside ansible-core, locked by hash like it. They
+      came from Galaxy on version ranges until the machine roll.
   - source: trufflesecurity/trufflehog
     version: TRUFFLEHOG_VERSION
     fetch: https://github.com/trufflesecurity/trufflehog/releases/download/v{version}/trufflehog_{version}_linux_amd64.tar.gz
@@ -1660,6 +1709,16 @@ work:
   - job: deploy-infrastructure.yml/converge
     kind: cannot-wait
     takes: 5m
+
+  # Not to be stopped once a machine is drained, so the priority set. Most
+  # runs find the window shut or nothing behind, and are over in a minute.
+  - job: deploy-infrastructure.yml/roll
+    kind: cannot-wait
+    takes: 2m
+
+  - job: deploy-infrastructure.yml/roll-handover
+    kind: cannot-wait
+    takes: 30m
 
   - job: converge-estate.yml/converge
     kind: cannot-wait

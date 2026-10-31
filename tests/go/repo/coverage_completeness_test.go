@@ -204,10 +204,14 @@ func discover(t *testing.T) []unit {
 		units = append(units, unit{"shell", p})
 	}
 
-	// Ansible: a YAML that actually plays something. requirements.yml declares
-	// collections and executes nothing, so it is not a unit.
+	// Ansible: a playbook, wherever it is - a YAML file whose document is a
+	// list of plays, each naming the hosts it plays on. Found by what it is
+	// rather than by the directory the first one was in, which is how the
+	// machine roll's play would have been missed: this read only
+	// management/hypervisor/. A file of tasks that a playbook includes is run
+	// by that playbook and is not a unit of its own.
 	for _, p := range tracked(t, func(rel string) bool {
-		return strings.HasPrefix(rel, "management/hypervisor/") && strings.HasSuffix(rel, ".yml")
+		return strings.HasSuffix(rel, ".yml") || strings.HasSuffix(rel, ".yaml")
 	}) {
 		if plays(tree.YAMLDocuments(t, p)) {
 			units = append(units, unit{"ansible", p})

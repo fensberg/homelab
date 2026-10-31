@@ -79,6 +79,9 @@ func deliveredPrograms(t *testing.T, tree *parsed.Tree) map[string]bool {
 			name = b
 		}
 		out[name] = true
+		if c := tool.Fields["command"]; c != "" {
+			out[c] = true
+		}
 	}
 	for _, s := range tree.DeliveriesLock(t) {
 		out[s.Name] = true

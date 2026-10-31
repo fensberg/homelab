@@ -81,7 +81,11 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # ca-certificates and curl to fetch the rest; gnupg for 1Password's repository
 # key; jq because the workflows use it. age comes from Debian, like the
-# workstation script installs it.
+# workstation script installs it. python3 and python3-venv for the machine
+# roll: it is an Ansible play, and ansible-core and the Kubernetes client its
+# modules import are taken from the lock at the start of the job, into an
+# environment of their own (scripts/take-delivery.sh), rather than baked here
+# where nothing would check them.
 #
 # hadolint's DL3008 wants these apt packages pinned to exact versions. Not
 # here: Ubuntu's archive keeps only the current version of a package, so a
@@ -94,7 +98,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # hadolint ignore=DL3008
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates curl gnupg jq unzip age \
+        ca-certificates curl gnupg jq unzip age python3 python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
 # 1Password CLI, from 1Password's own repository - the same source
@@ -156,7 +160,7 @@ RUN curl -fsSL -o /usr/local/bin/talosctl \
 # Prove the toolchain is complete before the image is ever published. A missing
 # binary here surfaces as a job that fails at Render, on the runner, minutes
 # into a converge - which is exactly how this image came to exist.
-RUN for b in op tofu age rclone kubectl talosctl jq; do \
+RUN for b in op tofu age rclone kubectl talosctl jq python3; do \
         command -v "$b" >/dev/null || { echo "missing: $b"; exit 1; }; \
     done
 

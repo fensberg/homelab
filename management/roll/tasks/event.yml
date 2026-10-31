@@ -1,0 +1,24 @@
+---
+# A Kubernetes event on the machine, which is where whoever looks at it next
+# reads what was done to it and when.
+- name: Record it on the machine
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Event
+      metadata:
+        name: "{{ inventory_hostname }}.{{ reason | lower }}.{{ now(utc=true).timestamp() | int }}"
+        namespace: default
+      involvedObject:
+        apiVersion: v1
+        kind: Node
+        name: "{{ inventory_hostname }}"
+      reason: "{{ reason }}"
+      message: "{{ message }}"
+      type: Normal
+      source:
+        component: machine-roll
+      firstTimestamp: "{{ '%Y-%m-%dT%H:%M:%SZ' | strftime(utc=true) }}"
+      lastTimestamp: "{{ '%Y-%m-%dT%H:%M:%SZ' | strftime(utc=true) }}"
+      count: 1

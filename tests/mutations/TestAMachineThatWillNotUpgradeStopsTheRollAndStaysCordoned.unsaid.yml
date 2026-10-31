@@ -1,0 +1,9 @@
+guard: TestAMachineThatWillNotUpgradeStopsTheRollAndStaysCordoned
+file: management/roll/talos-upgrade.yml
+find: '      loop: [touched=true, "machine={{ inventory_hostname }}"]'
+replace: "      loop: []"
+mentions: "would answer it as a refusal"
+why: >
+  The aftermath answers a stopped roll by what it touched. One that does not
+  say it touched a machine is reported as a roll that never began, and the
+  cordoned machine and the revert are not mentioned.

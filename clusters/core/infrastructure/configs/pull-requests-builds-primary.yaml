@@ -139,6 +139,7 @@ spec:
               - matchPattern: "*.blob.core.windows.net"
               - matchName: api.github.com
               - matchName: codeload.github.com
+              - matchName: dl.k8s.io
               - matchName: files.pythonhosted.org
               - matchName: get.opentofu.org
               - matchName: github.com
@@ -155,6 +156,7 @@ spec:
         - matchPattern: "*.blob.core.windows.net"
         - matchName: api.github.com
         - matchName: codeload.github.com
+        - matchName: dl.k8s.io
         - matchName: files.pythonhosted.org
         - matchName: get.opentofu.org
         - matchName: github.com

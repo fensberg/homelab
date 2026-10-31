@@ -1,0 +1,10 @@
+guard: TestTheCodeRulesHold
+rule: nothing-installs-a-collection-outside-take-delivery
+file: policy/semgrep/deliveries.yml
+find: "      exclude:\n        - /tests/mutations/\n\n  - id: the-installer"
+replace: "      exclude:\n        - /tests/nothing-here/\n\n  - id: the-installer"
+mentions: "installs an Ansible collection outside scripts/take-delivery.sh"
+why: >
+  The ledger's proofs hold the broken forms of what guards refuse, a
+  collection installed from Galaxy among them; without the exclusion the
+  rule refuses them.

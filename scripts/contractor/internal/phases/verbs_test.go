@@ -135,6 +135,7 @@ case "$1 $2" in
       *-json*) cat ` + filepath.Join(f.dir, "outputs") + ` ;;
       *state_conn_str*) cat ` + filepath.Join(f.dir, "connstr") + ` ;;
       *kubeconfig*) printf 'apiVersion: v1\nclusters: []\nusers: []\n' ;;
+      *talosconfig*) printf 'context: site0\ncontexts:\n  site0:\n    nodes: [192.0.2.100]\n' ;;
       *) printf 'a-value' ;;
     esac ;;
   "state list") [ -n "$3" ] || printf 'a.tracked\nb.tracked\n' ;;
@@ -355,9 +356,19 @@ func TestABuildResumedAtComputeStillInitialisesBothRoots(t *testing.T) {
 func TestAConvergeTakesOverBothRootsAndAppliesTheSameSteps(t *testing.T) {
 	f := newVerbFixture(t)
 	f.ctx.Converge = true
+	var kept []string
+	keepInVault = func(vault, title string, fields map[string]string) ([]string, error) {
+		kept = append(kept, vault+"/"+title)
+		return nil, nil
+	}
+	t.Cleanup(func() { keepInVault = func(string, string, map[string]string) ([]string, error) { return nil, nil } })
 	f.run(t, "take-over", "compute", "cluster", "backup", "sterilize")
 	tofu, _ := f.calls(t)
 	checkTheApplies(t, tofu)
+	// The roll's access is kept once, when the cluster root is finished.
+	if want := []string{f.ctx.Site + "/" + TalosAccessItem}; !slices.Equal(kept, want) {
+		t.Errorf("the converge kept %v in the vault, want %v", kept, want)
+	}
 
 	var attached []string
 	for i, c := range tofu {

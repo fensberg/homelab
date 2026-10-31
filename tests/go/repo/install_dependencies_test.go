@@ -198,10 +198,13 @@ readable reason.`, want.key, got, want.value)
 		t.Error("no signing key was configured, so commits from this checkout are unsigned")
 	}
 
-	// Every Python tool in the lock reaches the workstation, on a machine where
-	// each is already present. Presence is not the locked version, and
-	// .pre-commit-config.yaml runs pre-commit-hooks as local hooks from this
-	// install - a machine that skipped it fails every commit (#416).
+	// Every Python tool, library and Ansible collection in the lock reaches
+	// the workstation, on a machine where each is already present. Presence
+	// is not the locked version, and .pre-commit-config.yaml runs
+	// pre-commit-hooks as local hooks from this install - a machine that
+	// skipped it fails every commit (#416). The plays run from here too, so a
+	// collection they use that the workstation never took is a play that
+	// fails on its first task.
 	asked := map[string]bool{}
 	if f.repo.Exists("scripts/deliveries-taken") {
 		for _, name := range strings.Fields(f.repo.OwnText(t, "scripts/deliveries-taken")) {
@@ -210,13 +213,13 @@ readable reason.`, want.key, got, want.value)
 	}
 	var pypi []string
 	for _, s := range repository(t).DeliveriesLock(t) {
-		if s.Kind == "pypi" {
+		if s.Kind == "pypi" || s.Kind == "library" {
 			pypi = append(pypi, s.Name)
 		}
 	}
 	sort.Strings(pypi)
 	if len(pypi) == 0 {
-		t.Fatal("scripts/deliveries.lock has no pypi: section, so this cannot tell whether the workstation takes delivery of them")
+		t.Fatal("scripts/deliveries.lock has no pypi: or library: section, so this cannot tell whether the workstation takes delivery of them")
 	}
 	for _, name := range pypi {
 		if !asked[name] {

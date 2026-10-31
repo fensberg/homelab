@@ -212,6 +212,27 @@ run "a_site_with_no_untrusted_zone_has_no_sweeper" {
   }
 }
 
+# The cluster is told what its machines should run, as the release the site
+# pins declares it: the versions, and the installer a trusted machine is
+# upgraded to, which is the schematic its image was built from.
+run "the_cluster_is_told_what_its_machines_should_run" {
+  command = plan
+
+  assert {
+    condition = (
+      kubernetes_config_map.machine_image.metadata[0].namespace == "kube-system" &&
+      kubernetes_config_map.machine_image.data.talos_version == module.machine_image.talos_version &&
+      kubernetes_config_map.machine_image.data.talos_upgrades_from == module.machine_image.talos_upgrades_from &&
+      kubernetes_config_map.machine_image.data.kubernetes_version == module.machine_image.kubernetes_version
+    )
+    error_message = "the cluster is not told the versions its machines should run, so the roll has nothing to roll them to"
+  }
+  assert {
+    condition     = kubernetes_config_map.machine_image.data.installer_image == "factory.talos.dev/installer/${module.machine_image.schematic_id}:${module.machine_image.talos_version}"
+    error_message = "the installer the machines are rolled to is not the trusted image's schematic at the declared release, so a roll would drop the extensions the machines were built with"
+  }
+}
+
 run "the_sites_alerting_is_given_where_to_ring_and_what_with" {
   command = plan
 

@@ -3,9 +3,9 @@
 // say what the declarations say?
 //
 // SECURITY CHECKS; PROCUREMENT ORDERS. `procurement order` writes the lock from
-// the versions in scripts/versions.env and the pypi: and fetch: fields on the
-// tools: entries in scripts/approved-suppliers.yml. This reads the same two
-// files and refuses a lock that disagrees, and never writes one. Both programs
+// the versions in scripts/versions.env and the pypi:, library: and fetch:
+// fields on the tools: entries in scripts/approved-suppliers.yml.
+// This reads the same two files and refuses a lock that disagrees, and never writes one. Both programs
 // read the declarations - separate modules, no shared code, by design - and
 // `task order-deliveries` runs this straight after ordering, so a reading that
 // drifts between them fails there rather than in CI.
@@ -57,8 +57,9 @@ var pep503 = regexp.MustCompile(`[-_.]+`)
 // section's name is derived. The same derivation procurement writes with; a
 // difference between the two is a lock this refuses the moment it is ordered.
 var deliveryKinds = map[string]func(source, spec string) string{
-	"pypi":  func(_, spec string) string { return strings.ToLower(pep503.ReplaceAllString(spec, "-")) },
-	"fetch": func(source, _ string) string { return source[strings.LastIndex(source, "/")+1:] },
+	"pypi":    func(_, spec string) string { return strings.ToLower(pep503.ReplaceAllString(spec, "-")) },
+	"fetch":   func(source, _ string) string { return source[strings.LastIndex(source, "/")+1:] },
+	"library": func(_, spec string) string { return strings.ToLower(pep503.ReplaceAllString(spec, "-")) },
 }
 
 var (
@@ -84,7 +85,7 @@ func declaredDeliveries(root string) ([]lockedDelivery, error) {
 		// Not a pass. This estate installs tools that are delivered this way, so
 		// finding none means the read has stopped matching the file - and a
 		// guard reporting clean over a list it could not read is a blind spot.
-		return nil, errors.New("no tools: entry in " + suppliersPath + " declares pypi: or fetch:, " +
+		return nil, errors.New("no tools: entry in " + suppliersPath + " declares pypi:, library: or fetch:, " +
 			"so every delivery would pass unchecked")
 	}
 	return deliveries, nil
@@ -193,7 +194,7 @@ func checkDeliveriesLock(root string) ([]string, error) {
 			}
 		}
 		switch d.Kind {
-		case "pypi":
+		case "pypi", "library":
 			found := false
 			for _, l := range s.Lines {
 				if strings.HasPrefix(l, d.Name+"=="+d.Version+" ") {
@@ -234,10 +235,12 @@ func checkDeliveriesLock(root string) ([]string, error) {
 // resolution: a package two tools share is locked by the same line in both.
 // Two orders made apart and merged together each pass on their own and
 // cannot be installed together, and the image that takes both never builds.
+// A library goes into the same environment by the same pip run, so it is one
+// of those sections: only a fetch is installed apart.
 func disagreements(sections map[string]thelock.Section) []string {
 	lines := map[string]map[string][]string{}
 	for _, s := range sections {
-		if s.Kind != "pypi" {
+		if s.Kind == "fetch" {
 			continue
 		}
 		for _, l := range s.Lines {
@@ -277,9 +280,9 @@ Anything the lock covers is installed only from it, by hash, so a lock that
 has drifted installs something nobody pinned - or refuses a version somebody
 did.
 
-Change a version in scripts/versions.env, or a pypi: or fetch: field on a
-tools: entry in scripts/approved-suppliers.yml, then order again rather than
-editing the lock:
+Change a version in scripts/versions.env, or a pypi:, library: or fetch:
+field on a tools: entry in scripts/approved-suppliers.yml, then order again
+rather than editing the lock:
 
     task order-deliveries
 `)

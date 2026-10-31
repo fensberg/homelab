@@ -173,6 +173,8 @@ judges_nothing:
   CLOUDFLARED_VERSION: the tunnel's connector
   OPA_VERSION: reads the configuration rules' syntax for a guard; it judges no file itself
   ETCD_VERSION: the store of the cluster a change is tried in
+  ANSIBLE_VERSION: the collections the plays use; ansible-core is what judges
+  PYTHON_KUBERNETES_VERSION: the Kubernetes client those modules import
   FLUX_VERSION: the reconciler
   HELM_VERSION: renders charts for validation
   KUBECTL_VERSION: builds manifests and talks to a cluster

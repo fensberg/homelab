@@ -31,6 +31,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"homelab/details/gitenv"
 )
 
 // Finding is one repository that is installed or configured and not approved.
@@ -308,14 +310,6 @@ func cachedRepos() ([]string, error) {
 	return out, nil
 }
 
-// repositoryLocation is every variable git reads to decide which repository
-// it is in. Each one outranks -C.
-var repositoryLocation = []string{
-	"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
-	"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-	"GIT_NAMESPACE", "GIT_PREFIX", "GIT_CEILING_DIRECTORIES",
-}
-
 // withoutRepositoryLocation is env without anything that points git at a
 // repository, so `git -C <dir>` asks <dir>.
 //
@@ -327,7 +321,7 @@ func withoutRepositoryLocation(env []string) []string {
 	out := make([]string, 0, len(env))
 	for _, kv := range env {
 		name, _, _ := strings.Cut(kv, "=")
-		if !slices.Contains(repositoryLocation, name) {
+		if !slices.Contains(gitenv.RepositoryLocation, name) {
 			out = append(out, kv)
 		}
 	}
