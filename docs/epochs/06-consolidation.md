@@ -3,7 +3,8 @@
 - **Tier / path:** repository-wide
 - **Branch:** `epoch/06-consolidation`
 - **PR:** #
-- **Status:** Not started
+- **Status:** On hold from 2026-10-31, for [15](15-expiring-keys.md) and
+  [16](16-fast-feedback.md). Not started
 - **Closed:** `<date>`
 
 ## Goal
