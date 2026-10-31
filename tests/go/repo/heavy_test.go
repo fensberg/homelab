@@ -62,7 +62,7 @@ func serial(t *testing.T, why string) {
 // commands: the invariants lane runs `go test ./...` skipping the meta-tests
 // and the guards with lanes of their own, and those lanes run only them. Each
 // set is named once, in a variable at the top of the workflow (META_TESTS,
-// OWN_LANE_TESTS), and that is where this looks for the gap. A name in it that matches no test
+// OWN_LANE_TESTS, REMOVAL_TESTS), and that is where this looks for the gap. A name in it that matches no test
 // would be skipped by one lane and selected by nothing in the other - `-run`
 // with no match passes with "no tests to run" - so every name must be a test
 // that exists.
@@ -83,6 +83,9 @@ func TestHeavyGuardsRunOnEveryPullRequest(t *testing.T) {
 	// `-skip "$META_TESTS|$OWN_LANE_TESTS"`. Each one names tests some other
 	// lane runs with `go test ./repo/ -run "$NAME"`.
 	fullRun := regexp.MustCompile(`^go test \./\.\.\.(?: -skip "((?:\$[A-Z_]+\|)*\$[A-Z_]+)")?$`)
+	// A lane may carry a -skip of its own: a guard that runs the suite in copies
+	// hands them the lane's, so the tests of other lanes do not run in them.
+	laneRun := regexp.MustCompile(`^go test \./repo/ -run "\$([A-Z_]+)"(?: -skip "(?:\$[A-Z_]+\|)*\$[A-Z_]+")?$`)
 	full := false
 	var skipped []string
 	ranBy := map[string]bool{}
@@ -97,8 +100,8 @@ func TestHeavyGuardsRunOnEveryPullRequest(t *testing.T) {
 					}
 				}
 			}
-			if v, ok := strings.CutPrefix(run, `go test ./repo/ -run "$`); ok && strings.HasSuffix(v, `"`) {
-				ranBy[strings.TrimSuffix(v, `"`)] = true
+			if m := laneRun.FindStringSubmatch(run); m != nil {
+				ranBy[m[1]] = true
 			}
 			for _, line := range strings.Split(step.Run, "\n") {
 				if strings.Contains(line, "go test") && strings.Contains(line, "-short") {

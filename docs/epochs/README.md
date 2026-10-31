@@ -9,6 +9,8 @@ earlier epoch whose decisions you are about to touch.
 
 ## State of the world
 
+- **Next:** 16 — Fast Feedback, and 15 — Expiring Keys, both proposed. 06 and 08
+  are on hold from 2026-10-31, and what those two needed moved into them.
 - **Open epochs:** 03 — Workload, 04 — Observability and 08 — Agent Roles,
   all in progress at once. Epoch 03 was brought forward because the game
   server named as its success criterion needed enforced NetworkPolicy before
@@ -66,21 +68,23 @@ earlier epoch whose decisions you are about to touch.
 
 ## Epochs
 
-| #   | Name                   | Tier / path                                       | Status      | Record                                                     |
-| --- | ---------------------- | ------------------------------------------------- | ----------- | ---------------------------------------------------------- |
-| 01  | Ignition               | `management/`                                     | Complete    | [01-ignition.md](01-ignition.md)                           |
-| 02  | Abstraction            | `modules/`                                        | Complete    | [02-abstraction.md](02-abstraction.md)                     |
-| 03  | Workload               | `environments/`                                   | In progress | [03-workload.md](03-workload.md)                           |
-| 04  | Observability          | `clusters/management/infrastructure/`             | In progress | [04-observability.md](04-observability.md)                 |
-| 05  | Node Lifecycle         | `management/`, `scripts/contractor/`              | Not started | [05-node-lifecycle.md](05-node-lifecycle.md)               |
-| 06  | Consolidation          | repository-wide                                   | Not started | [06-consolidation.md](06-consolidation.md)                 |
-| 07  | Metered Egress         | `clusters/management/`, `scripts/`                | Not started | [07-metered-egress.md](07-metered-egress.md)               |
-| 08  | Agent Roles            | `.github/`, `scripts/`                            | In progress | [08-agent-roles.md](08-agent-roles.md)                     |
-| 09  | Access                 | `management/estate/`                              | Not started | [09-access.md](09-access.md)                               |
-| 11  | Black Box, White Glove | an estate for each client                         | Not started | [11-black-box-white-glove.md](11-black-box-white-glove.md) |
-| 12  | Vendor Account         | `management/estate/`                              | Not started | [12-vendor-account.md](12-vendor-account.md)               |
-| 13  | Game Streaming         | `management/hypervisor/`, `modules/applications/` | Not started | [13-game-streaming.md](13-game-streaming.md)               |
-| 14  | Second Site            | `config/`, `management/`, `clusters/`             | Not started | [14-second-site.md](14-second-site.md)                     |
+| #   | Name                   | Tier / path                                            | Status      | Record                                                     |
+| --- | ---------------------- | ------------------------------------------------------ | ----------- | ---------------------------------------------------------- |
+| 01  | Ignition               | `management/`                                          | Complete    | [01-ignition.md](01-ignition.md)                           |
+| 02  | Abstraction            | `modules/`                                             | Complete    | [02-abstraction.md](02-abstraction.md)                     |
+| 03  | Workload               | `environments/`                                        | In progress | [03-workload.md](03-workload.md)                           |
+| 04  | Observability          | `clusters/management/infrastructure/`                  | In progress | [04-observability.md](04-observability.md)                 |
+| 05  | Node Lifecycle         | `management/`, `scripts/contractor/`                   | Not started | [05-node-lifecycle.md](05-node-lifecycle.md)               |
+| 06  | Consolidation          | repository-wide                                        | On hold     | [06-consolidation.md](06-consolidation.md)                 |
+| 07  | Metered Egress         | `clusters/management/`, `scripts/`                     | Not started | [07-metered-egress.md](07-metered-egress.md)               |
+| 08  | Agent Roles            | `.github/`, `scripts/`                                 | On hold     | [08-agent-roles.md](08-agent-roles.md)                     |
+| 09  | Access                 | `management/estate/`                                   | Not started | [09-access.md](09-access.md)                               |
+| 11  | Black Box, White Glove | an estate for each client                              | Not started | [11-black-box-white-glove.md](11-black-box-white-glove.md) |
+| 12  | Vendor Account         | `management/estate/`                                   | Not started | [12-vendor-account.md](12-vendor-account.md)               |
+| 13  | Game Streaming         | `management/hypervisor/`, `modules/applications/`      | Not started | [13-game-streaming.md](13-game-streaming.md)               |
+| 14  | Second Site            | `config/`, `management/`, `clusters/`                  | Not started | [14-second-site.md](14-second-site.md)                     |
+| 15  | Expiring Keys          | `management/`, `clusters/core/`, `scripts/contractor/` | Proposed    | [15-expiring-keys.md](15-expiring-keys.md)                 |
+| 16  | Fast Feedback          | `.github/workflows/`, `tests/`                         | Proposed    | [16-fast-feedback.md](16-fast-feedback.md)                 |
 
 ## Working an epoch
 
