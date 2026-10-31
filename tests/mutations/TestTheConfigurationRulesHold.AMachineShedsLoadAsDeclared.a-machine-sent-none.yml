@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_load_shedding
+file: modules/infrastructure/cluster/talos.tf
+find: "            extraConfig = {\n              systemReserved          = { memory = local.held_back[local.kind_of_machine[k]].system }\n"
+replace: "            extraConfig = {\n"
+mentions: "declares how it sheds load 0 times"
+why: >
+  Figures that reach no machine are a declaration of nothing. The table
+  still reads as complete, and every machine sheds load at the kubelet's
+  defaults, about half of what its services use.
