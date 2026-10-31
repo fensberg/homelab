@@ -178,6 +178,22 @@ func TestABinaryFieldNamesTheSectionSecurityExpects(t *testing.T) {
 	}
 }
 
+// A library goes into the environment its tools run in, by the one pip run, so
+// a package it locks apart from a tool cannot be installed beside that tool.
+func TestALibraryAndAToolThatLockAPackageApartAreRefused(t *testing.T) {
+	suppliers := strings.Replace(lockSuppliers, "\nhooks:", "  - source: example/a-client\n    version: LIB_VERSION\n    library: a-client\n\nhooks:", 1)
+	lock := goodLock + "# [library: a-client LIB_VERSION=4.2.0]\n" +
+		"a-client==4.2.0 --hash=sha256:" + hashA + "\npyyaml==6.0.2 --hash=sha256:" + hashD + "\n# [end]\n"
+	findings, err := checkDeliveriesLock(writeLockFixture(t, suppliers, lockVersions+"LIB_VERSION=4.2.0\n", lock))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "pyyaml is locked differently by tools installed together (6.0.2 for a-client; 6.0.3 for checkov)"
+	if !strings.Contains(strings.Join(findings, "\n"), want) {
+		t.Fatalf("want a finding containing %q, got %v", want, findings)
+	}
+}
+
 // A library is held to what a PyPI tool is held to: its section must pin
 // the library itself, by hash, at the declared version.
 func TestALibraryIsCheckedLikeAPythonTool(t *testing.T) {

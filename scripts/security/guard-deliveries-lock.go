@@ -235,10 +235,12 @@ func checkDeliveriesLock(root string) ([]string, error) {
 // resolution: a package two tools share is locked by the same line in both.
 // Two orders made apart and merged together each pass on their own and
 // cannot be installed together, and the image that takes both never builds.
+// A library goes into the same environment by the same pip run, so it is one
+// of those sections: only a fetch is installed apart.
 func disagreements(sections map[string]thelock.Section) []string {
 	lines := map[string]map[string][]string{}
 	for _, s := range sections {
-		if s.Kind != "pypi" {
+		if s.Kind == "fetch" {
 			continue
 		}
 		for _, l := range s.Lines {
