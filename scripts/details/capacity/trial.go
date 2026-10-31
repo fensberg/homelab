@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // A trial cluster: Kubernetes' own programs, at the version the site runs,
@@ -53,7 +54,14 @@ func StartTrial(programs ...string) (Trial, error) {
 			start = append(start, "--"+program+"-binary", path)
 		}
 	}
-	if err := t.run(start...); err != nil {
+	finished, err := oneStartAtATime()
+	if err != nil {
+		_ = os.RemoveAll(dir)
+		return Trial{}, fmt.Errorf("the trial cluster could not wait its turn to start: %w", err)
+	}
+	err = t.run(start...)
+	finished()
+	if err != nil {
 		_ = os.RemoveAll(dir)
 		return Trial{}, fmt.Errorf("the trial cluster could not be started: %w", err)
 	}
@@ -62,6 +70,25 @@ func StartTrial(programs ...string) (Trial, error) {
 		_ = os.RemoveAll(dir)
 	}
 	return t, nil
+}
+
+// oneStartAtATime holds back every other start on this machine until the
+// function it returns is called. The starter counts down from one port for
+// each program and takes the first that is free at that moment, and nothing
+// holds it until the program is up, so two started together can pick the same
+// one and each then reach the other's API server. The lock is a file because
+// the starts to keep apart are in different processes: a proof of the ledger
+// runs its guard in a process of its own.
+func oneStartAtATime() (func(), error) {
+	lock, err := os.OpenFile(filepath.Join(os.TempDir(), fmt.Sprintf("trials-starting-%d.lock", os.Getuid())), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		_ = lock.Close()
+		return nil, err
+	}
+	return func() { _ = lock.Close() }, nil
 }
 
 func (t Trial) run(args ...string) error {

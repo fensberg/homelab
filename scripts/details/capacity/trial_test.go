@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A trial is started from the programs already delivered, named to the
@@ -48,5 +49,44 @@ func TestATrialIsStartedFromThePinnedProgramsAndLeavesNothing(t *testing.T) {
 	t.Setenv("FAIL_START", "1")
 	if _, err := StartTrial(APIServer); err == nil || !strings.Contains(err.Error(), "refused") {
 		t.Errorf("a starter that refused was not said, in its own words: %v", err)
+	}
+}
+
+// Two starts at once can pick one port, so a start waits for the one before
+// it, wherever that one is running.
+func TestATrialWaitsForAStartAlreadyUnderWay(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	bin := t.TempDir()
+	calls := filepath.Join(t.TempDir(), "calls")
+	if err := os.WriteFile(filepath.Join(bin, TrialStarter), []byte("#!/bin/sh\necho \"$*\" >>"+calls+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	finished, err := oneStartAtATime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan error, 1)
+	go func() {
+		_, err := StartTrial(APIServer)
+		started <- err
+	}()
+	select {
+	case err := <-started:
+		t.Fatalf("a trial started while another was starting: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	if _, err := os.Stat(calls); !os.IsNotExist(err) {
+		t.Fatal("the starter ran while another start was under way")
+	}
+	finished()
+	select {
+	case err := <-started:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("a trial was still waiting after the start before it had finished")
 	}
 }

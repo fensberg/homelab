@@ -169,8 +169,6 @@ var rollSlots = make(chan struct{}, 3)
 // rollIsHeavy is why each of the roll's tests waits for the pull request.
 const rollIsHeavy = "starts a cluster and runs ansible-playbook against it"
 
-var rollStarting sync.Mutex
-
 func startRollSite(t *testing.T) *rollSite {
 	t.Helper()
 	t.Parallel()
@@ -181,11 +179,7 @@ func startRollSite(t *testing.T) *rollSite {
 			t.Fatalf("%s is not on PATH; take delivery of it with scripts/take-delivery.sh", program)
 		}
 	}
-	// One cluster made at a time: the starter picks each program's port as
-	// it makes the cluster, and two made at once can pick the same one.
-	rollStarting.Lock()
 	trial, err := capacity.StartTrial(capacity.APIServer)
-	rollStarting.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
