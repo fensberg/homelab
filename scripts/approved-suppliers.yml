@@ -1100,6 +1100,24 @@ egress:
       - sum.golang.org:443
 
   - job: pr-validation.yml/invariants
+    pool: builds
+    policy: block
+    hosts:
+      - api.github.com:443
+      - dl.k8s.io:443
+      - files.pythonhosted.org:443
+      - get.opentofu.org:443
+      - github.com:443
+      - go.dev:443
+      - objects.githubusercontent.com:443
+      - proxy.golang.org:443
+      - pypi.org:443
+      - registry.opentofu.org:443
+      - release-assets.githubusercontent.com:443
+      - storage.googleapis.com:443
+      - sum.golang.org:443
+
+  - job: pr-validation.yml/removal
     pool: builds-primary
     policy: block
     hosts:
@@ -1813,9 +1831,14 @@ work:
 
   - job: pr-validation.yml/invariants
     kind: cannot-wait
-    # What it took on the pools when #808 was merged (2026-10-23): eighteen
-    # minutes, and seventeen in the queue, rounded up.
-    takes: 19m
+    # Expected once the removal guard left it (2026-10-31), not yet measured:
+    # the lane less the 1,353 seconds that guard took on #772, rounded up.
+    takes: 10m
+
+  - job: pr-validation.yml/removal
+    kind: cannot-wait
+    # What the guard took on #772's run (2026-10-31), rounded up.
+    takes: 23m
 
   - job: pr-validation.yml/meta
     kind: cannot-wait
