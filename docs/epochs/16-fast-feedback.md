@@ -31,6 +31,36 @@ raised when they were reached, and three speed-ups already agreed (10-16 and
 This is a solved problem. The answer is the deployment pipeline from
 _Continuous Delivery_, and this repository had drifted from it.
 
+## Names
+
+Agreed 2026-10-31. A check reads `kind / subject`, says what runs, and leaves the
+tool to the logs. They land in the second pull request, because a required check
+cannot be renamed in one step: the one doing it would be held to a name it no
+longer reports. So the first adds one gate, `tests passed`, and moves the ruleset
+to it. The tiers keep their names: unit, contract, integration, api, e2e.
+
+| Today                        | Becomes                          |
+| ---------------------------- | -------------------------------- |
+| Format (pre-commit)          | lint / format                    |
+| Shell Lint (ShellCheck)      | lint / shell                     |
+| Spelling (codespell)         | lint / spelling                  |
+| Vet (every tier)             | lint / go vet                    |
+| Validate (tofu, kustomize…)  | validate / infrastructure        |
+| Test (Go modules, OpenTofu)  | test / unit                      |
+| Test (vitest)                | test / frontend                  |
+| Repository invariants        | test / repo policy               |
+| Application removal          | test / app removal               |
+| Meta-tests, part 0           | test / mutation (1 of 4)         |
+| Pool Proof (builds)          | test / runner isolation (builds) |
+| Egress Proof (the two)       | test / egress allowed or blocked |
+| Secrets Scan (TruffleHog)    | scan / secrets                   |
+| Logic Scan (Semgrep)         | scan / code                      |
+| IaC Scan (Trivy)             | scan / infrastructure            |
+| Dockerfile Scan (hadolint)   | scan / containers                |
+| Workflow Scan (zizmor)       | scan / workflows                 |
+| Policy Scan (Checkov)        | scan / policy                    |
+| Already tested (merge queue) | skip if already tested           |
+
 ## How others do it
 
 Read from their repositories on 2026-10-31. The default run on a pull request
@@ -172,10 +202,9 @@ and the second is checks on checks.
    a script or a verb, whichever is nearest. This epoch does not rewrite any of
    it and does not depend on retiring shell. Piece 0 follows it from the start.
 4. **Split the guards** into packages by domain, then split by past timings.
-5. **Asking for less and more, only if needed.** With the ledger and the removal
-   guard off the push, every lane may already fit in ten minutes. If so there is
-   no chooser and no path filters to own. A label to run a named lane still
-   helps the agent. Nothing needs one to merge.
+5. **Asking for less and more.** Path filters, and a label to run a named lane.
+   Nothing needs a label to merge. The operator, 2026-10-31: build the system we
+   want, flexible enough for work to come, not what numbers happen to call for.
 6. **The ledger:** changed guards and targets on the pull request, everything
    after the merge. See Decision 2.
 7. **The removal check becomes static.** The whole run moves after the merge. As

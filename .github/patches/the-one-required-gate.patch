@@ -1,0 +1,910 @@
+diff --git a/.github/workflows/clerk.yml b/.github/workflows/clerk.yml
+index 8187259c..9234300f 100644
+--- a/.github/workflows/clerk.yml
++++ b/.github/workflows/clerk.yml
+@@ -114,7 +114,7 @@ jobs:
+         && github.event.issue.pull_request != null
+         && startsWith(github.event.comment.body, '@clerk')
+         && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     # Bounded so a hung call cannot bill a metered vendor for six hours, which
+     # is what GitHub's default timeout allows.
+     timeout-minutes: 15
+diff --git a/.github/workflows/codeql.yml b/.github/workflows/codeql.yml
+index a816bbf9..3da21963 100644
+--- a/.github/workflows/codeql.yml
++++ b/.github/workflows/codeql.yml
+@@ -65,7 +65,7 @@ defaults:
+ jobs:
+   analyze:
+     name: "Analyze (${{ matrix.language }})"
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows.
+     timeout-minutes: 20
+diff --git a/.github/workflows/converge-estate.yml b/.github/workflows/converge-estate.yml
+index 520ad316..db0197d3 100644
+--- a/.github/workflows/converge-estate.yml
++++ b/.github/workflows/converge-estate.yml
+@@ -44,7 +44,7 @@ jobs:
+   # read from the config and not written here.
+   runner:
+     name: Which runner
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 5
+     permissions:
+       contents: read
+diff --git a/.github/workflows/dependency-review.yml b/.github/workflows/dependency-review.yml
+index 76d7b2e7..6b92419a 100644
+--- a/.github/workflows/dependency-review.yml
++++ b/.github/workflows/dependency-review.yml
+@@ -44,7 +44,7 @@ defaults:
+ jobs:
+   dependency-review:
+     if: github.event_name == 'pull_request'
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows.
+     timeout-minutes: 10
+diff --git a/.github/workflows/deploy-infrastructure.yml b/.github/workflows/deploy-infrastructure.yml
+index 628e306e..abd752e2 100644
+--- a/.github/workflows/deploy-infrastructure.yml
++++ b/.github/workflows/deploy-infrastructure.yml
+@@ -87,7 +87,7 @@ jobs:
+   # ---------------------------------------------------------------------
+   changes:
+     name: What changed
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows.
+     timeout-minutes: 10
+@@ -569,7 +569,7 @@ jobs:
+     name: Roll aftermath
+     needs: [roll, roll-handover]
+     if: always() && (needs.roll.result == 'failure' || needs.roll-handover.result == 'failure')
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     permissions:
+       contents: read
+       issues: write
+@@ -721,7 +721,7 @@ jobs:
+     name: Aftermath
+     needs: [changes, converge]
+     if: always() && needs.converge.result == 'failure'
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     permissions:
+       contents: write
+       pull-requests: write
+diff --git a/.github/workflows/expedite.yml b/.github/workflows/expedite.yml
+index c612f04f..eb9f1847 100644
+--- a/.github/workflows/expedite.yml
++++ b/.github/workflows/expedite.yml
+@@ -149,7 +149,7 @@ jobs:
+     if: >-
+       github.event_name == 'workflow_dispatch' ||
+       github.event.schedule == '7 * * * *'
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 10
+     outputs:
+       look: ${{ steps.ask.outputs.look }}
+@@ -242,7 +242,7 @@ jobs:
+     name: "Take delivery"
+     needs: check
+     if: needs.check.outputs.look == 'true'
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     # Bounded so a stuck run cannot bill forever. It asks SteamCMD one
+     # question per application and commits one line for each answer that
+     # changed; the image is the fabricator's to build.
+@@ -449,7 +449,7 @@ jobs:
+       always() && !cancelled() &&
+       (github.event_name == 'workflow_dispatch' ||
+        github.event.schedule == '0 * * * *')
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     # Long enough to merge the expediter's pull request, wait for the
+     # fabricator to build and deliver the release, and take that too.
+     timeout-minutes: 100
+diff --git a/.github/workflows/fabricator.yml b/.github/workflows/fabricator.yml
+index 5e2c65eb..2fe3699d 100644
+--- a/.github/workflows/fabricator.yml
++++ b/.github/workflows/fabricator.yml
+@@ -57,7 +57,7 @@ defaults:
+ jobs:
+   orders:
+     name: Read the work orders
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     # Bounded so a stuck job cannot bill a metered vendor for six hours, which
+     # is what GitHub's default timeout allows.
+     timeout-minutes: 5
+@@ -112,7 +112,7 @@ jobs:
+   build:
+     name: Build ${{ matrix.order.name }}
+     needs: orders
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     # Longer than most jobs here because a game server's depots are gigabytes,
+     # and the download is the slow part. Bounded so a hung fetch cannot bill
+     # for hours.
+@@ -519,7 +519,7 @@ jobs:
+     name: Package ${{ matrix.order.name }}
+     needs: orders
+     if: needs.orders.outputs.packages != '[]'
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     # Bounded so a stuck job cannot bill a metered vendor for six hours, which
+     # is what GitHub's default timeout allows.
+     timeout-minutes: 15
+@@ -764,7 +764,7 @@ jobs:
+   deliver:
+     name: Bring the releases to the gate
+     needs: [orders, build]
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     # Bounded so a stuck job cannot bill a metered vendor for six hours, which
+     # is what GitHub's default timeout allows.
+     timeout-minutes: 10
+@@ -936,7 +936,7 @@ jobs:
+   deliver-platform:
+     name: Bring the platform's release to the gate
+     needs: [orders, package]
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 10
+     permissions:
+       contents: read
+diff --git a/.github/workflows/integration-tests.yml b/.github/workflows/integration-tests.yml
+index 6376d7d5..4a206476 100644
+--- a/.github/workflows/integration-tests.yml
++++ b/.github/workflows/integration-tests.yml
+@@ -72,7 +72,7 @@ jobs:
+   # workflow's matrix reads the same list the same way.
+   sites:
+     name: Which sites
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 5
+     permissions:
+       contents: read
+diff --git a/.github/workflows/plan-infrastructure.yml b/.github/workflows/plan-infrastructure.yml
+index 71f4f7dd..f93fbc09 100644
+--- a/.github/workflows/plan-infrastructure.yml
++++ b/.github/workflows/plan-infrastructure.yml
+@@ -323,6 +323,8 @@ jobs:
+   # behind the `workflows` permission the agent does not hold.
+   # ---------------------------------------------------------------------
+   report:
++    # Posting the comment holds nothing. The plan itself does, through `held`.
++    continue-on-error: true
+     name: Report the plan for ${{ matrix.site }}
+     needs: [sites, plan]
+     # Whatever the plan did - that is the point of saying so - but not for a
+diff --git a/.github/workflows/pool-proof/action.yml b/.github/workflows/pool-proof/action.yml
+index 507304f7..2cc1bd7b 100644
+--- a/.github/workflows/pool-proof/action.yml
++++ b/.github/workflows/pool-proof/action.yml
+@@ -61,7 +61,11 @@ runs:
+       shell: bash
+       run: |
+         set -euo pipefail
+-        if [ -n "${KUBERNETES_SERVICE_HOST:-}" ] && curl --insecure --silent --max-time 10 --output /dev/null "https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT:-443}/version"; then
++        if [ -z "${KUBERNETES_SERVICE_HOST:-}" ]; then
++          echo "::error::the runner was not told where the cluster's API is, so this proved nothing"
++          exit 1
++        fi
++        if curl --insecure --silent --max-time 10 --output /dev/null "https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT:-443}/version"; then
+           echo "::error::the cluster's API answered a runner in a pull-request pool. A pull request's job can speak to the cluster it runs in."
+           exit 1
+         fi
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index fc337624..4ba142be 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -139,20 +139,20 @@ jobs:
+           else
+             git fetch --no-tags --depth=1 origin "refs/pull/${number}/head"
+             tested="$(git rev-parse 'FETCH_HEAD^{commit}')"
+-            if [ "$(git rev-parse 'HEAD^{tree}')" != "$(git rev-parse 'FETCH_HEAD^{tree}')" ]; then
+-              echo "::notice::what would land differs from pull request ${number} as it was tested, so everything runs"
++            tree="$(git rev-parse 'HEAD^{tree}')"
++            # A pull request's run tests the branch merged with main and keeps
++            # that tree's id. Found for this pull request's head, the queue
++            # would land what passed; not found, main has moved since.
++            # curl and jq rather than gh, which the pull-request pools'
++            # image does not carry.
++            kept="$(curl --proto '=https' -fsS -H "Authorization: Bearer ${GITHUB_TOKEN}" -H 'Accept: application/vnd.github+json' \
++              "https://api.github.com/repos/${REPO}/actions/artifacts?name=tested-tree-${tree}&per_page=100" |
++              jq --arg head "${tested}" '[.artifacts[] | select(.expired | not) | select(.workflow_run.head_sha == $head)] | length')"
++            if [ "${kept}" -ge 1 ]; then
++              identical=true
++              echo "::notice::what would land is, file for file, what pull request ${number} passed at ${tested}"
+             else
+-              # curl and jq rather than gh, which the pull-request pools'
+-              # image does not carry.
+-              passed="$(curl --proto '=https' -fsS -H "Authorization: Bearer ${GITHUB_TOKEN}" -H 'Accept: application/vnd.github+json' \
+-                "https://api.github.com/repos/${REPO}/actions/workflows/pr-validation.yml/runs?head_sha=${tested}&event=pull_request&status=success&per_page=1" |
+-                jq '.total_count')"
+-              if [ "${passed}" -ge 1 ]; then
+-                identical=true
+-                echo "::notice::what would land is, file for file, pull request ${number} at ${tested}, which passed. Nothing is run again."
+-              else
+-                echo "::notice::pull request ${number} at ${tested} has no passing run of this workflow, so everything runs"
+-              fi
++              echo "::notice::pull request ${number} at ${tested} did not pass this tree, so everything runs"
+             fi
+           fi
+           echo "identical=${identical}" >> "$GITHUB_OUTPUT"
+@@ -249,7 +249,7 @@ jobs:
+       # the repository. The pre-commit-hooks checks are system hooks too, and
+       # run here because this lane took delivery of their package above.
+       #
+-      # tofu-fmt and go-fmt: no pinned binary here. ubuntu-latest ships some Go
++      # tofu-fmt and go-fmt: no pinned binary here. ubuntu-24.04 ships some Go
+       # toolchain, not necessarily the one this repo pins. The Validate lane
+       # installs both pinned and runs `tofu fmt -check` and `gofmt -l` there.
+       # Go formatting used to be enforced by the aggregate's Go analysis, which
+@@ -572,7 +572,7 @@ jobs:
+       # Vet lane instead, which has both the endpoints and the module cache.
+ 
+       # Formatting, with the pinned toolchain. The pre-commit hook skips this
+-      # in the Format lane because ubuntu-latest's Go is not necessarily the
++      # in the Format lane because ubuntu-24.04's Go is not necessarily the
+       # one this repository pins, so it is checked here where it is.
+       #
+       # NUL-delimited and piped rather than $(git ls-files) spliced into the
+@@ -1252,6 +1252,87 @@ jobs:
+             fi
+           done
+ 
++  # The one check a merge is held to from this workflow. It waits on every
++  # lane, so a lane can be added, renamed or moved without touching the
++  # ruleset, and policy/conftest/rules/plan_required_checks refuses a job here
++  # that it does not reach unless the job says continue-on-error.
++  tests-passed:
++    name: "tests passed"
++    needs:
++      [
++        already-tested,
++        format,
++        shellcheck,
++        validate,
++        test,
++        policy,
++        dockerfiles,
++        workflowscan,
++        spelling,
++        semgrep,
++        trivy,
++        secrets,
++      ]
++    # always(), or a failed lane would SKIP this job - and a skipped required
++    # check counts as passing. The result is read explicitly instead.
++    if: always()
++    runs-on: pr-source-${{ vars.pull_request_runners_site }}
++    timeout-minutes: 5
++    permissions:
++      contents: read
++    steps:
++      - name: Mobilize
++        uses: $/.github/workflows/mobilize
++        with:
++          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
++          # which job may reach what; `security guard-egress` refuses any drift.
++          # The copy lives here because harden-runner reads its policy in a
++          # pre-step, before any step of this job can run.
++          egress-policy: block
++          disable-sudo-and-containers: "true"
++          allowed-endpoints: >
++            api.github.com:443
++            github.com:443
++
++      - name: Every lane passed
++        env:
++          NEEDS: ${{ toJSON(needs) }}
++          IDENTICAL: ${{ needs.already-tested.outputs.identical }}
++          GATE: ${{ needs.already-tested.result }}
++        run: |
++          # The queue would land exactly what the pull request tested, and
++          # the lanes were skipped for it: said by the comparison itself, and
++          # only when the comparison succeeded.
++          if [ "${GATE}" = "success" ] && [ "${IDENTICAL}" = "true" ]; then
++            echo "already tested: nothing was run again"
++            exit 0
++          fi
++          # Every need but the comparison, which does not run on a pull request.
++          failed="$(jq -r 'del(."already-tested") | to_entries[] | select(.value.result != "success") | "\(.key) finished as \(.value.result)"' <<<"${NEEDS}")"
++          if [ -n "${failed}" ]; then
++            echo "::error::${failed}"
++            exit 1
++          fi
++
++      # What this run tested: the branch merged with main, which is what a
++      # pull_request run checks out. The queue looks for this tree, so it
++      # reruns nothing unless main has moved (already-tested).
++      - name: Record the tree that passed
++        if: github.event_name == 'pull_request'
++        run: |
++          mkdir -p tested
++          git rev-parse 'HEAD^{tree}' | tee tested/tree
++          echo "TESTED_TREE=$(cat tested/tree)" >> "$GITHUB_ENV"
++
++      - name: Keep it for the queue
++        if: github.event_name == 'pull_request'
++        uses: $/.github/workflows/upload-artifact
++        with:
++          name: tested-tree-${{ env.TESTED_TREE }}
++          path: tested/tree
++          if-no-files-found: error
++          retention-days: 30
++
+   # -----------------------------------------------------------------
+   # LANES 5-8: Static analysis, one tool each
+   # -----------------------------------------------------------------
+@@ -1441,7 +1522,7 @@ jobs:
+     needs: already-tested
+     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
+     name: "Logic Scan (Semgrep)"
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows.
+     timeout-minutes: 15
+@@ -1586,7 +1667,7 @@ jobs:
+     needs: already-tested
+     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
+     name: "Secrets Scan (TruffleHog)"
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows.
+     timeout-minutes: 15
+@@ -1669,12 +1750,14 @@ jobs:
+   # use, and on no job's allowlist anywhere in scripts/approved-suppliers.yml.
+   # -----------------------------------------------------------------
+   egress-reachable:
++    # Nothing waits on this.
++    continue-on-error: true
+     # Skipped, which the queue reads as passed, when the queue would land
+     # exactly what the pull request already tested (already-tested).
+     needs: already-tested
+     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
+     name: "Egress Proof (probe host answers unrestricted)"
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 5
+     permissions:
+       contents: read
+@@ -1699,12 +1782,14 @@ jobs:
+           echo "$PROBE answers when unrestricted."
+ 
+   egress-blocked:
++    # Nothing waits on this.
++    continue-on-error: true
+     # Skipped, which the queue reads as passed, when the queue would land
+     # exactly what the pull request already tested (already-tested).
+     needs: already-tested
+     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
+     name: "Egress Proof (block holds, sudo is gone)"
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 5
+     permissions:
+       contents: read
+@@ -1795,6 +1880,8 @@ jobs:
+   # work leaves this queued and holds nothing up.
+   # ---------------------------------------------------------------------
+   pool-source:
++    # Nothing waits on this.
++    continue-on-error: true
+     name: "Pool Proof (source)"
+     runs-on: pr-source-${{ vars.pull_request_runners_site }}
+     timeout-minutes: 5
+@@ -1831,6 +1918,8 @@ jobs:
+   # work leaves this queued and holds nothing up.
+   # ---------------------------------------------------------------------
+   pool-builds:
++    # Nothing waits on this.
++    continue-on-error: true
+     name: "Pool Proof (builds)"
+     runs-on: pr-builds-${{ vars.pull_request_runners_site }}
+     timeout-minutes: 5
+@@ -1869,6 +1958,8 @@ jobs:
+   # a proof that took it first would hold up the job the pool is for.
+   # ---------------------------------------------------------------------
+   pool-builds-primary:
++    # Nothing waits on this.
++    continue-on-error: true
+     needs: removal
+     if: ${{ !cancelled() }}
+     name: "Pool Proof (builds-primary)"
+@@ -1908,6 +1999,8 @@ jobs:
+   # work leaves this queued and holds nothing up.
+   # ---------------------------------------------------------------------
+   pool-packages:
++    # Nothing waits on this.
++    continue-on-error: true
+     name: "Pool Proof (packages)"
+     runs-on: pr-packages-${{ vars.pull_request_runners_site }}
+     timeout-minutes: 5
+diff --git a/.github/workflows/scorecard.yml b/.github/workflows/scorecard.yml
+index 935a08f0..8fb8a2e8 100644
+--- a/.github/workflows/scorecard.yml
++++ b/.github/workflows/scorecard.yml
+@@ -36,7 +36,7 @@ defaults:
+ jobs:
+   scorecard:
+     name: "Repository Posture"
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows.
+     timeout-minutes: 15
+diff --git a/.github/workflows/security-patrol.yml b/.github/workflows/security-patrol.yml
+index afb5ef3e..bdf19cb5 100644
+--- a/.github/workflows/security-patrol.yml
++++ b/.github/workflows/security-patrol.yml
+@@ -73,7 +73,7 @@ defaults:
+ jobs:
+   patrol:
+     name: "Security Patrol"
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows.
+     timeout-minutes: 10
+@@ -133,7 +133,7 @@ jobs:
+   # ---------------------------------------------------------------------
+   keys:
+     name: "Every App key still mints"
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows.
+     timeout-minutes: 10
+diff --git a/.github/workflows/site-sweep.yml b/.github/workflows/site-sweep.yml
+index 866ee1ef..a1f6e010 100644
+--- a/.github/workflows/site-sweep.yml
++++ b/.github/workflows/site-sweep.yml
+@@ -42,7 +42,7 @@ defaults:
+ jobs:
+   sweep:
+     name: "Site Sweep"
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     permissions:
+       # read to ask what is queued; write to cancel a run whose branch is
+       # gone. Here rather than on the workflow, so a job added beside it does
+diff --git a/.github/workflows/warm-caches.yml b/.github/workflows/warm-caches.yml
+index 4d8bf5a1..bf5c9a91 100644
+--- a/.github/workflows/warm-caches.yml
++++ b/.github/workflows/warm-caches.yml
+@@ -48,7 +48,7 @@ defaults:
+ jobs:
+   go:
+     name: Warm the Go cache
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     # Bounded so a stuck job cannot bill a metered vendor for six hours, which
+     # is what GitHub's default timeout allows.
+     timeout-minutes: 15
+diff --git a/management/estate/repository/rulesets.tf b/management/estate/repository/rulesets.tf
+index c8e602b5..f4d5df9a 100644
+--- a/management/estate/repository/rulesets.tf
++++ b/management/estate/repository/rulesets.tf
+@@ -166,18 +166,11 @@ locals {
+   the_platforms_workflow_runner = 15368
+ 
+   required_checks = [
+-    "Secrets Scan (TruffleHog)",
+-    "Validate (tofu, kustomize, kubeconform, go)",
+-    "IaC Scan (Trivy)",
+-    "Logic Scan (Semgrep)",
+-    "Shell Lint (ShellCheck)",
+-    "Test (go, tofu, vitest)",
++    # Every lane of pr-validation.yml, by way of its gate, so a lane can change
++    # without this list changing. A check here cannot be renamed: the pull
++    # request doing it would be held to a name it no longer reports.
++    "tests passed",
+     "Sensitive Paths",
+-    "Policy Scan (Checkov)",
+-    "Dockerfile Scan (hadolint)",
+-    "Workflow Scan (zizmor)",
+-    "Spelling (codespell)",
+-    "Format (pre-commit)",
+     "dependency-review",
+     # The plan: whether the site's hypervisor has room for what a change
+     # asks and whether the site can hold it. It answers for every change,
+diff --git a/policy/conftest/rules/plan_required_checks/plan_required_checks.rego b/policy/conftest/rules/plan_required_checks/plan_required_checks.rego
+index 5dc8c9f3..2fae3576 100644
+--- a/policy/conftest/rules/plan_required_checks/plan_required_checks.rego
++++ b/policy/conftest/rules/plan_required_checks/plan_required_checks.rego
+@@ -30,6 +30,29 @@ reported contains object.get(job, "name", name) if {
+ 	some [_, name, job] in lib.jobs
+ }
+ 
++# A gate is a required job that runs whatever its lanes did, to read their
++# results. The rest of its workflow holds a merge only through it.
++gates contains [file, name] if {
++	some [file, name, job] in lib.jobs
++	object.get(job, "name", name) in checks
++	contains(object.get(job, "if", ""), "always()")
++}
++
++needs_of(job) := [job.needs] if is_string(job.needs)
++
++else := job.needs if is_array(job.needs)
++
++else := []
++
++# waits_on is every job a gate reaches through its needs, itself included.
++waits_on(file, gate) := graph.reachable(
++	{name: {n | some n in needs_of(job)} |
++		some [f, name, job] in lib.jobs
++		f == file
++	},
++	{gate},
++)
++
+ deny contains msg if {
+ 	count(checks) == 0
+ 	msg := "no ruleset in any plan holds a merge to a check, so nothing here says which checks a merge is held to"
+@@ -45,3 +68,12 @@ deny contains msg if {
+ 	not c in reported
+ 	msg := $"a merge is held to a check named \"{c}\", and no job in any workflow reports under that name. Every pull request would wait on it for ever. Name the job as it is, or take the check out."
+ }
++
++deny contains msg if {
++	some [file, gate] in gates
++	some [other, name, job] in lib.jobs
++	other == file
++	not name in waits_on(file, gate)
++	not object.get(job, "continue-on-error", false)
++	msg := $"job {name} in {file} is not waited on by the required job {gate}, so it can fail and a merge go ahead. Add it to the gate's needs, or say continue-on-error if nothing is meant to wait on it"
++}
+diff --git a/policy/conftest/rules/plan_required_checks/plan_required_checks_test.rego b/policy/conftest/rules/plan_required_checks/plan_required_checks_test.rego
+index 84037faa..c8dd0fdc 100644
+--- a/policy/conftest/rules/plan_required_checks/plan_required_checks_test.rego
++++ b/policy/conftest/rules/plan_required_checks/plan_required_checks_test.rego
+@@ -37,3 +37,28 @@ test_no_workflow_is_refused if {
+ 	some msg in plan_required_checks.deny with input as [plan([ruleset(["x"])])]
+ 	contains(msg, "no workflow was read")
+ }
++
++lanes(jobs) := {"path": ".github/workflows/l.yml", "contents": {"jobs": jobs}}
++
++gate_job(needs) := {"name": "gate", "if": "always()", "needs": needs}
++
++test_a_gate_reaches_a_lane_through_another if {
++	i := [lanes({"gate": gate_job(["a"]), "a": {"needs": "b"}, "b": {}}), plan([ruleset(["gate"])])]
++	count(plan_required_checks.deny) == 0 with input as i
++}
++
++test_a_job_the_gate_does_not_reach_is_refused if {
++	i := [lanes({"gate": gate_job(["a"]), "a": {}, "b": {}}), plan([ruleset(["gate"])])]
++	some msg in plan_required_checks.deny with input as i
++	contains(msg, "job b in")
++}
++
++test_a_job_that_says_nothing_waits_on_it_is_left_out if {
++	i := [lanes({"gate": gate_job([]), "b": {"continue-on-error": true}}), plan([ruleset(["gate"])])]
++	count(plan_required_checks.deny) == 0 with input as i
++}
++
++test_a_required_job_that_is_not_a_gate_holds_nothing_else if {
++	i := [lanes({"gate": {"name": "gate"}, "b": {}}), plan([ruleset(["gate"])])]
++	count(plan_required_checks.deny) == 0 with input as i
++}
+diff --git a/scripts/approved-suppliers.yml b/scripts/approved-suppliers.yml
+index 5c2e3f87..31e7b03e 100644
+--- a/scripts/approved-suppliers.yml
++++ b/scripts/approved-suppliers.yml
+@@ -1171,6 +1171,13 @@ egress:
+       - api.github.com:443
+       - github.com:443
+ 
++  - job: pr-validation.yml/tests-passed
++    pool: source
++    policy: block
++    hosts:
++      - api.github.com:443
++      - github.com:443
++
+   - job: pr-validation.yml/dockerfiles
+     pool: source
+     policy: block
+@@ -1831,9 +1838,8 @@ work:
+ 
+   - job: pr-validation.yml/invariants
+     kind: cannot-wait
+-    # Expected once the removal guard left it (2026-10-31), not yet measured:
+-    # the lane less the 1,353 seconds that guard took on #772, rounded up.
+-    takes: 10m
++    # What it took on #848's run (2026-10-31), rounded up.
++    takes: 8m
+ 
+   - job: pr-validation.yml/removal
+     kind: cannot-wait
+@@ -1857,6 +1863,9 @@ work:
+   - job: pr-validation.yml/test
+     kind: cannot-wait
+     takes: 1m
++  - job: pr-validation.yml/tests-passed
++    kind: cannot-wait
++    takes: 1m
+ 
+   - job: sensitive-paths.yml/tripwire
+     kind: cannot-wait
+diff --git a/tests/mutations/TestEveryJobSaysWhetherItKeepsRoot.12ad3df1.yml b/tests/mutations/TestEveryJobSaysWhetherItKeepsRoot.12ad3df1.yml
+index bf50d123..3c8e40c6 100644
+--- a/tests/mutations/TestEveryJobSaysWhetherItKeepsRoot.12ad3df1.yml
++++ b/tests/mutations/TestEveryJobSaysWhetherItKeepsRoot.12ad3df1.yml
+@@ -5,7 +5,7 @@ create: |
+   on: push
+   jobs:
+     planted:
+-      runs-on: ubuntu-latest
++      runs-on: ubuntu-24.04
+       timeout-minutes: 1
+       steps:
+         - uses: $/.github/workflows/mobilize
+diff --git a/tests/mutations/TestEveryJobSaysWhetherItKeepsRoot.585d82f2.yml b/tests/mutations/TestEveryJobSaysWhetherItKeepsRoot.585d82f2.yml
+index 219f246d..323afa5e 100644
+--- a/tests/mutations/TestEveryJobSaysWhetherItKeepsRoot.585d82f2.yml
++++ b/tests/mutations/TestEveryJobSaysWhetherItKeepsRoot.585d82f2.yml
+@@ -5,7 +5,7 @@ create: |
+   on: push
+   jobs:
+     planted:
+-      runs-on: ubuntu-latest
++      runs-on: ubuntu-24.04
+       timeout-minutes: 1
+       steps:
+         - uses: $/.github/workflows/mobilize
+diff --git a/tests/mutations/TestEverySharedScriptIsNamedAndEveryNameIsAScript.e8044d97.yml b/tests/mutations/TestEverySharedScriptIsNamedAndEveryNameIsAScript.e8044d97.yml
+index 0d13260b..de1fd78d 100644
+--- a/tests/mutations/TestEverySharedScriptIsNamedAndEveryNameIsAScript.e8044d97.yml
++++ b/tests/mutations/TestEverySharedScriptIsNamedAndEveryNameIsAScript.e8044d97.yml
+@@ -5,7 +5,7 @@ create: |
+   on: push
+   jobs:
+     planted:
+-      runs-on: ubuntu-latest
++      runs-on: ubuntu-24.04
+       timeout-minutes: 1
+       steps:
+         - uses: $/.github/workflows/mobilize
+diff --git a/tests/mutations/TestTheConfigurationRulesHold.AWorkflowStartedByAnotherTakesNothingFromItButItsOutcome.1995c97b.yml b/tests/mutations/TestTheConfigurationRulesHold.AWorkflowStartedByAnotherTakesNothingFromItButItsOutcome.1995c97b.yml
+index ff1167fc..71d59b42 100644
+--- a/tests/mutations/TestTheConfigurationRulesHold.AWorkflowStartedByAnotherTakesNothingFromItButItsOutcome.1995c97b.yml
++++ b/tests/mutations/TestTheConfigurationRulesHold.AWorkflowStartedByAnotherTakesNothingFromItButItsOutcome.1995c97b.yml
+@@ -11,7 +11,7 @@ create: |
+     contents: read
+   jobs:
+     watch:
+-      runs-on: ubuntu-latest
++      runs-on: ubuntu-24.04
+       permissions:
+         contents: read
+       steps:
+diff --git a/tests/mutations/TestTheConfigurationRulesHold.EveryActionCommitIsWrittenOnce.62931efe.yml b/tests/mutations/TestTheConfigurationRulesHold.EveryActionCommitIsWrittenOnce.62931efe.yml
+index 65b00ead..833ba07e 100644
+--- a/tests/mutations/TestTheConfigurationRulesHold.EveryActionCommitIsWrittenOnce.62931efe.yml
++++ b/tests/mutations/TestTheConfigurationRulesHold.EveryActionCommitIsWrittenOnce.62931efe.yml
+@@ -6,7 +6,7 @@ create: |
+   on: push
+   jobs:
+     planted:
+-      runs-on: ubuntu-latest
++      runs-on: ubuntu-24.04
+       timeout-minutes: 1
+       steps:
+         - uses: $/.github/workflows/mobilize
+diff --git a/tests/mutations/TestTheConfigurationRulesHold.EveryActionCommitIsWrittenOnce.d147cc13.yml b/tests/mutations/TestTheConfigurationRulesHold.EveryActionCommitIsWrittenOnce.d147cc13.yml
+index 5df50bfa..88e8f1a1 100644
+--- a/tests/mutations/TestTheConfigurationRulesHold.EveryActionCommitIsWrittenOnce.d147cc13.yml
++++ b/tests/mutations/TestTheConfigurationRulesHold.EveryActionCommitIsWrittenOnce.d147cc13.yml
+@@ -6,7 +6,7 @@ create: |
+   on: push
+   jobs:
+     planted:
+-      runs-on: ubuntu-latest
++      runs-on: ubuntu-24.04
+       timeout-minutes: 1
+       steps:
+         - uses: $/.github/workflows/mobilize
+diff --git a/tests/mutations/TestTheConfigurationRulesHold.EveryAppTokenInputIsFedTheValueItsNameSays.837eaee1.yml b/tests/mutations/TestTheConfigurationRulesHold.EveryAppTokenInputIsFedTheValueItsNameSays.837eaee1.yml
+index e5d310f1..d6bb1f58 100644
+--- a/tests/mutations/TestTheConfigurationRulesHold.EveryAppTokenInputIsFedTheValueItsNameSays.837eaee1.yml
++++ b/tests/mutations/TestTheConfigurationRulesHold.EveryAppTokenInputIsFedTheValueItsNameSays.837eaee1.yml
+@@ -8,7 +8,7 @@ create: |
+     contents: read
+   jobs:
+     mint:
+-      runs-on: ubuntu-latest
++      runs-on: ubuntu-24.04
+       timeout-minutes: 5
+       steps:
+         - name: Mint a token
+diff --git a/tests/mutations/TestTheConfigurationRulesHold.EveryBypassMergeIsJudgedWhereItMerges.68ad61ef.yml b/tests/mutations/TestTheConfigurationRulesHold.EveryBypassMergeIsJudgedWhereItMerges.68ad61ef.yml
+index 6e0b2a7d..2309e702 100644
+--- a/tests/mutations/TestTheConfigurationRulesHold.EveryBypassMergeIsJudgedWhereItMerges.68ad61ef.yml
++++ b/tests/mutations/TestTheConfigurationRulesHold.EveryBypassMergeIsJudgedWhereItMerges.68ad61ef.yml
+@@ -8,7 +8,7 @@ create: |
+     contents: read
+   jobs:
+     release:
+-      runs-on: ubuntu-latest
++      runs-on: ubuntu-24.04
+       timeout-minutes: 5
+       steps:
+         - name: Judge
+diff --git a/tests/mutations/TestTheConfigurationRulesHold.EveryBypassMergeIsJudgedWhereItMerges.e9a2af9d.yml b/tests/mutations/TestTheConfigurationRulesHold.EveryBypassMergeIsJudgedWhereItMerges.e9a2af9d.yml
+index 02f878a7..f7c667d8 100644
+--- a/tests/mutations/TestTheConfigurationRulesHold.EveryBypassMergeIsJudgedWhereItMerges.e9a2af9d.yml
++++ b/tests/mutations/TestTheConfigurationRulesHold.EveryBypassMergeIsJudgedWhereItMerges.e9a2af9d.yml
+@@ -8,7 +8,7 @@ create: |
+     contents: read
+   jobs:
+     release:
+-      runs-on: ubuntu-latest
++      runs-on: ubuntu-24.04
+       timeout-minutes: 5
+       steps:
+         - name: Merge
+diff --git a/tests/mutations/TestTheConfigurationRulesHold.EveryJobHardensTheRunnerFirst.311d2fd8.yml b/tests/mutations/TestTheConfigurationRulesHold.EveryJobHardensTheRunnerFirst.311d2fd8.yml
+index a338cfc8..aacc5cf3 100644
+--- a/tests/mutations/TestTheConfigurationRulesHold.EveryJobHardensTheRunnerFirst.311d2fd8.yml
++++ b/tests/mutations/TestTheConfigurationRulesHold.EveryJobHardensTheRunnerFirst.311d2fd8.yml
+@@ -6,7 +6,7 @@ create: |
+   on: push
+   jobs:
+     planted:
+-      runs-on: ubuntu-latest
++      runs-on: ubuntu-24.04
+       timeout-minutes: 1
+       steps:
+         - uses: $/.github/actions/versions
+diff --git a/tests/mutations/TestTheConfigurationRulesHold.EveryJobHardensTheRunnerFirst.cd49835a.yml b/tests/mutations/TestTheConfigurationRulesHold.EveryJobHardensTheRunnerFirst.cd49835a.yml
+index 45e06596..155d5614 100644
+--- a/tests/mutations/TestTheConfigurationRulesHold.EveryJobHardensTheRunnerFirst.cd49835a.yml
++++ b/tests/mutations/TestTheConfigurationRulesHold.EveryJobHardensTheRunnerFirst.cd49835a.yml
+@@ -6,7 +6,7 @@ create: |
+   on: push
+   jobs:
+     planted:
+-      runs-on: ubuntu-latest
++      runs-on: ubuntu-24.04
+       timeout-minutes: 1
+       steps:
+         - uses: $/.github/workflows/does-not-exist
+diff --git a/tests/mutations/TestTheConfigurationRulesHold.EveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits.moved-onto-the-estates-runners.yml b/tests/mutations/TestTheConfigurationRulesHold.EveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits.moved-onto-the-estates-runners.yml
+index 8b91f2db..83a6e8c6 100644
+--- a/tests/mutations/TestTheConfigurationRulesHold.EveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits.moved-onto-the-estates-runners.yml
++++ b/tests/mutations/TestTheConfigurationRulesHold.EveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits.moved-onto-the-estates-runners.yml
+@@ -1,7 +1,7 @@
+ guard: TestTheConfigurationRulesHold
+ rule: plan_runner_group
+ file: .github/workflows/clerk.yml
+-find: "runs-on: ubuntu-latest"
++find: "runs-on: ubuntu-24.04"
+ replace: "runs-on: homelab-${{ vars.pull_request_runners_site }}"
+ mentions: "clerk.yml asks for the estate's runner and no group admits it"
+ why: >
+diff --git a/tests/mutations/TestTheConfigurationRulesHold.NoPrivilegedRunPutsAPullRequestInTheWorkspace.5871b2a6.yml b/tests/mutations/TestTheConfigurationRulesHold.NoPrivilegedRunPutsAPullRequestInTheWorkspace.5871b2a6.yml
+index 5495d50c..3dd5b09f 100644
+--- a/tests/mutations/TestTheConfigurationRulesHold.NoPrivilegedRunPutsAPullRequestInTheWorkspace.5871b2a6.yml
++++ b/tests/mutations/TestTheConfigurationRulesHold.NoPrivilegedRunPutsAPullRequestInTheWorkspace.5871b2a6.yml
+@@ -8,7 +8,7 @@ create: |
+       types: [created]
+   jobs:
+     planted:
+-      runs-on: ubuntu-latest
++      runs-on: ubuntu-24.04
+       timeout-minutes: 1
+       steps:
+         - name: Put the change where things run
+diff --git a/tests/mutations/TestTheConfigurationRulesHold.NoPrivilegedRunPutsAPullRequestInTheWorkspace.e1d9211a.yml b/tests/mutations/TestTheConfigurationRulesHold.NoPrivilegedRunPutsAPullRequestInTheWorkspace.e1d9211a.yml
+index 798754cc..aa24d0ed 100644
+--- a/tests/mutations/TestTheConfigurationRulesHold.NoPrivilegedRunPutsAPullRequestInTheWorkspace.e1d9211a.yml
++++ b/tests/mutations/TestTheConfigurationRulesHold.NoPrivilegedRunPutsAPullRequestInTheWorkspace.e1d9211a.yml
+@@ -6,7 +6,7 @@ create: |
+   on: [workflow_run]
+   jobs:
+     planted:
+-      runs-on: ubuntu-latest
++      runs-on: ubuntu-24.04
+       timeout-minutes: 1
+       steps:
+         - name: Fetch the change
+diff --git a/tests/mutations/TestTheConfigurationRulesHold.OnlyTheExpediteDutyRunsUnderItsCredential.36b9af0b.yml b/tests/mutations/TestTheConfigurationRulesHold.OnlyTheExpediteDutyRunsUnderItsCredential.36b9af0b.yml
+index 01feae0e..6ad85752 100644
+--- a/tests/mutations/TestTheConfigurationRulesHold.OnlyTheExpediteDutyRunsUnderItsCredential.36b9af0b.yml
++++ b/tests/mutations/TestTheConfigurationRulesHold.OnlyTheExpediteDutyRunsUnderItsCredential.36b9af0b.yml
+@@ -8,7 +8,7 @@ create: |
+     contents: read
+   jobs:
+     order:
+-      runs-on: ubuntu-latest
++      runs-on: ubuntu-24.04
+       timeout-minutes: 10
+       steps:
+         - name: Mint the expedite token
+diff --git a/tests/mutations/TestTheConfigurationRulesHold.OnlyTheExpediteDutyRunsUnderItsCredential.ab64ec83.yml b/tests/mutations/TestTheConfigurationRulesHold.OnlyTheExpediteDutyRunsUnderItsCredential.ab64ec83.yml
+index 9b1f3def..c7e3a1a1 100644
+--- a/tests/mutations/TestTheConfigurationRulesHold.OnlyTheExpediteDutyRunsUnderItsCredential.ab64ec83.yml
++++ b/tests/mutations/TestTheConfigurationRulesHold.OnlyTheExpediteDutyRunsUnderItsCredential.ab64ec83.yml
+@@ -8,7 +8,7 @@ create: |
+     contents: read
+   jobs:
+     chore:
+-      runs-on: ubuntu-latest
++      runs-on: ubuntu-24.04
+       timeout-minutes: 10
+       steps:
+         - name: Mint the expedite token
+diff --git a/tests/mutations/TestTheConfigurationRulesHold.a-lane-the-gate-does-not-wait-on.yml b/tests/mutations/TestTheConfigurationRulesHold.a-lane-the-gate-does-not-wait-on.yml
+new file mode 100644
+index 00000000..9a7e5a37
+--- /dev/null
++++ b/tests/mutations/TestTheConfigurationRulesHold.a-lane-the-gate-does-not-wait-on.yml
+@@ -0,0 +1,9 @@
++guard: TestTheConfigurationRulesHold
++rule: plan_required_checks
++file: .github/workflows/pr-validation.yml
++find: "        semgrep,\n        trivy,\n"
++replace: "        trivy,\n"
++mentions: "job semgrep in"
++why: >
++  A required gate reads its lanes through its needs. A lane dropped from them
++  can fail and a merge go ahead, and nothing on the page would say so.
+diff --git a/tests/mutations/TestTheConfigurationRulesHold.a-required-check-renamed.yml b/tests/mutations/TestTheConfigurationRulesHold.a-required-check-renamed.yml
+index e28ebdce..4b72930c 100644
+--- a/tests/mutations/TestTheConfigurationRulesHold.a-required-check-renamed.yml
++++ b/tests/mutations/TestTheConfigurationRulesHold.a-required-check-renamed.yml
+@@ -1,9 +1,9 @@
+ guard: TestTheConfigurationRulesHold
+ rule: plan_required_checks
+ file: .github/workflows/pr-validation.yml
+-find: "    name: \"Test (go, tofu, vitest)\"\n"
+-replace: "    name: \"Tests (go, tofu, vitest)\"\n"
+-mentions: 'a merge is held to a check named "Test (go, tofu, vitest)"'
++find: "    name: \"tests passed\"\n"
++replace: "    name: \"all tests passed\"\n"
++mentions: 'a merge is held to a check named "tests passed"'
+ why: >
+   The rule reads every job of every workflow for the names checks report
+   under. A required check no job reports holds every pull request for ever.
+diff --git a/tests/mutations/TestTheConfigurationRulesHold.no-pipefail-shell.yml b/tests/mutations/TestTheConfigurationRulesHold.no-pipefail-shell.yml
+index 2abbf06d..56e2dba8 100644
+--- a/tests/mutations/TestTheConfigurationRulesHold.no-pipefail-shell.yml
++++ b/tests/mutations/TestTheConfigurationRulesHold.no-pipefail-shell.yml
+@@ -6,7 +6,7 @@ create: |
+   on: push
+   jobs:
+     planted:
+-      runs-on: ubuntu-latest
++      runs-on: ubuntu-24.04
+       timeout-minutes: 1
+       steps:
+         - uses: $/.github/workflows/mobilize
+diff --git a/tests/mutations/TestTheConfigurationRulesHold.unbounded-job.yml b/tests/mutations/TestTheConfigurationRulesHold.unbounded-job.yml
+index d10d23f1..fdaf218b 100644
+--- a/tests/mutations/TestTheConfigurationRulesHold.unbounded-job.yml
++++ b/tests/mutations/TestTheConfigurationRulesHold.unbounded-job.yml
+@@ -6,7 +6,7 @@ create: |
+   on: push
+   jobs:
+     planted:
+-      runs-on: ubuntu-latest
++      runs-on: ubuntu-24.04
+       steps:
+         - uses: step-security/harden-runner@0123456789abcdef0123456789abcdef01234567
+ mentions: "declares no timeout-minutes"

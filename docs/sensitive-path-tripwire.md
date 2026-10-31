@@ -89,7 +89,7 @@ permissions:
 jobs:
   tripwire:
     name: Sensitive Paths
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       pull-requests: write
