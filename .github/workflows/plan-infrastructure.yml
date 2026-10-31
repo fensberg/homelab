@@ -323,6 +323,8 @@ jobs:
   # behind the `workflows` permission the agent does not hold.
   # ---------------------------------------------------------------------
   report:
+    # Posting the comment holds nothing. The plan itself does, through `held`.
+    continue-on-error: true
     name: Report the plan for ${{ matrix.site }}
     needs: [sites, plan]
     # Whatever the plan did - that is the point of saying so - but not for a

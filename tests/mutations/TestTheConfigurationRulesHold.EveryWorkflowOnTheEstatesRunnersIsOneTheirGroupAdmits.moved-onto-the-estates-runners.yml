@@ -1,7 +1,7 @@
 guard: TestTheConfigurationRulesHold
 rule: plan_runner_group
 file: .github/workflows/clerk.yml
-find: "runs-on: ubuntu-latest"
+find: "runs-on: ubuntu-24.04"
 replace: "runs-on: homelab-${{ vars.pull_request_runners_site }}"
 mentions: "clerk.yml asks for the estate's runner and no group admits it"
 why: >

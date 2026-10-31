@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_required_checks
+file: .github/workflows/pr-validation.yml
+find: "        semgrep,\n        trivy,\n"
+replace: "        trivy,\n"
+mentions: "job semgrep in"
+why: >
+  A required gate reads its lanes through its needs. A lane dropped from them
+  can fail and a merge go ahead, and nothing on the page would say so.

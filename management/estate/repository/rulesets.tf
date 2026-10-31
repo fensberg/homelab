@@ -166,18 +166,11 @@ locals {
   the_platforms_workflow_runner = 15368
 
   required_checks = [
-    "Secrets Scan (TruffleHog)",
-    "Validate (tofu, kustomize, kubeconform, go)",
-    "IaC Scan (Trivy)",
-    "Logic Scan (Semgrep)",
-    "Shell Lint (ShellCheck)",
-    "Test (go, tofu, vitest)",
+    # Every lane of pr-validation.yml, by way of its gate, so a lane can change
+    # without this list changing. A check here cannot be renamed: the pull
+    # request doing it would be held to a name it no longer reports.
+    "tests passed",
     "Sensitive Paths",
-    "Policy Scan (Checkov)",
-    "Dockerfile Scan (hadolint)",
-    "Workflow Scan (zizmor)",
-    "Spelling (codespell)",
-    "Format (pre-commit)",
     "dependency-review",
     # The plan: whether the site's hypervisor has room for what a change
     # asks and whether the site can hold it. It answers for every change,

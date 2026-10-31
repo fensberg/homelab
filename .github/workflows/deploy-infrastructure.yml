@@ -87,7 +87,7 @@ jobs:
   # ---------------------------------------------------------------------
   changes:
     name: What changed
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.
     timeout-minutes: 10
@@ -569,7 +569,7 @@ jobs:
     name: Roll aftermath
     needs: [roll, roll-handover]
     if: always() && (needs.roll.result == 'failure' || needs.roll-handover.result == 'failure')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       issues: write
@@ -721,7 +721,7 @@ jobs:
     name: Aftermath
     needs: [changes, converge]
     if: always() && needs.converge.result == 'failure'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       pull-requests: write

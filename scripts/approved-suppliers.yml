@@ -1171,6 +1171,13 @@ egress:
       - api.github.com:443
       - github.com:443
 
+  - job: pr-validation.yml/tests-passed
+    pool: source
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+
   - job: pr-validation.yml/dockerfiles
     pool: source
     policy: block
@@ -1831,9 +1838,8 @@ work:
 
   - job: pr-validation.yml/invariants
     kind: cannot-wait
-    # Expected once the removal guard left it (2026-10-31), not yet measured:
-    # the lane less the 1,353 seconds that guard took on #772, rounded up.
-    takes: 10m
+    # What it took on #848's run (2026-10-31), rounded up.
+    takes: 8m
 
   - job: pr-validation.yml/removal
     kind: cannot-wait
@@ -1855,6 +1861,9 @@ work:
     takes: 1m
 
   - job: pr-validation.yml/test
+    kind: cannot-wait
+    takes: 1m
+  - job: pr-validation.yml/tests-passed
     kind: cannot-wait
     takes: 1m
 
