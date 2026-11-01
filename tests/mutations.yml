@@ -171,6 +171,10 @@ unprovable:
     reason: table
   - test: TestOutputOfKeepsOneTestsLinesFromAnInterleavedRun
     reason: table
+  - test: TestAChangeReachesTheProofsItCouldAlter
+    reason: table
+  - test: TestARunProvesTheWholeLedgerOrTheChangeItCanRead
+    reason: table
   # The reader behind TestNoCodePicksASiteByName, whose own ledger entry
   # proves the guard. Its table holds the values it must find and the prose it
   # must leave.

@@ -61,8 +61,9 @@ to it. The tiers keep their names: unit, contract, integration, api, e2e.
 | Policy Scan (Checkov)        | scan / policy                    |
 | Already tested (merge queue) | skip if already tested           |
 
-**Moved on 2026-11-01 from the first two pull requests into the third, the bake:**
-hook timing and delivery metrics. They need a scheduled job, and the bake adds one.
+**Moved on 2026-11-01 out of the first two pull requests:** hook timing and
+delivery metrics. They were to go with the bake and went in a pull request of
+their own, because neither depends on it.
 
 ## How others do it
 
@@ -381,12 +382,25 @@ about half an hour and not a day. Nightly keeps what truly needs a schedule.
 checks pass. `minimumReleaseAge` is its built-in form, reported as
 `renovate/stability-days`, but it counts time and not results.
 
-**The gate is one required check in every pull request and the queue.** It reads
-what is failing on `main`.
+**The gate is the one required check, `tests passed`,** so no second check was
+added. `check what main is failing` reads main's newest finished run, and a lane
+failing there is owed by every pull request and the queue. Not being able to read
+it fails the gate.
 
-**The trap is a deadlock:** the fix has to merge too. So the check reruns
-exactly the failing checks on the pull request's tree. One that clears them
-passes; any other fails.
+**The trap is a deadlock:** the fix has to merge too. So the lane runs on the
+pull request's own tree. One that clears it passes; any other fails. Nothing has
+to be told a pull request is a fix.
+
+**As built, 2026-11-01:** `pr-validation.yml` also runs on a push to `main`,
+with only the removal check and the whole ledger. A pull request runs the proofs
+its change could alter: the file a proof breaks, the proof, its guard or its
+rule. They run in the ledger's same four jobs, because a change to the ledger
+itself reaches all of it, and one job does not fit that in its limit (#854). A
+change to a helper a guard calls is not seen, and is answered on main.
+`already-tested` does not skip while main is failing, or the queue could land
+past it. There were no sweeps to move: nothing in the pull request's lanes is
+one. The route to a person is piece 9; until then a failure is a red check on
+the commit.
 
 **A failing monitor cannot be cleared by a tree.** **Chose:** it holds the pin
 and alerts, and merges go on. Agreed 2026-10-31: an unrelated pull request must

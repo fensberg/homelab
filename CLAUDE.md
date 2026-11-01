@@ -539,7 +539,12 @@ depends on it and uses them.
   infrastructure** proves the code resolves: `tofu validate` against a
   placeholder config, and `kustomize build` piped through `kubeconform` with
   the Flux substitutions applied - Go vetting/building lives here too, for the
-  same reason. **test / unit** is the behaviour half of validate: Go unit and
+  same reason. **test / mutation** runs the proofs a change could alter on a
+  pull request and the whole ledger on `main` after the merge, beside **test /
+  app removal**, which runs only there. A lane failing on `main` is owed by
+  every pull request until one clears it (`scripts/main-failing.sh`), which is
+  how a fix lands and nothing else does. **test / unit** is the behaviour half
+  of validate: Go unit and
   contract tests, `tofu test` against the fixture corpus, and the
   JavaScript/TypeScript tier. Everything in it is hermetic, which is what lets
   a fork's pull request run it in full without reaching a credential. **scan /
