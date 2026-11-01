@@ -93,13 +93,13 @@
     "go/drafter": 90.5
   },
   "tiers": {
-    "unit": 453,
-    "contract": 149,
-    "integration": 14,
-    "api": 9,
+    "unit": 979,
+    "contract": 302,
+    "integration": 38,
+    "api": 17,
     "e2e": 2,
-    "js": 9,
-    "tofu": 12,
+    "js": 24,
+    "tofu": 82,
     "fuzz": 8
   }
 }

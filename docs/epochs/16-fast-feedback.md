@@ -61,6 +61,9 @@ to it. The tiers keep their names: unit, contract, integration, api, e2e.
 | Policy Scan (Checkov)        | scan / policy                    |
 | Already tested (merge queue) | skip if already tested           |
 
+**Moved on 2026-11-01 from the first two pull requests into the third, the bake:**
+hook timing and delivery metrics. They need a scheduled job, and the bake adds one.
+
 ## How others do it
 
 Read from their repositories on 2026-10-31. The default run on a pull request
@@ -192,8 +195,9 @@ and the second is checks on checks.
      Python and glibc assume 24.04.
    - One coverage line unless something changed. Raise `go/tests-helpers` from
      51.8 to 55.7, after measuring why it rose.
-   - Retire the tier floors, which sit at half the real counts; the inspector
-     names every removed test.
+   - Raise the tier floors to the real counts, which had drifted to about double.
+     The floors stay: the operator asked for those numbers, because the hard
+     tiers are the ones that get forgotten.
    - Name the proof's steps for what they check, and agree the names first.
    - The pool proof's API step passes when `KUBERNETES_SERVICE_HOST` is empty.
    - The flake policy, Decision 5.

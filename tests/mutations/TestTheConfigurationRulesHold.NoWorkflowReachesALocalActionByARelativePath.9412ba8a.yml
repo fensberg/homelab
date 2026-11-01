@@ -8,4 +8,4 @@ why: >
   The form twelve workflows used until zizmor's exemption for it was
   removed. It reads the action out of the workspace, so it depends on a
   checkout having happened and runs the checkout's copy; with no exemption
-  left, the Workflow Scan lane fails on it, and this says so before a push.
+  left, the scan / workflows lane fails on it, and this says so before a push.

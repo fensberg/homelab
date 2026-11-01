@@ -446,7 +446,7 @@ step "hadolint and shellcheck (pinned)"
 #
 # Why shellcheck is here at all:
 #
-# Not only for the Shell Lint lane's local equivalent.
+# Not only for the lint / shell lane's local equivalent.
 #
 # actionlint finds shellcheck by NAME on PATH and, when it is not there, it
 # disables the integration and exits 0. Its own help says so: with an empty

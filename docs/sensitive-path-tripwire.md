@@ -17,7 +17,7 @@ extra shouting.
 | `tests/go/repo/sensitivepaths_test.go`  | Keeps both honest                              | **Already** — inside the Test lane |
 | `.github/workflows/sensitive-paths.yml` | Comments, and fails until acknowledged         | On every pull request              |
 
-The test runs in `task test:repo`, inside the **Test (go, tofu, vitest)** lane,
+The test runs in `task test:repo`, inside the **test / repo policy** lane,
 which is a required status check on `main`.
 
 ## Editing the list

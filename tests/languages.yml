@@ -66,7 +66,7 @@ governed:
   - kind: ".sh"
     parsed_by: [semgrep]
     read_by: >-
-      shellcheck and shfmt via pre-commit and the Shell Lint lane, with each
+      shellcheck and shfmt via pre-commit and the lint / shell lane, with each
       unit required to be executed by a test
       (TestEveryUnitIsExecutedByATestOrIsADeclaredDebt).
   - kind: ".ts"
@@ -81,7 +81,7 @@ governed:
       commitlint loads commitlint.config.js on every commit - a broken one fails
       the commit-msg hook. The scripts beside .github/workflows/github-script
       are scanned by Semgrep, run by the plan-comment jobs and, for
-      env-reaches-script.js, by the Egress Proof lane on every pull request,
+      env-reaches-script.js, by the egress test lanes on every pull request,
       and read by the guards requiring each to be named and to replace its
       comment rather than append.
   - kind: ".mjs"
@@ -149,7 +149,7 @@ governed:
   - kind: ".codespellrc"
     read_by: "codespell, in task lint and the slow lane."
   - kind: ".shellcheckrc"
-    read_by: "ShellCheck, wherever it runs: the Shell Lint lane and on a workstation."
+    read_by: "ShellCheck, wherever it runs: the lint / shell lane and on a workstation."
   - kind: ".gitattributes"
     read_by: "git, on every checkout and diff."
   - kind: "CODEOWNERS"
@@ -177,7 +177,7 @@ governed:
 # can actually check.
 interpreters:
   - name: bash
-    read_by: "shellcheck and shfmt, via pre-commit and the Shell Lint lane."
+    read_by: "shellcheck and shfmt, via pre-commit and the lint / shell lane."
   - name: sh
     read_by: "shellcheck and shfmt, as bash."
 

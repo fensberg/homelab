@@ -10,7 +10,7 @@
 #
 # This lives here rather than inline in the workflow for the reason everything
 # else in this repository does: a script is reviewable, shellcheck lints it in
-# the Shell Lint lane, and tests/go/repo/sensitivepaths_test.go runs it against
+# the lint / shell lane, and tests/go/repo/sensitivepaths_test.go runs it against
 # known input. YAML embedded in a doc is none of those things - it is a copy
 # that drifts from whatever is actually running.
 #
