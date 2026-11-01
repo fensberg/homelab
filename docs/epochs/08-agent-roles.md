@@ -3,7 +3,8 @@
 - **Tier / path:** `.github/`, `scripts/`
 - **Branch:** `epoch/08-agent-roles`
 - **PR:** #
-- **Status:** In progress — started 2026-09-04
+- **Status:** On hold from 2026-10-31, for [15](15-expiring-keys.md) and
+  [16](16-fast-feedback.md) — started 2026-09-04
 
 ## Goal
 
@@ -1046,6 +1047,10 @@ The rule held within the same session - two questions surfaced while the
 binaries were being scoped, and both went to the operator before any code.
 
 ### The release design's last two stages are carried here
+
+**Moved to [16](16-fast-feedback.md) on 2026-10-31,** which now owns both. What
+follows is the record of what was carried, and 16 settles the question it leaves
+open about who moves a pin.
 
 From epoch 02, at its close on 2026-10-02. Production follows a pinned
 version: a merge publishes a release of the platform, and a site runs the

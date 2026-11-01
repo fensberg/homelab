@@ -8,7 +8,7 @@ create: |
       types: [created]
   jobs:
     planted:
-      runs-on: ubuntu-latest
+      runs-on: ubuntu-24.04
       timeout-minutes: 1
       steps:
         - name: Put the change where things run

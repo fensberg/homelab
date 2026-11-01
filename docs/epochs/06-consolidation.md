@@ -3,7 +3,8 @@
 - **Tier / path:** repository-wide
 - **Branch:** `epoch/06-consolidation`
 - **PR:** #
-- **Status:** Not started
+- **Status:** On hold from 2026-10-31, for [15](15-expiring-keys.md) and
+  [16](16-fast-feedback.md). Not started
 - **Closed:** `<date>`
 
 ## Goal
@@ -254,6 +255,84 @@ Explicitly out of scope (and which epoch owns it instead):
    runs every `run:` with bash - a one-line call with bash only launching
    it, or a `shell:` of the estate's own. **The test is a change:** a shell
    file, or a step or task that is a shell script, fails a pull request.
+
+### The contractor gives way to standard tools
+
+Agreed 2026-10-15. Reading the contractor against what Epoch 05's roll
+needed showed much of it doing, in Go, jobs standard tools already do: it
+had become an orchestrator and a secrets renderer and a health checker of
+its own. The operator: "It feels like we wasted a lot of time re-inventing
+the wheel. I don't like that." So each of its pieces is a criterion here,
+and the epoch does not close until each is replaced or is shown to have no
+standard equivalent.
+
+Each is done the same way: the standard tool does the job, **what the piece
+guaranteed is written down first and still holds afterwards** - by a test,
+a guard or the tool itself - and the Go is deleted. A piece moved without
+its guarantee is not done.
+
+- **6. Secrets are never rendered to disk.** The config's vault values reach
+  OpenTofu through its 1Password provider, as ephemeral values that never
+  reach state, and reach Ansible through `op run` and its own 1Password
+  lookup. _Keeps:_ nothing secret is ever written to a file, and a value
+  that was never written needs no wiping; the Sterilize phase shrinks to
+  what remains, or goes. _Replaces:_ render, the rendered secrets, most
+  of Sterilize.
+- **7. The hypervisor is prepared by Ansible, run directly** -
+  `op run -- ansible-playbook` - and not through the contractor. _Keeps:_
+  the same play, the same refusals inside it. _Replaces:_ the hypervisor
+  phase and the inventory it renders.
+- **8. The site's roots are ordered by Terragrunt**, split where a provider
+  needs what an earlier root created, and nothing is applied with
+  `-target` as routine. _Keeps:_ every step applied in the order the
+  steps list gives today, and a plan of the converge's own steps.
+  _Replaces:_ the steps list, the targeted applies and per-step plans of
+  the compute and cluster phases. The steps list is a workaround for
+  using `-target` routinely, which OpenTofu's and HashiCorp's own guidance
+  says not to do.
+- **9. The health gate is the platforms' own checks**: `talosctl health`,
+  `kubectl wait` on Flux's layers and on the state database, run as steps.
+  _Keeps:_ every question the gate asks today that the stock checks do not
+  (every etcd member voting, the database seen at rest twice, a DaemonSet
+  short of a machine), as a wait of its own or with an argument that it is
+  not needed. _Replaces:_ health, health_etcd, atrest, most of their 1700
+  lines.
+- **10. The state is backed up by a scheduled job** of three standard tools,
+  `tofu state pull | age | rclone`, with no Go. _Keeps:_ the plaintext
+  state never touches a disk, the dump goes to the bucket of its own, and
+  a backup that is late is said (epoch 04, criterion 12). _Replaces:_ the
+  Backup phase.
+- **11. Moving the state from a local file to the database is
+  `tofu init -migrate-state`**, run once by the ignition. _Keeps:_ the
+  refusal to copy an empty backend over a populated one. _Replaces:_ the
+  Migrate phase's own copying.
+- **12. A credential lives as long as its command, by `op run`.**
+  `talosctl kubeconfig` and `talosctl config` under `op run --`, with
+  nothing written that outlives the command. _Keeps:_ a credential is
+  never kept between uses. _Replaces:_ the kubeconfig and talosconfig
+  wrappers.
+- **13. The hypervisor's memory budget is an OpenTofu precondition**, read
+  from the Proxmox provider's own data about each host, so it is checked
+  at plan by the tool that would make the machines. _Keeps:_ a site is
+  refused machines its host cannot hold, at plan time, and the plan of a
+  pull request says so. _Replaces:_ the budget package and the hardware
+  survey, or the part of it the provider's data covers.
+- **14. Each rule about the config lives in the config's own checks**:
+  OpenTofu `precondition` and `check` blocks, where the build's and the
+  converge's preconditions are really rules about what the config says.
+  _Keeps:_ every refusal, with a case in the contract corpus. _Replaces:_
+  most of the build and converge preconditions.
+- **15. What is left of the contractor is named, and each has no standard
+  equivalent**, written down beside it: planning a pull request against
+  the as-built record with no credential; taking the record and the
+  capacity snapshot; restoring from the break-glass key; and refusing to
+  attach to an empty state backend, which nothing standard can tell from
+  a full one. A piece on that list that turns out to have a standard
+  equivalent goes back above.
+
+Epoch 05's roll of machines is the first piece built the new way: an
+Ansible play, one machine at a time, and not a phase of the contractor
+(the operator, 2026-10-15). #626's Go was closed for it.
 
 ## Decisions
 

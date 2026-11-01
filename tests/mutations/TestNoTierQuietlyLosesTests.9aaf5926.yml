@@ -1,7 +1,7 @@
 guard: TestNoTierQuietlyLosesTests
 file: tests/coverage-baseline.json
-find: '"integration": 14,'
-replace: '"integration": 99,'
+find: '"integration": 38,'
+replace: '"integration": 999,'
 mentions: "integration tier has"
 why: >
   Unit tests are cheap and the count always rises; the tiers that drive

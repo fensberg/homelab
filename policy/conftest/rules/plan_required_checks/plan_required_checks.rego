@@ -30,6 +30,29 @@ reported contains object.get(job, "name", name) if {
 	some [_, name, job] in lib.jobs
 }
 
+# A gate is a required job that runs whatever its lanes did, to read their
+# results. The rest of its workflow holds a merge only through it.
+gates contains [file, name] if {
+	some [file, name, job] in lib.jobs
+	object.get(job, "name", name) in checks
+	contains(object.get(job, "if", ""), "always()")
+}
+
+needs_of(job) := [job.needs] if is_string(job.needs)
+
+else := job.needs if is_array(job.needs)
+
+else := []
+
+# waits_on is every job a gate reaches through its needs, itself included.
+waits_on(file, gate) := graph.reachable(
+	{name: {n | some n in needs_of(job)} |
+		some [f, name, job] in lib.jobs
+		f == file
+	},
+	{gate},
+)
+
 deny contains msg if {
 	count(checks) == 0
 	msg := "no ruleset in any plan holds a merge to a check, so nothing here says which checks a merge is held to"
@@ -44,4 +67,13 @@ deny contains msg if {
 	some c in checks
 	not c in reported
 	msg := $"a merge is held to a check named \"{c}\", and no job in any workflow reports under that name. Every pull request would wait on it for ever. Name the job as it is, or take the check out."
+}
+
+deny contains msg if {
+	some [file, gate] in gates
+	some [other, name, job] in lib.jobs
+	other == file
+	not name in waits_on(file, gate)
+	not object.get(job, "continue-on-error", false)
+	msg := $"job {name} in {file} is not waited on by the required job {gate}, so it can fail and a merge go ahead. Add it to the gate's needs, or say continue-on-error if nothing is meant to wait on it"
 }

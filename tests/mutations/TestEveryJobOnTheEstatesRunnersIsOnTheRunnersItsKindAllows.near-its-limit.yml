@@ -1,0 +1,8 @@
+guard: TestEveryJobOnTheEstatesRunnersIsOnTheRunnersItsKindAllows
+file: scripts/approved-suppliers.yml
+find: "    takes: 23m\n"
+replace: "    takes: 31m\n"
+mentions: "within a fifth of its limit"
+why: >
+  A job that ordinarily lands near its limit passes or fails by seconds. The
+  invariants lane held #772 by 28 of them and killed #767 with no test failed.

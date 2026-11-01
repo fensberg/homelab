@@ -182,10 +182,27 @@ jobs:
             release-assets.githubusercontent.com:443
             storage.googleapis.com:443
             sum.golang.org:443
-          # The commit this is checked out at is the pull request merged into
-          # its base, and the one before it is the base. The engineer reads
-          # both to say what the change adds.
-          fetch-depth: "2"
+          # All of it, so the change can be brought onto the current main.
+          fetch-depth: 0
+
+      # A run's checkout is the base as it stood when the run began, and a job
+      # can wait a long time for a runner. The record below is the newest, so
+      # planning the old base against it reads whatever merged in between as
+      # this change undoing it: #850's plan destroyed what #849 had just made.
+      # After this the commit is the change merged into the current main, and
+      # the one before it is main, which the engineer reads to say what it adds.
+      - name: Bring the change onto the current main
+        if: github.event.merge_group.head_sha == ''
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          change="$(git rev-parse HEAD^2)"
+          git fetch --no-tags origin "${BASE}"
+          git checkout --quiet --detach FETCH_HEAD
+          if ! git -c user.name=plan -c user.email=plan@invalid merge --quiet --no-edit "${change}"; then
+            echo "::error::this change no longer merges with ${BASE}, so there is nothing to plan"
+            exit 1
+          fi
 
       - name: Read pinned versions
         uses: $/.github/actions/versions
@@ -323,6 +340,8 @@ jobs:
   # behind the `workflows` permission the agent does not hold.
   # ---------------------------------------------------------------------
   report:
+    # Posting the comment holds nothing. The plan itself does, through `held`.
+    continue-on-error: true
     name: Report the plan for ${{ matrix.site }}
     needs: [sites, plan]
     # Whatever the plan did - that is the point of saying so - but not for a

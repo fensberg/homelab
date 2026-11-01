@@ -1,0 +1,9 @@
+guard: TestTheRollDoesNothingOutsideTheWindowOrWithNothingBehind
+file: management/roll/talos-upgrade.yml
+find: "      when: (hour.stdout | int) not in roll_window_hours"
+replace: "      when: false"
+mentions: "outside the window the roll failed"
+why: >
+  The window is what keeps a roll away from players and from the hours the
+  operator is awake for something else; without it the hourly timer rolls
+  machines whenever it fires.

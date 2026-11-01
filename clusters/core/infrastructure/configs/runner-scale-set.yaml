@@ -285,6 +285,15 @@ spec:
             # Required whenever the template is overridden: the chart supplies
             # this only for its own default runner container.
             command: ["/home/runner/run.sh"]
+            # The machine this runner is on, for the machine roll
+            # (management/roll): a job never drains the machine it runs on.
+            # It cordons it and hands it to the next job, which this tells it
+            # it is not on.
+            env:
+              - name: RUNNER_NODE_NAME
+                valueFrom:
+                  fieldRef:
+                    fieldPath: spec.nodeName
             # This container builds nothing and installs nothing - the image
             # carries the whole toolchain, pinned. So it needs no capability
             # and no route to acquire one. The root filesystem stays writable

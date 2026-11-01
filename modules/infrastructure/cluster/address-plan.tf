@@ -19,3 +19,8 @@ module "address_plan" {
 module "applications" {
   source = "../applications"
 }
+
+# What the machines run, declared once for this module and the platform's.
+module "machine_image" {
+  source = "../machine-image"
+}

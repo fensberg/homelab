@@ -34,6 +34,10 @@ env:
   # invariants lane skips it rather than running every module's tests again
   # (#815).
   OWN_LANE_TESTS: "^(TestEveryUncoveredFunctionIsDeclared)$"
+  # The guard that removes each application and runs the whole suite twice in
+  # copies, named once in the same way. It took the invariants lane to Go's
+  # thirty-minute limit, where a run finished or not by seconds (epoch 16).
+  REMOVAL_TESTS: "^(TestAnApplicationIsRemovedByDeletingItsDirectoryAndItsBlocks)$"
 
 # Cancel in-progress runs if a new commit is pushed to the PR
 concurrency:
@@ -98,7 +102,7 @@ jobs:
   # ahead in the queue, the trees differ and everything runs: which is the
   # case the queue is for.
   already-tested:
-    name: "Already tested (merge queue)"
+    name: "skip if already tested"
     if: github.event_name == 'merge_group'
     runs-on: pr-source-${{ vars.pull_request_runners_site }}
     timeout-minutes: 5
@@ -135,20 +139,20 @@ jobs:
           else
             git fetch --no-tags --depth=1 origin "refs/pull/${number}/head"
             tested="$(git rev-parse 'FETCH_HEAD^{commit}')"
-            if [ "$(git rev-parse 'HEAD^{tree}')" != "$(git rev-parse 'FETCH_HEAD^{tree}')" ]; then
-              echo "::notice::what would land differs from pull request ${number} as it was tested, so everything runs"
+            tree="$(git rev-parse 'HEAD^{tree}')"
+            # A pull request's run tests the branch merged with main and keeps
+            # that tree's id. Found for this pull request's head, the queue
+            # would land what passed; not found, main has moved since.
+            # curl and jq rather than gh, which the pull-request pools'
+            # image does not carry.
+            kept="$(curl --proto '=https' -fsS -H "Authorization: Bearer ${GITHUB_TOKEN}" -H 'Accept: application/vnd.github+json' \
+              "https://api.github.com/repos/${REPO}/actions/artifacts?name=tested-tree-${tree}&per_page=100" |
+              jq --arg head "${tested}" '[.artifacts[] | select(.expired | not) | select(.workflow_run.head_sha == $head)] | length')"
+            if [ "${kept}" -ge 1 ]; then
+              identical=true
+              echo "::notice::what would land is, file for file, what pull request ${number} passed at ${tested}"
             else
-              # curl and jq rather than gh, which the pull-request pools'
-              # image does not carry.
-              passed="$(curl --proto '=https' -fsS -H "Authorization: Bearer ${GITHUB_TOKEN}" -H 'Accept: application/vnd.github+json' \
-                "https://api.github.com/repos/${REPO}/actions/workflows/pr-validation.yml/runs?head_sha=${tested}&event=pull_request&status=success&per_page=1" |
-                jq '.total_count')"
-              if [ "${passed}" -ge 1 ]; then
-                identical=true
-                echo "::notice::what would land is, file for file, pull request ${number} at ${tested}, which passed. Nothing is run again."
-              else
-                echo "::notice::pull request ${number} at ${tested} has no passing run of this workflow, so everything runs"
-              fi
+              echo "::notice::pull request ${number} at ${tested} did not pass this tree, so everything runs"
             fi
           fi
           echo "identical=${identical}" >> "$GITHUB_OUTPUT"
@@ -161,7 +165,7 @@ jobs:
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
-    name: "Format (pre-commit)"
+    name: "lint / format"
     runs-on: pr-packages-${{ vars.pull_request_runners_site }}
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.
@@ -245,7 +249,7 @@ jobs:
       # the repository. The pre-commit-hooks checks are system hooks too, and
       # run here because this lane took delivery of their package above.
       #
-      # tofu-fmt and go-fmt: no pinned binary here. ubuntu-latest ships some Go
+      # tofu-fmt and go-fmt: no pinned binary here. ubuntu-24.04 ships some Go
       # toolchain, not necessarily the one this repo pins. The Validate lane
       # installs both pinned and runs `tofu fmt -check` and `gofmt -l` there.
       # Go formatting used to be enforced by the aggregate's Go analysis, which
@@ -280,7 +284,7 @@ jobs:
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
-    name: "Shell Lint (ShellCheck)"
+    name: "lint / shell"
     runs-on: pr-source-${{ vars.pull_request_runners_site }}
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.
@@ -357,7 +361,7 @@ jobs:
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
-    name: "Validate (tofu, kustomize, kubeconform, go)"
+    name: "validate / infrastructure"
     runs-on: pr-builds-${{ vars.pull_request_runners_site }}
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.
@@ -568,7 +572,7 @@ jobs:
       # Vet lane instead, which has both the endpoints and the module cache.
 
       # Formatting, with the pinned toolchain. The pre-commit hook skips this
-      # in the Format lane because ubuntu-latest's Go is not necessarily the
+      # in the Format lane because ubuntu-24.04's Go is not necessarily the
       # one this repository pins, so it is checked here where it is.
       #
       # NUL-delimited and piped rather than $(git ls-files) spliced into the
@@ -623,7 +627,7 @@ jobs:
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
-    name: "Test (Go modules, OpenTofu)"
+    name: "test / unit"
     runs-on: pr-builds-${{ vars.pull_request_runners_site }}
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.
@@ -762,7 +766,8 @@ jobs:
           bash scripts/coverage-gate.sh "go/tests-helpers" "$pct"
 
       # Every function the tests above did not run is declared, judged on the
-      # profiles they wrote. The invariants lane skips it by $OWN_LANE_TESTS.
+      # profiles they wrote. The invariants and removal lanes skip it by
+      # $OWN_LANE_TESTS.
       - name: Every uncovered function is declared
         working-directory: tests/go
         env:
@@ -785,7 +790,7 @@ jobs:
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
-    name: "Vet (every tier)"
+    name: "lint / go vet"
     runs-on: pr-builds-${{ vars.pull_request_runners_site }}
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.
@@ -845,9 +850,106 @@ jobs:
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
-    name: "Repository invariants"
+    name: "test / repo policy"
+    runs-on: pr-builds-${{ vars.pull_request_runners_site }}
+    # Bounded so a stuck job cannot bill a metered vendor for six hours,
+    # which is what GitHub's default timeout allows; above Go's own bound
+    # on the tests below, so a slow run fails as a timeout that names the
+    # test rather than as a cancelled job that names nothing.
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
+          egress-policy: block
+          disable-sudo-and-containers: "true"
+          # All of it, for the tags: the configuration rules plan each site
+          # with the release it runs, read from that release's tag (#843).
+          fetch-depth: 0
+          allowed-endpoints: >
+            api.github.com:443
+            dl.k8s.io:443
+            files.pythonhosted.org:443
+            get.opentofu.org:443
+            github.com:443
+            go.dev:443
+            objects.githubusercontent.com:443
+            proxy.golang.org:443
+            pypi.org:443
+            registry.opentofu.org:443
+            release-assets.githubusercontent.com:443
+            storage.googleapis.com:443
+            sum.golang.org:443
+
+      # Versions come from scripts/versions.env, which is the only place one
+      # is written. See .github/actions/versions for why this is a step
+      # rather than a setup job.
+      - name: Read pinned versions
+        uses: $/.github/actions/versions
+
+      - name: Setup Go
+        uses: $/.github/workflows/setup-go
+        with:
+          # tests/go is the only module here with dependencies to cache;
+          # scripts/contractor has none, so there is no go.sum of its own to key on.
+          cache-dependency-path: tests/go/go.sum
+
+      - name: Install OpenTofu, kustomize, Conftest, OPA and Semgrep
+        # The installer script from scripts/deliveries.lock by hash, run into
+        # directories the runner account owns - this job runs with sudo
+        # removed (#410). Until #416 the script was fetched and executed with
+        # nothing checking what arrived.
+        # Conftest and Semgrep run the configuration and code rules in
+        # policy/, which the guards here prove like any other
+        # (TestTheConfigurationRulesHold, TestTheCodeRulesHold), OPA reads
+        # the configuration rules themselves (TestOnlyTheSelectorsReadTheInput)
+        # and Regal lints them
+        # (TestTheConfigurationRulesAreWrittenAsTheirLinterWouldHaveThem).
+        run: scripts/take-delivery.sh opentofu kustomize conftest opa regal semgrep
+
+      # The plays are run here, not read: the machine roll against a cluster
+      # of Kubernetes' own store and API server, and the workstation's play
+      # against a stand-in hypervisor.
+      - name: Take delivery of what the plays are run with
+        run: scripts/take-delivery.sh kwokctl etcd kube-apiserver kubectl ansible-core ansible kubernetes
+
+      # Untagged, so this compiles and runs only the hermetic tests in
+      # tests/go: the repository-invariant checks and the state-encryption
+      # cutover rehearsal. The integration, api and e2e tiers all carry a
+      # build tag and are not reachable here.
+      #
+      # After the OpenTofu install above, not before - the cutover rehearsal
+      # drives a real `tofu` against a scratch workspace.
+      - name: Repository invariants and the encryption rehearsal
+        working-directory: tests/go
+        # The meta-tests and the removal guard run in the lanes below, in
+        # parallel with this one, and the coverage guard in the Go modules lane.
+        # Each set is skipped
+        # by the same variable that selects it there, so one declaration
+        # decides both and no test can fall between the two.
+        env:
+          # Go's default of ten minutes is not a budget anybody set, and the
+          # guards passed it on #790 while they moved onto tests/parsed.
+          # This is a ceiling for a stuck run, not the target. -v prints each
+          # guard's time, which is what says where the time went.
+          GOFLAGS: -timeout=30m -v
+        run: go test ./... -skip "$META_TESTS|$OWN_LANE_TESTS|$REMOVAL_TESTS"
+
+  removal:
+    # Skipped, which the queue reads as passed, when the queue would land
+    # exactly what the pull request already tested (already-tested).
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
+    name: "test / app removal"
     # The primary pool: the job every pull request waits on longest, so it
-    # never waits for one of the builds pool's runners (2026-10-23).
+    # never waits for one of the builds pool's runners (2026-10-23). This has
+    # been that job since it left the invariants lane.
     runs-on: pr-builds-primary-${{ vars.pull_request_runners_site }}
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows; above Go's own bound
@@ -871,6 +973,7 @@ jobs:
           fetch-depth: 0
           allowed-endpoints: >
             api.github.com:443
+            dl.k8s.io:443
             files.pythonhosted.org:443
             get.opentofu.org:443
             github.com:443
@@ -909,34 +1012,31 @@ jobs:
         # (TestTheConfigurationRulesAreWrittenAsTheirLinterWouldHaveThem).
         run: scripts/take-delivery.sh opentofu kustomize conftest opa regal semgrep
 
-      # Untagged, so this compiles and runs only the hermetic tests in
-      # tests/go: the repository-invariant checks and the state-encryption
-      # cutover rehearsal. The integration, api and e2e tiers all carry a
-      # build tag and are not reachable here.
-      #
-      # After the OpenTofu install above, not before - the cutover rehearsal
-      # drives a real `tofu` against a scratch workspace.
-      - name: Repository invariants and the encryption rehearsal
+      # The plays are run here, not read: the machine roll against a cluster
+      # of Kubernetes' own store and API server, and the workstation's play
+      # against a stand-in hypervisor.
+      - name: Take delivery of what the plays are run with
+        run: scripts/take-delivery.sh kwokctl etcd kube-apiserver kubectl ansible-core ansible kubernetes
+
+      # Every guard against a copy of the repository, and again against a copy
+      # without the application, which is why the plays' tools are taken above:
+      # the roll's guards run in those copies too.
+      - name: Removing an application breaks nothing outside it
         working-directory: tests/go
-        # The two meta-tests run in the lane below, in parallel with this one,
-        # and the coverage guard in the Go modules lane. Each set is skipped
-        # by the same variable that selects it there, so one declaration
-        # decides both and no test can fall between the two.
         env:
-          # Go's default of ten minutes is not a budget anybody set, and the
-          # guards passed it on #790 while they moved onto tests/parsed: the
-          # application-removal guard runs every guard once per application.
-          # This is a ceiling for a stuck run, not the target. -v prints each
-          # guard's time, which is what says where the time went.
+          # A ceiling for a stuck run, not the target. -v prints the guard's
+          # time, which is what says where the time went.
           GOFLAGS: -timeout=30m -v
-        run: go test ./... -skip "$META_TESTS|$OWN_LANE_TESTS"
+        # The copies are handed this -skip, so the tests of other lanes do not
+        # run in them. Without it they would run the coverage guard.
+        run: go test ./repo/ -run "$REMOVAL_TESTS" -skip "$META_TESTS|$OWN_LANE_TESTS"
 
   meta:
     # Skipped, which the queue reads as passed, when the queue would land
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
-    name: "Meta-tests (mutation ledger, part ${{ matrix.part }})"
+    name: "test / mutation (${{ matrix.part }} of 4)"
     runs-on: pr-builds-${{ vars.pull_request_runners_site }}
     # The parts share the ledger's proofs, each in a job of its own. One job,
     # it ran past ten minutes. Each job learns which part it is from GitHub's
@@ -950,7 +1050,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [0, 1, 2, 3]
+        part: [1, 2, 3, 4]
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows. Above the tests' own
     # bound below, so that a slow run is reported by Go, naming the test,
@@ -973,6 +1073,7 @@ jobs:
           fetch-depth: 0
           allowed-endpoints: >
             api.github.com:443
+            dl.k8s.io:443
             files.pythonhosted.org:443
             get.opentofu.org:443
             github.com:443
@@ -1010,6 +1111,10 @@ jobs:
         # and Regal lints them
         # (TestTheConfigurationRulesAreWrittenAsTheirLinterWouldHaveThem).
         run: scripts/take-delivery.sh opentofu kustomize conftest opa regal semgrep
+
+      # A proof runs its guard, and the plays' guards run the plays.
+      - name: Take delivery of what the plays are run with
+        run: scripts/take-delivery.sh kwokctl etcd kube-apiserver kubectl ansible-core ansible kubernetes
 
       # The test that proves the other tests: the mutation ledger breaks each
       # guarded file and checks its guard fails. It re-runs a large part of
@@ -1033,7 +1138,7 @@ jobs:
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
-    name: "Test (vitest)"
+    name: "test / frontend"
     runs-on: pr-packages-${{ vars.pull_request_runners_site }}
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.
@@ -1094,9 +1199,32 @@ jobs:
           pct="$(node -e 'const p=require("./coverage/js/coverage-summary.json").total.statements.pct;console.log(Number.isFinite(p)?p:0)' 2>/dev/null || echo 0)"
           bash scripts/coverage-gate.sh js "$pct"
 
-  test:
-    name: "Test (go, tofu, vitest)"
-    needs: [already-tested, test-go, vet, invariants, meta, test-js]
+  # The one check a merge is held to from this workflow. It waits on every
+  # lane, so a lane can be added, renamed or moved without touching the
+  # ruleset, and policy/conftest/rules/plan_required_checks refuses a job here
+  # that it does not reach unless the job says continue-on-error.
+  tests-passed:
+    name: "tests passed"
+    needs:
+      [
+        already-tested,
+        format,
+        shellcheck,
+        validate,
+        test-go,
+        vet,
+        invariants,
+        removal,
+        meta,
+        test-js,
+        policy,
+        dockerfiles,
+        workflowscan,
+        spelling,
+        semgrep,
+        trivy,
+        secrets,
+      ]
     # always(), or a failed lane would SKIP this job - and a skipped required
     # check counts as passing. The result is read explicitly instead.
     if: always()
@@ -1114,38 +1242,48 @@ jobs:
           # pre-step, before any step of this job can run.
           egress-policy: block
           disable-sudo-and-containers: "true"
-          # Only the checkout Mobilize performs; the check itself reads the
-          # needs context and reaches nothing.
           allowed-endpoints: >
             api.github.com:443
             github.com:443
 
       - name: Every lane passed
         env:
-          # Each lane by name, and not every need: the comparison is a need
-          # too, and on a pull request it does not run.
-          RESULTS: >-
-            ${{ needs.test-go.result }} ${{ needs.vet.result }}
-            ${{ needs.invariants.result }} ${{ needs.meta.result }}
-            ${{ needs.test-js.result }}
+          NEEDS: ${{ toJSON(needs) }}
           IDENTICAL: ${{ needs.already-tested.outputs.identical }}
           GATE: ${{ needs.already-tested.result }}
         run: |
-          echo "lanes: ${RESULTS}"
           # The queue would land exactly what the pull request tested, and
-          # the lanes were skipped for it. That is this job's one way to
-          # pass on lanes that did not run: said by the comparison itself,
-          # and only when the comparison succeeded.
+          # the lanes were skipped for it: said by the comparison itself, and
+          # only when the comparison succeeded.
           if [ "${GATE}" = "success" ] && [ "${IDENTICAL}" = "true" ]; then
             echo "already tested: nothing was run again"
             exit 0
           fi
-          for r in ${RESULTS}; do
-            if [ "$r" != "success" ]; then
-              echo "::error::a test lane finished as '${r}'; see the lanes above this one"
-              exit 1
-            fi
-          done
+          # Every need but the comparison, which does not run on a pull request.
+          failed="$(jq -r 'del(."already-tested") | to_entries[] | select(.value.result != "success") | "\(.key) finished as \(.value.result)"' <<<"${NEEDS}")"
+          if [ -n "${failed}" ]; then
+            echo "::error::${failed}"
+            exit 1
+          fi
+
+      # What this run tested: the branch merged with main, which is what a
+      # pull_request run checks out. The queue looks for this tree, so it
+      # reruns nothing unless main has moved (already-tested).
+      - name: Record the tree that passed
+        if: github.event_name == 'pull_request'
+        run: |
+          mkdir -p tested
+          git rev-parse 'HEAD^{tree}' | tee tested/tree
+          echo "TESTED_TREE=$(cat tested/tree)" >> "$GITHUB_ENV"
+
+      - name: Keep it for the queue
+        if: github.event_name == 'pull_request'
+        uses: $/.github/workflows/upload-artifact
+        with:
+          name: tested-tree-${{ env.TESTED_TREE }}
+          path: tested/tree
+          if-no-files-found: error
+          retention-days: 30
 
   # -----------------------------------------------------------------
   # LANES 5-8: Static analysis, one tool each
@@ -1161,7 +1299,7 @@ jobs:
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
-    name: "Policy Scan (Checkov)"
+    name: "scan / policy"
     runs-on: pr-packages-${{ vars.pull_request_runners_site }}
     # Bounded so a stuck job cannot bill a metered vendor for six hours, which
     # is what GitHub's default timeout allows.
@@ -1213,7 +1351,7 @@ jobs:
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
-    name: "Dockerfile Scan (hadolint)"
+    name: "scan / containers"
     runs-on: pr-source-${{ vars.pull_request_runners_site }}
     timeout-minutes: 10
     permissions:
@@ -1253,7 +1391,7 @@ jobs:
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
-    name: "Workflow Scan (zizmor)"
+    name: "scan / workflows"
     runs-on: pr-packages-${{ vars.pull_request_runners_site }}
     timeout-minutes: 10
     permissions:
@@ -1296,7 +1434,7 @@ jobs:
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
-    name: "Spelling (codespell)"
+    name: "lint / spelling"
     runs-on: pr-packages-${{ vars.pull_request_runners_site }}
     timeout-minutes: 10
     permissions:
@@ -1335,8 +1473,8 @@ jobs:
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
-    name: "Logic Scan (Semgrep)"
-    runs-on: ubuntu-latest
+    name: "scan / code"
+    runs-on: ubuntu-24.04
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.
     timeout-minutes: 15
@@ -1415,7 +1553,7 @@ jobs:
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
-    name: "IaC Scan (Trivy)"
+    name: "scan / infrastructure"
     runs-on: pr-packages-${{ vars.pull_request_runners_site }}
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.
@@ -1480,8 +1618,8 @@ jobs:
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
-    name: "Secrets Scan (TruffleHog)"
-    runs-on: ubuntu-latest
+    name: "scan / secrets"
+    runs-on: ubuntu-24.04
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.
     timeout-minutes: 15
@@ -1564,12 +1702,14 @@ jobs:
   # use, and on no job's allowlist anywhere in scripts/approved-suppliers.yml.
   # -----------------------------------------------------------------
   egress-reachable:
+    # Nothing waits on this.
+    continue-on-error: true
     # Skipped, which the queue reads as passed, when the queue would land
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
-    name: "Egress Proof (probe host answers unrestricted)"
-    runs-on: ubuntu-latest
+    name: "test / egress allowed"
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -1594,12 +1734,14 @@ jobs:
           echo "$PROBE answers when unrestricted."
 
   egress-blocked:
+    # Nothing waits on this.
+    continue-on-error: true
     # Skipped, which the queue reads as passed, when the queue would land
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
-    name: "Egress Proof (block holds, sudo is gone)"
-    runs-on: ubuntu-latest
+    name: "test / egress blocked"
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -1690,7 +1832,9 @@ jobs:
   # work leaves this queued and holds nothing up.
   # ---------------------------------------------------------------------
   pool-source:
-    name: "Pool Proof (source)"
+    # Nothing waits on this.
+    continue-on-error: true
+    name: "test / runner isolation (source)"
     runs-on: pr-source-${{ vars.pull_request_runners_site }}
     timeout-minutes: 5
     permissions:
@@ -1726,7 +1870,9 @@ jobs:
   # work leaves this queued and holds nothing up.
   # ---------------------------------------------------------------------
   pool-builds:
-    name: "Pool Proof (builds)"
+    # Nothing waits on this.
+    continue-on-error: true
+    name: "test / runner isolation (builds)"
     runs-on: pr-builds-${{ vars.pull_request_runners_site }}
     timeout-minutes: 5
     permissions:
@@ -1764,9 +1910,11 @@ jobs:
   # a proof that took it first would hold up the job the pool is for.
   # ---------------------------------------------------------------------
   pool-builds-primary:
-    needs: invariants
+    # Nothing waits on this.
+    continue-on-error: true
+    needs: removal
     if: ${{ !cancelled() }}
-    name: "Pool Proof (builds-primary)"
+    name: "test / runner isolation (builds-primary)"
     runs-on: pr-builds-primary-${{ vars.pull_request_runners_site }}
     timeout-minutes: 5
     permissions:
@@ -1803,7 +1951,9 @@ jobs:
   # work leaves this queued and holds nothing up.
   # ---------------------------------------------------------------------
   pool-packages:
-    name: "Pool Proof (packages)"
+    # Nothing waits on this.
+    continue-on-error: true
+    name: "test / runner isolation (packages)"
     runs-on: pr-packages-${{ vars.pull_request_runners_site }}
     timeout-minutes: 5
     permissions:

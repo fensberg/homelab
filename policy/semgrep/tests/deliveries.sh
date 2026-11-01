@@ -12,6 +12,15 @@ echo "pip installed nothing"
 # ok: nothing-installs-from-pypi-outside-take-delivery
 scripts/take-delivery.sh checkov
 
+# ruleid: nothing-installs-a-collection-outside-take-delivery
+ansible-galaxy collection install -r requirements.yml
+# ruleid: nothing-installs-a-collection-outside-take-delivery
+ansible-galaxy install -r requirements.yml
+# ok: nothing-installs-a-collection-outside-take-delivery
+# these used to come by ansible-galaxy collection install, from a range
+# ok: nothing-installs-a-collection-outside-take-delivery
+scripts/take-delivery.sh ansible
+
 # ruleid: the-installer-does-not-override-a-pinned-version
 KUBECTL_VERSION="$(curl -fsSL https://dl.k8s.io/release/stable.txt)"
 # ruleid: the-installer-does-not-override-a-pinned-version

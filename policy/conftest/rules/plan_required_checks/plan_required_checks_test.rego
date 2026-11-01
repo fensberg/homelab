@@ -37,3 +37,28 @@ test_no_workflow_is_refused if {
 	some msg in plan_required_checks.deny with input as [plan([ruleset(["x"])])]
 	contains(msg, "no workflow was read")
 }
+
+lanes(jobs) := {"path": ".github/workflows/l.yml", "contents": {"jobs": jobs}}
+
+gate_job(needs) := {"name": "gate", "if": "always()", "needs": needs}
+
+test_a_gate_reaches_a_lane_through_another if {
+	i := [lanes({"gate": gate_job(["a"]), "a": {"needs": "b"}, "b": {}}), plan([ruleset(["gate"])])]
+	count(plan_required_checks.deny) == 0 with input as i
+}
+
+test_a_job_the_gate_does_not_reach_is_refused if {
+	i := [lanes({"gate": gate_job(["a"]), "a": {}, "b": {}}), plan([ruleset(["gate"])])]
+	some msg in plan_required_checks.deny with input as i
+	contains(msg, "job b in")
+}
+
+test_a_job_that_says_nothing_waits_on_it_is_left_out if {
+	i := [lanes({"gate": gate_job([]), "b": {"continue-on-error": true}}), plan([ruleset(["gate"])])]
+	count(plan_required_checks.deny) == 0 with input as i
+}
+
+test_a_required_job_that_is_not_a_gate_holds_nothing_else if {
+	i := [lanes({"gate": {"name": "gate"}, "b": {}}), plan([ruleset(["gate"])])]
+	count(plan_required_checks.deny) == 0 with input as i
+}

@@ -1,0 +1,8 @@
+guard: TestAWorkstationThatExistsIsLeftAlone
+file: workstation/provision.yml
+find: "      when: existing.rc != 0"
+replace: "      when: true"
+mentions: "the play failed on a workstation that exists"
+why: >
+  A machine somebody codes on for years is built once. Building over one that
+  exists would import a fresh disk beside it or fail half-way into it.

@@ -84,7 +84,7 @@
     "go/inspector": 75.8,
     "go/superintendent": 81.7,
     "go/signedpush": 46.2,
-    "go/tests-helpers": 51.8,
+    "go/tests-helpers": 55.7,
     "js": 96.55,
     "go/details": 91.4,
     "go/lawyer": 60.8,
@@ -93,13 +93,13 @@
     "go/drafter": 90.5
   },
   "tiers": {
-    "unit": 453,
-    "contract": 149,
-    "integration": 14,
-    "api": 9,
+    "unit": 979,
+    "contract": 302,
+    "integration": 38,
+    "api": 17,
     "e2e": 2,
-    "js": 9,
-    "tofu": 12,
+    "js": 24,
+    "tofu": 82,
     "fuzz": 8
   }
 }

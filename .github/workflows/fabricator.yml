@@ -57,7 +57,7 @@ defaults:
 jobs:
   orders:
     name: Read the work orders
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Bounded so a stuck job cannot bill a metered vendor for six hours, which
     # is what GitHub's default timeout allows.
     timeout-minutes: 5
@@ -112,7 +112,7 @@ jobs:
   build:
     name: Build ${{ matrix.order.name }}
     needs: orders
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Longer than most jobs here because a game server's depots are gigabytes,
     # and the download is the slow part. Bounded so a hung fetch cannot bill
     # for hours.
@@ -519,7 +519,7 @@ jobs:
     name: Package ${{ matrix.order.name }}
     needs: orders
     if: needs.orders.outputs.packages != '[]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Bounded so a stuck job cannot bill a metered vendor for six hours, which
     # is what GitHub's default timeout allows.
     timeout-minutes: 15
@@ -764,7 +764,7 @@ jobs:
   deliver:
     name: Bring the releases to the gate
     needs: [orders, build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Bounded so a stuck job cannot bill a metered vendor for six hours, which
     # is what GitHub's default timeout allows.
     timeout-minutes: 10
@@ -936,7 +936,7 @@ jobs:
   deliver-platform:
     name: Bring the platform's release to the gate
     needs: [orders, package]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read

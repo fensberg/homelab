@@ -14,7 +14,7 @@ import (
 
 // guard-secrets refuses a secret in the commits between two points.
 //
-// WHY THIS EXISTS. TruffleHog ran in one place, the Secrets Scan lane, and
+// WHY THIS EXISTS. TruffleHog ran in one place, the scan / secrets lane, and
 // that is after the push. A push here cannot be taken back: the repository is
 // public, and the rulesets refuse a rewrite of any branch, so a finding on a
 // pushed commit costs a new branch and a new pull request. An example written

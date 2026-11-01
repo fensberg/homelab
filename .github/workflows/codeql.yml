@@ -65,7 +65,7 @@ defaults:
 jobs:
   analyze:
     name: "Analyze (${{ matrix.language }})"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.
     timeout-minutes: 20

@@ -1,0 +1,106 @@
+---
+# The site's health, which each machine is held to before the next is
+# touched, and which the first trusted worker's soak holds for fifteen
+# minutes. `rolled` is the machine just moved: its own pods were stopped by
+# the move, so they are not counted against it.
+- name: Ask Talos whether the cluster is healthy
+  ansible.builtin.command:
+    argv:
+      - talosctl
+      - --talosconfig
+      - "{{ talosconfig }}"
+      - --nodes
+      - "{{ hostvars['localhost'].machines | selectattr('control_plane') | map(attribute='address') | first }}"
+      - health
+      - --wait-timeout
+      - 10m
+  changed_when: false
+
+- name: Ask etcd
+  ansible.builtin.include_tasks: etcd.yml
+
+- name: Wait for every Flux layer to be ready
+  kubernetes.core.k8s_info:
+    api_version: "{{ item }}"
+    kind: "{{ 'Kustomization' if item.startswith('kustomize') else 'HelmRelease' }}"
+  register: flux
+  until: >-
+    flux.resources | map(attribute='status.conditions', default=[])
+    | map('selectattr', 'type', 'equalto', 'Ready') | map('map', attribute='status') | map('list')
+    | reject('equalto', ['True']) | list | length == 0
+  retries: 30
+  delay: 20
+  loop: [kustomize.toolkit.fluxcd.io/v1, helm.toolkit.fluxcd.io/v2]
+
+- name: Wait for every database to have every instance ready
+  kubernetes.core.k8s_info:
+    api_version: postgresql.cnpg.io/v1
+    kind: Cluster
+  register: databases
+  until: >-
+    databases.resources | rejectattr('status.readyInstances', 'defined') | list | length == 0
+    and databases.resources | map(attribute='status.readyInstances') | list
+        == databases.resources | map(attribute='spec.instances') | list
+  retries: 30
+  delay: 20
+
+- name: Wait for every DaemonSet to be running everywhere it should
+  kubernetes.core.k8s_info:
+    kind: DaemonSet
+  register: daemonsets
+  until: >-
+    daemonsets.resources | map(attribute='status.numberReady', default=-1) | list
+        == daemonsets.resources | map(attribute='status.desiredNumberScheduled') | list
+    and daemonsets.resources | map(attribute='status.updatedNumberScheduled', default=-1) | list
+        == daemonsets.resources | map(attribute='status.desiredNumberScheduled') | list
+  retries: 30
+  delay: 20
+
+- name: Read how often every pod has restarted since the roll began
+  kubernetes.core.k8s_info:
+    kind: Pod
+  register: pods_now
+
+# A pod that was not moved, restarting since the roll began, is something the
+# roll has broken that a Ready node does not show.
+- name: Work out which pods have started restarting
+  ansible.builtin.set_fact:
+    restarting: >-
+      {%- set before = hostvars['localhost'].restarts_before -%}
+      {%- set out = [] -%}
+      {%- for p in pods_now.resources -%}
+      {%- if p.metadata.uid in before and p.spec.nodeName | default('') != rolled -%}
+      {%- if (p.status.containerStatuses | default([]) | map(attribute='restartCount') | sum) > before[p.metadata.uid] -%}
+      {%- set _ = out.append(p.metadata.namespace ~ '/' ~ p.metadata.name) -%}
+      {%- endif -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+
+- name: Refuse a site where pods have started restarting
+  ansible.builtin.assert:
+    that: restarting | length == 0
+    fail_msg: "Restarting since the roll began, on machines it has not touched: {{ restarting | join(', ') }}."
+    quiet: true
+
+- name: Read what has been put off its machine
+  kubernetes.core.k8s_info:
+    kind: Event
+    field_selectors: [reason=Preempted]
+  register: preempted
+
+# Room is what a drain takes away. A pod put off its machine to make it is
+# work the site could not hold with one machine down.
+- name: Work out what was put off its machine since the roll began
+  ansible.builtin.set_fact:
+    put_off: >-
+      {{ preempted.resources
+         | selectattr('lastTimestamp', 'defined') | selectattr('lastTimestamp', 'string')
+         | selectattr('lastTimestamp', '>=', hostvars['localhost'].roll_started)
+         | map(attribute='involvedObject.name') | list }}
+
+- name: Refuse a site that had to put work off its machine
+  ansible.builtin.assert:
+    that: put_off | length == 0
+    fail_msg: "Put off its machine for lack of room since the roll began: {{ put_off | join(', ') }}."
+    quiet: true

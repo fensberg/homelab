@@ -35,13 +35,13 @@ import (
 
 // lockedPythons are the interpreters the PyPI sections must hold for.
 //
-// 3.12 is python3 on ubuntu-latest (Ubuntu 24.04), where CI installs the tools.
+// 3.12 is python3 on ubuntu-24.04 (Ubuntu 24.04), where CI installs the tools.
 // 3.13 is python3 on Debian 13, the workstation scripts/install-dependencies.sh
 // provisions. Moving either is a change to this list and a new order.
 var lockedPythons = []string{"3.12", "3.13"}
 
 // lockedGlibc is the oldest C library among the machines the lock serves:
-// glibc 2.39 on ubuntu-latest (Ubuntu 24.04); Debian 13 has 2.41. A wheel
+// glibc 2.39 on ubuntu-24.04 (Ubuntu 24.04); Debian 13 has 2.41. A wheel
 // built for any glibc up to it runs on both, so pip is told every one of
 // those, down to manylinux2014's 2.17. Naming fewer hid every release of a
 // tool built for a newer glibc than the list named: Semgrep's wheels moved
@@ -139,7 +139,7 @@ func pypiSections(tools []declaredDelivery, resolve resolveFunc, hashes hashFunc
 
 	var sections []lockSection
 	for _, t := range tools {
-		s := lockSection{Kind: "pypi", Name: t.Name, VersionKey: t.VersionKey, Version: t.Version}
+		s := lockSection{Kind: t.Kind, Name: t.Name, VersionKey: t.VersionKey, Version: t.Version}
 		for _, n := range closures[t.Name] {
 			p := set[n]
 			line := normalizeName(p.Name) + "==" + p.Version

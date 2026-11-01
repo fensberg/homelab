@@ -189,6 +189,12 @@ type Site struct {
 	// Absent means none, which is what every config described before workers
 	// existed. Zero is a meaningful value here rather than a missing one.
 	WorkerCount int `json:"worker_count"`
+	// The zone whose clock the site keeps, by its name in the zone database.
+	// Whatever is done to the site at an hour of its day - the machine roll's
+	// window, and for the first site the expediter's release - is that hour
+	// here. Declared once, so an estate that keeps another clock changes one
+	// line.
+	Timezone string `json:"timezone"`
 	// The untrusted zones, keyed by the workload each exists for.
 	//
 	// A map rather than a count, because two untrusted workloads sharing one

@@ -12,7 +12,7 @@
 #
 # PROVEN, NOT ASSUMED. harden-runner installs its policy in a pre-step, and
 # GitHub documents pre-steps as unsupported for local actions. Under `$/` they
-# run: the Egress Proof lane in pr-validation.yml requires a host outside the allowlist
+# run: the egress test lanes in pr-validation.yml requires a host outside the allowlist
 # to be refused through this action, and its run shows "Pre Mobilize" and
 # "Post Mobilize" executing harden-runner's own pre and post steps.
 #

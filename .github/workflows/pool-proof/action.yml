@@ -61,7 +61,11 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        if [ -n "${KUBERNETES_SERVICE_HOST:-}" ] && curl --insecure --silent --max-time 10 --output /dev/null "https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT:-443}/version"; then
+        if [ -z "${KUBERNETES_SERVICE_HOST:-}" ]; then
+          echo "::error::the runner was not told where the cluster's API is, so this proved nothing"
+          exit 1
+        fi
+        if curl --insecure --silent --max-time 10 --output /dev/null "https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT:-443}/version"; then
           echo "::error::the cluster's API answered a runner in a pull-request pool. A pull request's job can speak to the cluster it runs in."
           exit 1
         fi

@@ -362,3 +362,31 @@ func TestTakeDeliveryRefusesWhatTheLockDoesNotDecide(t *testing.T) {
 		}
 	})
 }
+
+// A library goes into the same environment as the tools that import it, by
+// hash like them, and puts nothing on PATH: it has no command, and the
+// refusal of a tool that installed none must not be what it meets.
+func TestTakeDeliveryPutsALibraryBesideTheToolsThatImportIt(t *testing.T) {
+	light(t)
+	lock := "# [pypi: alpha ALPHA_VERSION=1]\n" +
+		"alpha==1 --hash=sha256:" + strings.Repeat("a", 64) + "\n# [end]\n" +
+		"# [library: lib LIB_VERSION=4]\n" +
+		"lib==4 --hash=sha256:" + strings.Repeat("d", 64) + "\n# [end]\n"
+	f := newDeliveryFixture(t, lock)
+	if out, err := f.run(t, "alpha", "lib"); err != nil {
+		t.Fatalf("take-delivery.sh failed: %v\n%s", err, out)
+	}
+	asked, err := os.ReadFile(f.pipArgs)
+	if err != nil {
+		t.Fatal("pip was never run")
+	}
+	if strings.Count(string(asked), "--require-hashes") != 1 || !strings.Contains(string(asked), "lib==4 --hash=sha256:") {
+		t.Errorf("the library was not installed by hash in the one pip run with its tool:\n%s", asked)
+	}
+	if body, _ := f.installed(t, "lib-cmd"); body != nil {
+		t.Error("a library was given a command on PATH")
+	}
+	if body, _ := f.installed(t, "alpha-cmd"); body == nil {
+		t.Error("the tool beside the library lost its command")
+	}
+}

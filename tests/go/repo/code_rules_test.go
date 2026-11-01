@@ -34,7 +34,7 @@ import (
 // the rule that must refuse the mutation.
 //
 // NOT SILENCEABLE FROM INSIDE A FILE. Semgrep honours an inline ignore
-// comment, which the Logic Scan lane's registry rules are silenced with, each
+// comment, which the scan / code lane's registry rules are silenced with, each
 // naming the guard that proves it (tests/silencers.yml). An estate rule is a
 // guard, and a guard a comment can switch off is a suggestion, so these run with
 // --disable-nosem: a rule that is wrong is changed, with its examples.

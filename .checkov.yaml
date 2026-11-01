@@ -1,6 +1,6 @@
 # Checkov config, read automatically from the repository root.
 #
-# The Policy Scan lane runs `checkov --directory .` and this is what it obeys.
+# The scan / policy lane runs `checkov --directory .` and this is what it obeys.
 # It used to be read through Super-Linter, which is gone (#365); the exclusions
 # below are unchanged and the reasoning that lived in that file now lives here,
 # because a config deferring to a deleted file explains nothing.

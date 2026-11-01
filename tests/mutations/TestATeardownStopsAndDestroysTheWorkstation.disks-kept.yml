@@ -1,0 +1,8 @@
+guard: TestATeardownStopsAndDestroysTheWorkstation
+file: workstation/provision.yml
+find: "          ansible.builtin.command: qm destroy {{ vmid }} --purge"
+replace: "          ansible.builtin.command: qm destroy {{ vmid }}"
+mentions: "the teardown asked"
+why: >
+  Without --purge the machine's disks and its entries in backup jobs outlive
+  it, and the next build under the same id meets them.
