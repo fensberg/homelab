@@ -1020,6 +1020,13 @@ egress:
       - github.com:443
       - registry.npmjs.org:443
 
+  - job: pr-validation.yml/main-failing
+    pool: source
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+
   - job: pr-validation.yml/already-tested
     pool: source
     policy: block
@@ -1846,6 +1853,10 @@ work:
     takes: 10m
 
   - job: pr-validation.yml/test-js
+    kind: cannot-wait
+    takes: 1m
+
+  - job: pr-validation.yml/main-failing
     kind: cannot-wait
     takes: 1m
 
