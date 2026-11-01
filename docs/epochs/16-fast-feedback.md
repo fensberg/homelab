@@ -391,13 +391,15 @@ it fails the gate.
 pull request's own tree. One that clears it passes; any other fails. Nothing has
 to be told a pull request is a fix.
 
-**As built, 2026-11-01:** `pr-validation.yml` also runs on a push to `main`, with
-only the removal check and the whole ledger. A pull request runs the proofs its
-change could alter, in one job: the file a proof breaks, the proof, its guard or
-its rule. A change to a helper a guard calls is not seen, and is answered on
-main. `already-tested` does not skip while main is failing, or the queue could
-land past it. There were no sweeps to move: nothing in the pull request's lanes
-is one. The route to a person is piece 9; until then a failure is a red check on
+**As built, 2026-11-01:** `pr-validation.yml` also runs on a push to `main`,
+with only the removal check and the whole ledger. A pull request runs the proofs
+its change could alter: the file a proof breaks, the proof, its guard or its
+rule. They run in the ledger's same four jobs, because a change to the ledger
+itself reaches all of it, and one job does not fit that in its limit (#854). A
+change to a helper a guard calls is not seen, and is answered on main.
+`already-tested` does not skip while main is failing, or the queue could land
+past it. There were no sweeps to move: nothing in the pull request's lanes is
+one. The route to a person is piece 9; until then a failure is a red check on
 the commit.
 
 **A failing monitor cannot be cleared by a tree.** **Chose:** it holds the pin

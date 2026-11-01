@@ -40,15 +40,15 @@ func TestAPullRequestRunsWhatMainIsFailing(t *testing.T) {
 		want                    []string
 	}{
 		{"main is green", "pull_request", finished, `{"jobs":[{"name":"test / app removal","conclusion":"success"}]}`,
-			[]string{"mutation=false", "removal=false", "parts=[1]"}},
+			[]string{"mutation=false", "removal=false"}},
 		{"main has never run", "pull_request", `{"workflow_runs": []}`, "",
-			[]string{"mutation=false", "removal=false", "parts=[1]"}},
+			[]string{"mutation=false", "removal=false"}},
 		{"the removal check is failing", "pull_request", finished, `{"jobs":[{"name":"test / app removal","conclusion":"failure"}]}`,
-			[]string{"mutation=false", "removal=true", "parts=[1]"}},
+			[]string{"mutation=false", "removal=true"}},
 		{"a part of the ledger is failing", "merge_group", finished, `{"jobs":[{"name":"test / mutation (3 of 4)","conclusion":"timed_out"}]}`,
-			[]string{"mutation=true", "removal=false", "parts=[1, 2, 3, 4]"}},
+			[]string{"mutation=true", "removal=false"}},
 		{"on main", "push", "", "",
-			[]string{"mutation=true", "removal=true", "parts=[1, 2, 3, 4]"}},
+			[]string{"mutation=true", "removal=true"}},
 	} {
 		out, err := mainFailing(t, c.event, c.runs, c.jobs)
 		if err != nil {

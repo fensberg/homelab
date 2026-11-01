@@ -15,7 +15,6 @@
 # Prints, for $GITHUB_OUTPUT:
 #   removal   true when the removal check should run
 #   mutation  true when the whole ledger should run, not only what changed
-#   parts     the ledger's jobs, as JSON
 set -euo pipefail
 
 whole=false
@@ -48,11 +47,5 @@ else
 	fi
 fi
 
-parts='[1]'
-if [ "${whole}" = true ]; then
-	parts='[1, 2, 3, 4]'
-fi
-
 echo "mutation=${whole}"
 echo "removal=${removal}"
-echo "parts=${parts}"

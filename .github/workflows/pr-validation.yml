@@ -100,7 +100,6 @@ jobs:
     outputs:
       mutation: ${{ steps.read.outputs.mutation }}
       removal: ${{ steps.read.outputs.removal }}
-      parts: ${{ steps.read.outputs.parts }}
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
@@ -1076,9 +1075,8 @@ jobs:
         run: go test ./repo/ -run "$REMOVAL_TESTS" -skip "$META_TESTS|$OWN_LANE_TESTS"
 
   meta:
-    # On a pull request, the proofs its change could alter, in one job; the
-    # whole ledger on main after a merge, or anywhere main is failing it
-    # (main-failing). Skipped, which the queue reads as passed, when the queue
+    # On a pull request, the proofs its change could alter; the whole ledger on
+    # main after a merge, or anywhere main is failing it (main-failing). Skipped, which the queue reads as passed, when the queue
     # would land exactly what the pull request already tested (already-tested).
     needs: [main-failing, already-tested]
     if: ${{ !cancelled() && needs.main-failing.result == 'success' && needs.already-tested.outputs.identical != 'true' }}
@@ -1093,10 +1091,13 @@ jobs:
     # Four ledger parts, not sixteen. On GitHub's runners a part was free and
     # sixteen ran at once. In the builds pool four run at once, so more parts
     # only queue, and each pays its own setup before it proves anything.
+    # Always four, however little a change reaches: what it reaches is known
+    # only once Go has read it, and one change can reach the whole ledger,
+    # which does not fit in one job's limit below (#854).
     strategy:
       fail-fast: false
       matrix:
-        part: ${{ fromJSON(needs.main-failing.outputs.parts) }}
+        part: [1, 2, 3, 4]
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows. Above the tests' own
     # bound below, so that a slow run is reported by Go, naming the test,
