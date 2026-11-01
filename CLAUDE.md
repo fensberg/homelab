@@ -522,33 +522,35 @@ depends on it and uses them.
 ## CI
 
 - `pr-validation.yml` — one lane per check, all running in parallel, Format
-  included. The count is deliberately not written here: it was "eleven" and had
-  been thirteen since #408 added the two egress proofs, and a number in prose
-  goes stale the moment a lane is added (#429). Formatting is enforced locally
-  first (the git hook `./scripts/install-dependencies.sh` wires up via
+  included. The count is deliberately not written here: it was "eleven" and
+  had been thirteen since #408 added the two egress proofs, and a number in
+  prose goes stale the moment a lane is added (#429). Formatting is enforced
+  locally first (the git hook `./scripts/install-dependencies.sh` wires up via
   `pre-commit install`) - shift left, catch it in seconds on the machine that
-  wrote it. **Format**'s CI lane, running the same `.pre-commit-config.yaml` as
-  that hook, exists as the backstop for whoever's local hook is missing or
-  bypassed: a fresh clone that skipped setup, or a bot/outside PR that never
-  touches a git hook at all. It does not gate the other lanes - a formatting
-  slip no longer delays or blocks the lanes that actually check correctness and
-  security, and every lane's result lands for every PR at roughly the same time,
-  not staggered behind however long Format took. **Shell Lint** runs ShellCheck
-  directly, its own lane for the same one-owner-per-check reason as Go and Trivy
-  below. **Validate** proves the code resolves: `tofu validate` against a
-  placeholder config, and `kustomize build` piped through `kubeconform` with the
-  Flux substitutions applied - Go vetting/building lives here too, for the same
-  reason. **Test** is the behaviour half of Validate: Go unit and contract
-  tests, `tofu test` against the fixture corpus, and the JavaScript/TypeScript
-  tier. Everything in it is hermetic, which is what lets a fork's pull request
-  run it in full without reaching a credential. **Policy Scan** (Checkov),
-  **Dockerfile Scan** (hadolint), **Workflow Scan** (zizmor) and **Spelling**
-  (codespell) are four lanes that were one until #365: Super-Linter bundled them
-  behind a single status, hung intermittently for its whole timeout, and blocked
-  three pull requests in two days. Each tool is now pinned, owned by one lane,
-  and names itself when it fails. **Semgrep**, **Trivy** and **Secrets** are the
-  security lanes, and overlap with each other on purpose - none of them comes
-  out.
+  wrote it. **lint / format**, the CI lane, running the same
+  `.pre-commit-config.yaml` as that hook, exists as the backstop for whoever's
+  local hook is missing or bypassed: a fresh clone that skipped setup, or a
+  bot/outside PR that never touches a git hook at all. It does not gate the
+  other lanes - a formatting slip no longer delays or blocks the lanes that
+  actually check correctness and security, and every lane's result lands for
+  every PR at roughly the same time, not staggered behind however long Format
+  took. **lint / shell** runs ShellCheck directly, its own lane for the same
+  one-owner-per-check reason as Go and Trivy below. **validate /
+  infrastructure** proves the code resolves: `tofu validate` against a
+  placeholder config, and `kustomize build` piped through `kubeconform` with
+  the Flux substitutions applied - Go vetting/building lives here too, for the
+  same reason. **test / unit** is the behaviour half of validate: Go unit and
+  contract tests, `tofu test` against the fixture corpus, and the
+  JavaScript/TypeScript tier. Everything in it is hermetic, which is what lets
+  a fork's pull request run it in full without reaching a credential. **scan /
+  policy** (Checkov), **scan / containers** (hadolint), **scan / workflows**
+  (zizmor) and **lint / spelling** (codespell) are four lanes that were one
+  until #365: Super-Linter bundled them behind a single status, hung
+  intermittently for its whole timeout, and blocked three pull requests in two
+  days. Each tool is now pinned, owned by one lane, and names itself when it
+  fails. **scan / code**, **scan / infrastructure** and **scan / secrets** are
+  the security lanes, and overlap with each other on purpose - none of them
+  comes out.
 - `codeql.yml` — CodeQL on `actions`, the only language here it supports.
   Workflows are the part of this repository that runs with a token, so that is
   where a finding matters. Moved off GitHub's default setup so it is pinned and

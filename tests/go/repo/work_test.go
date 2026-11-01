@@ -128,6 +128,12 @@ waiting behind it.`, key)
 			if takes > limit {
 				t.Errorf("%s says it ordinarily takes %s and is stopped after %s", key, takes, limit)
 			}
+			// A job that ordinarily lands near its limit passes or fails by
+			// seconds: Go's thirty minutes held #772 by 28 of them and killed
+			// #767 with no test failed.
+			if takes*5 > limit*4 && w.Kind != harness.Short {
+				t.Errorf("%s ordinarily takes %s and is stopped after %s, which is within a fifth of its limit. Make the job faster; a raised limit is how this came about", key, takes, limit)
+			}
 		}
 	}
 	if len(seen) == 0 {

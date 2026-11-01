@@ -103,7 +103,7 @@ fails the build rather than quietly halving its own coverage.
 a `run` block of the same name to `registry.tftest.hcl`. Leaving out any of
 the three is a failing test with a message telling you which one.
 
-## Repository invariants, and where gotchas go
+## test / repo policy, and where gotchas go
 
 `tests/go/repo` checks this repository's own files rather than the
 infrastructure they describe. It is hermetic and untagged, so `go test ./...`
