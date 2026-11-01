@@ -1,0 +1,8 @@
+guard: TestNotKnowingWhatMainIsFailingFails
+file: scripts/main-failing.sh
+find: "set -euo pipefail"
+replace: "set -uo pipefail"
+mentions: "no answer from GitHub passed"
+why: >-
+  With no answer from GitHub, carrying on reads as nothing failing, so an outage
+  would turn off the only thing holding merges to a failing main.

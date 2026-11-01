@@ -222,13 +222,22 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 
 	part := readMetaPartOrFail(t)
 
+	since := os.Getenv(changedSinceEnv)
+	change, err := changeSince(t, repository(t), since)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	l := readLedger(t)
 
 	var entries []mutation
 	for _, m := range append(append([]mutation{}, l.Mutations...), applicationMutations(t)...) {
-		if part.proves(m.Source) {
+		if part.proves(m.Source) && change.holds(m) {
 			entries = append(entries, m)
 		}
+	}
+	if len(entries) == 0 && since != "" {
+		t.Skipf("nothing changed since %s reaches a proof; main proves them all after the merge", since)
 	}
 	if len(entries) == 0 {
 		t.Fatalf("part %d of %d of the meta lane holds no proof, so it proves nothing; the ledger was read as %d proofs", part.index, part.total, len(l.Mutations))
