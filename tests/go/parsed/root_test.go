@@ -47,3 +47,24 @@ func TestTheRepositoryIsReadFromTheTopOfTheCheckout(t *testing.T) {
 			"markers unambiguous again.", root, top)
 	}
 }
+
+// A program a guard runs is a fixture, and its reports are not the run's: a
+// retry's deliberate failures reached the real job summary as failed attempts.
+func TestARunProgramIsNotGivenTheRunsSummary(t *testing.T) {
+	t.Setenv("GITHUB_STEP_SUMMARY", "/the/run/summary")
+	tree := &Tree{root: t.TempDir()}
+	inherited, _, err := tree.Invoke(Run{}, "env")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(inherited), "GITHUB_STEP_SUMMARY=") {
+		t.Error("a program was handed the run's job summary")
+	}
+	named, _, err := tree.Invoke(Run{Env: []string{"GITHUB_STEP_SUMMARY=/a/test/says"}}, "env")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(named), "GITHUB_STEP_SUMMARY=/a/test/says") {
+		t.Error("a test could not name a summary of its own")
+	}
+}

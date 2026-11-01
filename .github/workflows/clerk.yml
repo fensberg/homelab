@@ -114,7 +114,7 @@ jobs:
         && github.event.issue.pull_request != null
         && startsWith(github.event.comment.body, '@clerk')
         && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Bounded so a hung call cannot bill a metered vendor for six hours, which
     # is what GitHub's default timeout allows.
     timeout-minutes: 15

@@ -1,0 +1,8 @@
+guard: TestTheCoverageGateOnlyWritesWhatChangedToTheSummary
+file: scripts/coverage-gate.sh
+find: '[ -n "${GITHUB_STEP_SUMMARY:-}" ] && [ "$verdict" != "held" ]'
+replace: '[ -n "${GITHUB_STEP_SUMMARY:-}" ]'
+mentions: "a module holding at its floor wrote to the job summary"
+why: >
+  Fifteen sections saying a module held its floor hid the one that moved. The
+  summary is read for what changed, so what did not change stays out of it.

@@ -138,3 +138,30 @@ func TestTheCoverageGateRefusesWhatItCannotJudge(t *testing.T) {
 		})
 	}
 }
+
+// The job summary says what changed. A module holding at its floor said so
+// fifteen times over and hid the one that had moved.
+func TestTheCoverageGateOnlyWritesWhatChangedToTheSummary(t *testing.T) {
+	light(t)
+	dir := t.TempDir()
+	baseline := filepath.Join(dir, "baseline.json")
+	if err := os.WriteFile(baseline, []byte(gateFixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	summary := filepath.Join(dir, "summary.md")
+	gate := func(current string) {
+		if _, errb, err := repository(t).Invoke(parsed.Run{Env: []string{
+			"BASELINE_FILE=" + baseline, "COVERAGE_TOLERANCE=0.5", "GITHUB_STEP_SUMMARY=" + summary,
+		}}, "bash", parsed.Here("scripts/coverage-gate.sh"), "go/example", current); err != nil {
+			t.Fatalf("running the gate: %v\n%s", err, errb)
+		}
+	}
+	gate("40.0")
+	if _, err := os.Stat(summary); !os.IsNotExist(err) {
+		t.Error("a module holding at its floor wrote to the job summary")
+	}
+	gate("55.0")
+	if _, err := os.Stat(summary); err != nil {
+		t.Errorf("a module above its floor did not reach the job summary: %v", err)
+	}
+}

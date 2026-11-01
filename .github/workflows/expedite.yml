@@ -149,7 +149,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.schedule == '7 * * * *'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       look: ${{ steps.ask.outputs.look }}
@@ -242,7 +242,7 @@ jobs:
     name: "Take delivery"
     needs: check
     if: needs.check.outputs.look == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Bounded so a stuck run cannot bill forever. It asks SteamCMD one
     # question per application and commits one line for each answer that
     # changed; the image is the fabricator's to build.
@@ -449,7 +449,7 @@ jobs:
       always() && !cancelled() &&
       (github.event_name == 'workflow_dispatch' ||
        github.event.schedule == '0 * * * *')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Long enough to merge the expediter's pull request, wait for the
     # fabricator to build and deliver the release, and take that too.
     timeout-minutes: 100

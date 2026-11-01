@@ -91,7 +91,9 @@ summary=$(
 )
 
 echo "$summary"
-if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+# Only what changed reaches the job summary: fifteen sections saying "holding"
+# hid the one that did not.
+if [ -n "${GITHUB_STEP_SUMMARY:-}" ] && [ "$verdict" != "held" ]; then
 	echo "$summary" >>"$GITHUB_STEP_SUMMARY"
 fi
 

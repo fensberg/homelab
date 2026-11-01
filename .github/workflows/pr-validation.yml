@@ -139,20 +139,20 @@ jobs:
           else
             git fetch --no-tags --depth=1 origin "refs/pull/${number}/head"
             tested="$(git rev-parse 'FETCH_HEAD^{commit}')"
-            if [ "$(git rev-parse 'HEAD^{tree}')" != "$(git rev-parse 'FETCH_HEAD^{tree}')" ]; then
-              echo "::notice::what would land differs from pull request ${number} as it was tested, so everything runs"
+            tree="$(git rev-parse 'HEAD^{tree}')"
+            # A pull request's run tests the branch merged with main and keeps
+            # that tree's id. Found for this pull request's head, the queue
+            # would land what passed; not found, main has moved since.
+            # curl and jq rather than gh, which the pull-request pools'
+            # image does not carry.
+            kept="$(curl --proto '=https' -fsS -H "Authorization: Bearer ${GITHUB_TOKEN}" -H 'Accept: application/vnd.github+json' \
+              "https://api.github.com/repos/${REPO}/actions/artifacts?name=tested-tree-${tree}&per_page=100" |
+              jq --arg head "${tested}" '[.artifacts[] | select(.expired | not) | select(.workflow_run.head_sha == $head)] | length')"
+            if [ "${kept}" -ge 1 ]; then
+              identical=true
+              echo "::notice::what would land is, file for file, what pull request ${number} passed at ${tested}"
             else
-              # curl and jq rather than gh, which the pull-request pools'
-              # image does not carry.
-              passed="$(curl --proto '=https' -fsS -H "Authorization: Bearer ${GITHUB_TOKEN}" -H 'Accept: application/vnd.github+json' \
-                "https://api.github.com/repos/${REPO}/actions/workflows/pr-validation.yml/runs?head_sha=${tested}&event=pull_request&status=success&per_page=1" |
-                jq '.total_count')"
-              if [ "${passed}" -ge 1 ]; then
-                identical=true
-                echo "::notice::what would land is, file for file, pull request ${number} at ${tested}, which passed. Nothing is run again."
-              else
-                echo "::notice::pull request ${number} at ${tested} has no passing run of this workflow, so everything runs"
-              fi
+              echo "::notice::pull request ${number} at ${tested} did not pass this tree, so everything runs"
             fi
           fi
           echo "identical=${identical}" >> "$GITHUB_OUTPUT"
@@ -249,7 +249,7 @@ jobs:
       # the repository. The pre-commit-hooks checks are system hooks too, and
       # run here because this lane took delivery of their package above.
       #
-      # tofu-fmt and go-fmt: no pinned binary here. ubuntu-latest ships some Go
+      # tofu-fmt and go-fmt: no pinned binary here. ubuntu-24.04 ships some Go
       # toolchain, not necessarily the one this repo pins. The Validate lane
       # installs both pinned and runs `tofu fmt -check` and `gofmt -l` there.
       # Go formatting used to be enforced by the aggregate's Go analysis, which
@@ -572,7 +572,7 @@ jobs:
       # Vet lane instead, which has both the endpoints and the module cache.
 
       # Formatting, with the pinned toolchain. The pre-commit hook skips this
-      # in the Format lane because ubuntu-latest's Go is not necessarily the
+      # in the Format lane because ubuntu-24.04's Go is not necessarily the
       # one this repository pins, so it is checked here where it is.
       #
       # NUL-delimited and piped rather than $(git ls-files) spliced into the
@@ -1252,6 +1252,87 @@ jobs:
             fi
           done
 
+  # The one check a merge is held to from this workflow. It waits on every
+  # lane, so a lane can be added, renamed or moved without touching the
+  # ruleset, and policy/conftest/rules/plan_required_checks refuses a job here
+  # that it does not reach unless the job says continue-on-error.
+  tests-passed:
+    name: "tests passed"
+    needs:
+      [
+        already-tested,
+        format,
+        shellcheck,
+        validate,
+        test,
+        policy,
+        dockerfiles,
+        workflowscan,
+        spelling,
+        semgrep,
+        trivy,
+        secrets,
+      ]
+    # always(), or a failed lane would SKIP this job - and a skipped required
+    # check counts as passing. The result is read explicitly instead.
+    if: always()
+    runs-on: pr-source-${{ vars.pull_request_runners_site }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
+          egress-policy: block
+          disable-sudo-and-containers: "true"
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+
+      - name: Every lane passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          IDENTICAL: ${{ needs.already-tested.outputs.identical }}
+          GATE: ${{ needs.already-tested.result }}
+        run: |
+          # The queue would land exactly what the pull request tested, and
+          # the lanes were skipped for it: said by the comparison itself, and
+          # only when the comparison succeeded.
+          if [ "${GATE}" = "success" ] && [ "${IDENTICAL}" = "true" ]; then
+            echo "already tested: nothing was run again"
+            exit 0
+          fi
+          # Every need but the comparison, which does not run on a pull request.
+          failed="$(jq -r 'del(."already-tested") | to_entries[] | select(.value.result != "success") | "\(.key) finished as \(.value.result)"' <<<"${NEEDS}")"
+          if [ -n "${failed}" ]; then
+            echo "::error::${failed}"
+            exit 1
+          fi
+
+      # What this run tested: the branch merged with main, which is what a
+      # pull_request run checks out. The queue looks for this tree, so it
+      # reruns nothing unless main has moved (already-tested).
+      - name: Record the tree that passed
+        if: github.event_name == 'pull_request'
+        run: |
+          mkdir -p tested
+          git rev-parse 'HEAD^{tree}' | tee tested/tree
+          echo "TESTED_TREE=$(cat tested/tree)" >> "$GITHUB_ENV"
+
+      - name: Keep it for the queue
+        if: github.event_name == 'pull_request'
+        uses: $/.github/workflows/upload-artifact
+        with:
+          name: tested-tree-${{ env.TESTED_TREE }}
+          path: tested/tree
+          if-no-files-found: error
+          retention-days: 30
+
   # -----------------------------------------------------------------
   # LANES 5-8: Static analysis, one tool each
   # -----------------------------------------------------------------
@@ -1441,7 +1522,7 @@ jobs:
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Logic Scan (Semgrep)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.
     timeout-minutes: 15
@@ -1586,7 +1667,7 @@ jobs:
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Secrets Scan (TruffleHog)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.
     timeout-minutes: 15
@@ -1669,12 +1750,14 @@ jobs:
   # use, and on no job's allowlist anywhere in scripts/approved-suppliers.yml.
   # -----------------------------------------------------------------
   egress-reachable:
+    # Nothing waits on this.
+    continue-on-error: true
     # Skipped, which the queue reads as passed, when the queue would land
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Egress Proof (probe host answers unrestricted)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -1699,12 +1782,14 @@ jobs:
           echo "$PROBE answers when unrestricted."
 
   egress-blocked:
+    # Nothing waits on this.
+    continue-on-error: true
     # Skipped, which the queue reads as passed, when the queue would land
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Egress Proof (block holds, sudo is gone)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -1795,6 +1880,8 @@ jobs:
   # work leaves this queued and holds nothing up.
   # ---------------------------------------------------------------------
   pool-source:
+    # Nothing waits on this.
+    continue-on-error: true
     name: "Pool Proof (source)"
     runs-on: pr-source-${{ vars.pull_request_runners_site }}
     timeout-minutes: 5
@@ -1831,6 +1918,8 @@ jobs:
   # work leaves this queued and holds nothing up.
   # ---------------------------------------------------------------------
   pool-builds:
+    # Nothing waits on this.
+    continue-on-error: true
     name: "Pool Proof (builds)"
     runs-on: pr-builds-${{ vars.pull_request_runners_site }}
     timeout-minutes: 5
@@ -1869,6 +1958,8 @@ jobs:
   # a proof that took it first would hold up the job the pool is for.
   # ---------------------------------------------------------------------
   pool-builds-primary:
+    # Nothing waits on this.
+    continue-on-error: true
     needs: removal
     if: ${{ !cancelled() }}
     name: "Pool Proof (builds-primary)"
@@ -1908,6 +1999,8 @@ jobs:
   # work leaves this queued and holds nothing up.
   # ---------------------------------------------------------------------
   pool-packages:
+    # Nothing waits on this.
+    continue-on-error: true
     name: "Pool Proof (packages)"
     runs-on: pr-packages-${{ vars.pull_request_runners_site }}
     timeout-minutes: 5

@@ -54,7 +54,7 @@ func newRetryFixture(t *testing.T, failFirst int) *retryFixture {
 	return &retryFixture{
 		dir:     dir,
 		counter: counter,
-		env:     append(os.Environ(), "COUNTER="+counter),
+		env:     append(os.Environ(), "COUNTER="+counter, "GITHUB_STEP_SUMMARY="),
 	}
 }
 

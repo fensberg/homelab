@@ -27,6 +27,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -398,7 +399,11 @@ func (r *Tree) Invoke(run Run, name string, args ...string) (stdout, stderr []by
 	case run.In != "":
 		cmd.Dir = run.In
 	}
-	cmd.Env = os.Environ()
+	// Without the run's summary file: a program a guard runs is a fixture, and
+	// what it reports is not this run's to say. A test that wants one names it.
+	cmd.Env = slices.DeleteFunc(os.Environ(), func(e string) bool {
+		return strings.HasPrefix(e, "GITHUB_STEP_SUMMARY=")
+	})
 	if run.Bare {
 		cmd.Env = nil
 	}

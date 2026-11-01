@@ -42,7 +42,7 @@ defaults:
 jobs:
   sweep:
     name: "Site Sweep"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       # read to ask what is queued; write to cancel a run whose branch is
       # gone. Here rather than on the workflow, so a job added beside it does
