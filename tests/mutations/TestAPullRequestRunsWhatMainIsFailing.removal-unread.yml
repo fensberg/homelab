@@ -1,0 +1,8 @@
+guard: TestAPullRequestRunsWhatMainIsFailing
+file: scripts/main-failing.sh
+find: "grep -q '^test / app removal$'"
+replace: "grep -q '^test / nothing$'"
+mentions: "removal=true"
+why: >-
+  Unread, a failing removal check on main would hold nothing: every pull request
+  would skip the lane and pass, and merges would go on over the failure.
