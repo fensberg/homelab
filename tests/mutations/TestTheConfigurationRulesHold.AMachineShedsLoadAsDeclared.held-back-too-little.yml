@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_load_shedding
+file: modules/infrastructure/cluster/talos.tf
+find: "    untrusted     = { system = \"896Mi\", soft = \"256Mi\", grace = \"30s\", hard = \"100Mi\" }\n"
+replace: "    untrusted     = { system = \"256Mi\", soft = \"256Mi\", grace = \"30s\", hard = \"100Mi\" }\n"
+mentions: "less than the kubelet's own default"
+why: >
+  The kind of machine added last is the one the figures were not written
+  for. Below the kubelet's default it promises pods memory its own services
+  use, while every other kind is declared and the table looks complete.
