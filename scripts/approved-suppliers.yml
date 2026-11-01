@@ -1164,13 +1164,6 @@ egress:
       - registry.npmjs.org:443
       - release-assets.githubusercontent.com:443
 
-  - job: pr-validation.yml/test
-    pool: source
-    policy: block
-    hosts:
-      - api.github.com:443
-      - github.com:443
-
   - job: pr-validation.yml/tests-passed
     pool: source
     policy: block
@@ -1388,7 +1381,7 @@ tools:
     version: SEMGREP_VERSION
     pypi: semgrep
     reason: >-
-      Code scanning. The Logic Scan lane runs the publisher's own rules over
+      Code scanning. The scan / code lane runs the publisher's own rules over
       every pull request, and the code rules in policy/semgrep are the
       estate's: what a guard used to find by matching a file's text, Semgrep
       finds by parsing it in its own language, so a comment is not code.
@@ -1507,7 +1500,7 @@ tools:
     fetch: https://github.com/koalaman/shellcheck/releases/download/v{version}/shellcheck-v{version}.linux.x86_64.tar.xz
     reason: >-
       Shell analysis. This estate already took delivery from this publisher and
-      did not record it: the Shell Lint lane downloaded the binary from the same
+      did not record it: the lint / shell lane downloaded the binary from the same
       GitHub release through ludeeus/action-shellcheck, which checked no hash.
       The lane takes delivery from the lock now (#416), so the one binary is
       verified everywhere it runs.
@@ -1860,9 +1853,6 @@ work:
     kind: cannot-wait
     takes: 1m
 
-  - job: pr-validation.yml/test
-    kind: cannot-wait
-    takes: 1m
   - job: pr-validation.yml/tests-passed
     kind: cannot-wait
     takes: 1m
