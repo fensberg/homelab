@@ -83,10 +83,10 @@ capacity above" or names another criterion, it means epoch 04's.
   control plane and 384 MiB on any other, so pods are promised memory the
   machines already use. #767 holds back 1088 MiB, 1088 MiB and 896 MiB,
   with work put off gently below 256 MiB free and at once below 100 MiB.
-  It takes about 700 MiB from what each worker can offer pods, which the
-  game server's 8 GiB no longer fits beside; #767 lowers it to 6 GiB, the
-  publisher's lower figure for an explored world, by the operator's call,
-  and that release has to land before the machines change.
+  It takes about 700 MiB from what each worker can offer pods. The game
+  server's 4 GiB fits beside that; the 6 GiB #767 first set for it does not,
+  on the 8 GiB workers #794 left, so raising it is a decision about the
+  workers' size first.
 - **17. The bet has been tested.** Staging is overfilled on purpose and the
   right things are shed in the right order.
 
