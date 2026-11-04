@@ -281,7 +281,7 @@ spec:
             # The digest pin was doing its job; nothing connected it to the
             # Dockerfile changing underneath it. tests/go/repo asserts that
             # link now, so a stale pin fails the build instead of a converge.
-            image: ghcr.io/fensberg/homelab-runner@sha256:15ade7051773012d42e85727198d0a3cc08495a0137dfe97b9bfe6ca30c1cdd2
+            image: ghcr.io/fensberg/homelab-runner@sha256:b25724097014631f13e8ff11b752c2943984ac6a3d3c58900c61da9cc3f0ba13
             # Required whenever the template is overridden: the chart supplies
             # this only for its own default runner container.
             command: ["/home/runner/run.sh"]
