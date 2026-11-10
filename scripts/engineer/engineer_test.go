@@ -832,6 +832,37 @@ func TestARunnerIsTriedForEachPlaceRunnersAreSent(t *testing.T) {
 	}
 }
 
+// Two sets that send the same runner to the same place are one pod in the
+// trial, and which of them names it is the same whatever order their files
+// are read in. So taking one away asks for nothing new: a set retired beside
+// its twin once read as a new runner, and its trial refused the change
+// (#863).
+func TestASetRetiredBesideItsTwinAsksForNothingNew(t *testing.T) {
+	set := func(name string) string {
+		return `{"kind":"HelmRelease","metadata":{"name":"` + name + `","namespace":"runners"},"spec":{"chart":{"spec":{"chart":"` + runnerChart + `"}},
+		  "values":{"maxRunners":1,"template":{"spec":{"containers":[{"name":"runner","resources":{"requests":{"memory":"2Gi"}}}],"priorityClassName":"interactive","nodeSelector":{"kept":"away"}}}}}}`
+	}
+	// The file read first holds the set taken away.
+	both := tree(t, map[string][]string{
+		"clusters/core/a.yaml": {set("twin-retired")},
+		"clusters/core/b.yaml": {set("twin")},
+	})
+	one := tree(t, map[string][]string{
+		"clusters/core/b.yaml": {set("twin")},
+	})
+	was, err := asked(both, "north", 3, asDrawn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	is, err := asked(one, "north", 3, asDrawn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !same(was, is) {
+		t.Errorf("retiring a set beside its twin asks for something new: before %v, after %v", was.Pods, is.Pods)
+	}
+}
+
 // classDoc is a PriorityClass as a drawing, with Flux's marker or without.
 func classDoc(name, policy string, forced bool) string {
 	meta := `"name":"` + name + `"`
