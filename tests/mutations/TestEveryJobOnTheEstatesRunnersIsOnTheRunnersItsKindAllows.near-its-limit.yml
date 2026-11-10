@@ -1,6 +1,6 @@
 guard: TestEveryJobOnTheEstatesRunnersIsOnTheRunnersItsKindAllows
 file: scripts/approved-suppliers.yml
-find: "    takes: 23m\n"
+find: "    takes: 8m\n"
 replace: "    takes: 31m\n"
 mentions: "within a fifth of its limit"
 why: >

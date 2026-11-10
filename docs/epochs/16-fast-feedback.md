@@ -279,6 +279,17 @@ Some lanes need the network mid-run, such as Trivy for its database, so each
 says what it fetches before the seal. Before retiring the untrusted worker, note
 the roll uses it as a canary (05).
 
+**First move, 2026-11-10:** the ledger's four parts and the removal check, which
+together starved the untrusted worker. Read on 2026-11-04 from 02:15 to 03:10
+UTC: it waited for a processor 50 to 85% of the time for 25 minutes, stalled
+for memory, and a builds runner used 5.6 GiB against its 2 GiB request, so
+the run on `main` failed on timeouts with nothing wrong (#855). Not sealed
+yet: both keep their allow lists under `harden-runner`, which on GitHub's
+runners does hold them, where on the pools only the cluster's policy did.
+That agent failed to start on 2 of 136 jobs on GitHub's runners from
+10-27 to 11-10 (#791), so the seal comes next, and takes it off these jobs. The
+primary builds pool held only the removal check and goes with it.
+
 ### 2. The full ledger does not hold a merge
 
 **Chose:** after the merge, with changed proofs on the pull request. The queue

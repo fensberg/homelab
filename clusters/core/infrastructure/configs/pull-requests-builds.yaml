@@ -36,13 +36,12 @@ spec:
     runnerScaleSetName: pr-builds-${SITE}
 
     minRunners: 0
-    # Three, at two gibibytes each: the lanes that compile and test Go, with
-    # the meta lane's parts among them. A fourth was here, and is the
-    # primary pool's (pull-requests-builds-primary.yaml), so the job every
-    # pull request waits on longest never waits for one of these. With the
-    # other pools' twelve gibibytes, and one left for what runs on every
-    # machine, of the untrusted worker's fourteen. A job past three waits
-    # for one to finish.
+    # Three, at two gibibytes each: the lanes that compile and test Go. With
+    # the other pools', and one left for what runs on every machine, of the
+    # untrusted worker's fourteen. A job past three waits for one to finish.
+    # The ledger and the removal check were here and on a pool of their own,
+    # and starved the machine of processors and memory (#855); they run on
+    # GitHub's runners now.
     #
     # Chosen from what the machine holds, not from what the jobs use: none
     # had run here in full when this was set (2026-10-22). Corrected from
