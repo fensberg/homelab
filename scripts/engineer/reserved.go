@@ -350,14 +350,19 @@ func runners(from string, docs []map[string]any, pools map[string]pod) error {
 		if err != nil {
 			return err
 		}
+		workload := fmt.Sprintf("%s/%v", flux.HelmRelease, meta["name"])
+		// The largest runner sent there is tried, and between two of a size
+		// the one first by name, never the one whose file was read first: a
+		// set retired beside its twin would otherwise read as a new runner.
 		if have, ok := pools[string(key)]; ok {
-			if had, _ := podOf(capacity.Object{"template": capacity.Object{"spec": have.Spec}}); had.PodBytes >= w.PodBytes {
+			had, _ := podOf(capacity.Object{"template": capacity.Object{"spec": have.Spec}})
+			if had.PodBytes > w.PodBytes || had.PodBytes == w.PodBytes && have.Workload <= workload {
 				continue
 			}
 		}
 		labels, _ := dig(values, "template", "metadata").(map[string]any)
 		namespace, _ := meta["namespace"].(string)
-		pools[string(key)] = pod{Namespace: namespace, Workload: fmt.Sprintf("%s/%v", flux.HelmRelease, meta["name"]), Labels: labels["labels"], Spec: scheduled}
+		pools[string(key)] = pod{Namespace: namespace, Workload: workload, Labels: labels["labels"], Spec: scheduled}
 	}
 	return nil
 }

@@ -990,10 +990,8 @@ jobs:
     needs: [main-failing, already-tested]
     if: ${{ !cancelled() && needs.main-failing.outputs.removal == 'true' && needs.already-tested.outputs.identical != 'true' }}
     name: "test / app removal"
-    # The primary pool: the job every pull request waits on longest, so it
-    # never waits for one of the builds pool's runners (2026-10-23). This has
-    # been that job since it left the invariants lane.
-    runs-on: pr-builds-primary-${{ vars.pull_request_runners_site }}
+    # GitHub's runner, for the reason the ledger's parts are there (meta).
+    runs-on: ubuntu-24.04
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows; above Go's own bound
     # on the tests below, so a slow run fails as a timeout that names the
@@ -1081,17 +1079,20 @@ jobs:
     needs: [main-failing, already-tested]
     if: ${{ !cancelled() && needs.main-failing.result == 'success' && needs.already-tested.outputs.identical != 'true' }}
     name: "test / mutation (${{ matrix.part }} of ${{ strategy.job-total }})"
-    runs-on: pr-builds-${{ vars.pull_request_runners_site }}
+    # GitHub's runner, a machine for each part: the job holds no credential,
+    # and on the untrusted worker the four parts and the removal check
+    # together waited for a processor most of the time and ran out of time
+    # (#855; epoch 16, decision 1).
+    runs-on: ubuntu-24.04
     # The parts share the ledger's proofs, each in a job of its own. One job,
     # it ran past ten minutes. Each job learns which part it is from GitHub's
     # own count (META_PART, below), so no number written here can come to
     # disagree with how many parts there are, and a proof falls in exactly
     # one of them.
     #
-    # Four ledger parts, not sixteen. On GitHub's runners a part was free and
-    # sixteen ran at once. In the builds pool four run at once, so more parts
-    # only queue, and each pays its own setup before it proves anything.
-    # Always four, however little a change reaches: what it reaches is known
+    # Four ledger parts, each on a GitHub runner of its own. Each part pays
+    # its own setup before it proves anything, so more parts buy less. Always
+    # four, however little a change reaches: what it reaches is known
     # only once Go has read it, and one change can reach the whole ledger,
     # which does not fit in one job's limit below (#854).
     strategy:
@@ -1934,48 +1935,6 @@ jobs:
     if: github.event_name != 'push'
     name: "test / runner isolation (builds)"
     runs-on: pr-builds-${{ vars.pull_request_runners_site }}
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    steps:
-      - name: Mobilize
-        uses: $/.github/workflows/mobilize
-        with:
-          # harden-runner does nothing in the estate's pools. What is
-          # declared here is what the pool's own policy is held to, in
-          # scripts/approved-suppliers.yml under `egress:`.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            github.com:443
-            proxy.golang.org:443
-
-      - name: Prove the pool holds
-        uses: $/.github/workflows/pool-proof
-        with:
-          reaches: https://proxy.golang.org
-
-  # ---------------------------------------------------------------------
-  # POOL PROOF (builds-primary) - one of the estate's own pools for a pull
-  # request's jobs, tried from inside. The pool for the job every pull
-  # request waits on longest, which downloads what a build needs.
-  #
-  # On the untrusted zone's machine, held to its pool's hosts by the
-  # cluster's network (clusters/core, pull-requests-builds-primary.yaml).
-  # The site is the estate's to say (management/estate, the repository's
-  # variable).
-  #
-  # AFTER THAT JOB, and nothing waits on this. The pool has one runner, and
-  # a proof that took it first would hold up the job the pool is for.
-  # ---------------------------------------------------------------------
-  pool-builds-primary:
-    # Nothing waits on this.
-    continue-on-error: true
-    needs: removal
-    if: ${{ !cancelled() && github.event_name != 'push' }}
-    name: "test / runner isolation (builds-primary)"
-    runs-on: pr-builds-primary-${{ vars.pull_request_runners_site }}
     timeout-minutes: 5
     permissions:
       contents: read

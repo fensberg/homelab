@@ -644,7 +644,6 @@ pull_request_pools:
   names:
     - source
     - builds
-    - builds-primary
     - packages
   every_runner_reaches:
     - github.com:443
@@ -996,18 +995,6 @@ egress:
       - github.com:443
       - proxy.golang.org:443
 
-  - job: pr-validation.yml/pool-builds-primary
-    pool: builds-primary
-    policy: block
-    reason: >-
-      Tries the pool from inside: that it takes work, reaches what is
-      declared for it, and is refused a host nobody declared, the cluster's
-      own API and any token of the cluster's.
-    hosts:
-      - api.github.com:443
-      - github.com:443
-      - proxy.golang.org:443
-
   - job: pr-validation.yml/pool-packages
     pool: packages
     policy: block
@@ -1125,7 +1112,6 @@ egress:
       - sum.golang.org:443
 
   - job: pr-validation.yml/removal
-    pool: builds-primary
     policy: block
     hosts:
       - api.github.com:443
@@ -1143,7 +1129,6 @@ egress:
       - sum.golang.org:443
 
   - job: pr-validation.yml/meta
-    pool: builds
     policy: block
     hosts:
       - api.github.com:443
@@ -1764,10 +1749,6 @@ work:
     kind: cannot-wait
     takes: 1m
 
-  - job: pr-validation.yml/pool-builds-primary
-    kind: cannot-wait
-    takes: 1m
-
   - job: pr-validation.yml/pool-packages
     kind: cannot-wait
     takes: 1m
@@ -1840,17 +1821,6 @@ work:
     kind: cannot-wait
     # What it took on #848's run (2026-10-31), rounded up.
     takes: 8m
-
-  - job: pr-validation.yml/removal
-    kind: cannot-wait
-    # What the guard took on #772's run (2026-10-31), rounded up.
-    takes: 23m
-
-  - job: pr-validation.yml/meta
-    kind: cannot-wait
-    # A quarter of the ledger each, in the builds pool (2026-10-22); read
-    # again from what the parts take there.
-    takes: 10m
 
   - job: pr-validation.yml/test-js
     kind: cannot-wait
