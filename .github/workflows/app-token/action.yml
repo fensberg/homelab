@@ -13,7 +13,8 @@
 # for it through the wrapper.
 #
 # The token is revoked in the action's post-step, which runs for an action
-# nested under `$/` - shown by "Post Mobilize" running harden-runner's own.
+# nested under `$/` - shown, while Mobilize ran harden-runner, by "Post
+# Mobilize" running its post-step.
 name: "App Token"
 description: Mint a GitHub App installation token with explicitly named permissions.
 

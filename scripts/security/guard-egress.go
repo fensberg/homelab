@@ -1,33 +1,24 @@
-// guard-egress refuses a workflow job whose outbound reach is not what
-// scripts/approved-suppliers.yml says it is.
+// guard-egress refuses a workflow job that scripts/approved-suppliers.yml does
+// not name, and an entry there that names no job.
 //
-// Sixteen allowlists across nine workflows said what this estate may call out
-// to, and no single place answered the question. Adding an endpoint to one
-// workflow was invisible to any review not already reading that file, and a
-// new job could arrive with an allowlist nobody had examined - or with none,
-// which under egress-policy: block is a job that cannot run and under audit is
-// a job that can reach anything.
+// Sixteen allowlists across nine workflows once said what this estate may call
+// out to, and no single place answered the question. The suppliers list owns
+// that under `egress:`, one entry per job. It walks EVERY job in EVERY
+// workflow rather than the jobs it was told about: a guard written against a
+// list stops covering whatever is built next, and nothing says so.
 //
-// So the suppliers list owns the mapping and this refuses divergence. It walks
-// EVERY job in EVERY workflow rather than the jobs it was told about: a guard
-// written against a list stops covering whatever is built next, and nothing
-// says so, because the new thing was never one of its subjects.
+// Two ways to fail, and "not declared" is the important one:
 //
-// Five ways to fail, and "not declared" is the important one:
-//
-//	a job that hardens the runner and is not named in the suppliers list
-//	a job with no harden-runner step at all
-//	a declared policy that is not the policy the workflow sets
-//	a block job whose hosts differ from the declared set, either direction
+//	a job the suppliers list does not name
 //	an entry naming a job that no longer exists
 //
-// WHY THE WORKFLOW STILL CARRIES THE LIST. harden-runner installs its policy in
-// its pre-step, which GitHub runs before any step of the job, and joblaw_test
-// requires it to be the first step. Nothing can hand it a value read from the
-// repository at runtime - not a file, not a local action, not an earlier step -
-// short of a gate job every lane waits behind. The copy in the workflow is
-// therefore mechanical, this file is the source of truth, and the guard is what
-// makes the copy trustworthy.
+// WHAT NO LONGER HOLDS. The workflows carried a copy of each list for
+// harden-runner, which read it in a pre-step, and this refused any drift
+// between the copy and the list. The operator cut harden-runner from every
+// job on 2026-11-12 (#795), so nothing on GitHub's runners holds a job to its
+// list: what a job reaches is declared and not enforced there, until epoch
+// 16, decision 16 runs a pull request's code with no network. The pools are
+// still held to their jobs' lists by the cluster's network.
 package main
 
 import (
@@ -43,12 +34,11 @@ import (
 	"homelab/details/suppliers"
 )
 
-// jobEgress is what a workflow says about one job's outbound reach.
+// jobEgress is one job of a workflow, by the name the suppliers list knows
+// it by.
 type jobEgress struct {
 	Workflow string // "pr-validation.yml"
 	Job      string // "analyze"
-	Policy   string // "block", "audit", or "" when nothing hardens the runner
-	Hosts    []string
 }
 
 // Key is how a job is named in the suppliers list: the workflow file and the
@@ -64,14 +54,7 @@ type declaredEgress struct {
 }
 
 // jobsIn reports every job of a workflow, from the workflow as the drafter
-// redraws it.
-//
-// This matched lines: a job was two spaces and a name, its policy the first
-// line saying egress-policy, its hosts whatever followed allowed-endpoints
-// until a line that did not look like one. It was read that way because the
-// program whose subject is suppliers would take none of its own. The
-// drafter takes the one there is, and a job here is a job: its key under
-// `jobs`, and what its steps hand the step that hardens the runner.
+// redraws it: its key under `jobs`.
 func jobsIn(name string, docs []map[string]any) []jobEgress {
 	var out []jobEgress
 	for _, doc := range docs {
@@ -82,20 +65,7 @@ func jobsIn(name string, docs []map[string]any) []jobEgress {
 		}
 		sort.Strings(keys)
 		for _, key := range keys {
-			job, _ := jobs[key].(map[string]any)
-			found := jobEgress{Workflow: name, Job: key}
-			steps, _ := job["steps"].([]any)
-			for _, st := range steps {
-				step, _ := st.(map[string]any)
-				with, _ := step["with"].(map[string]any)
-				if policy, said := with[suppliers.PolicyKey].(string); said && found.Policy == "" {
-					found.Policy = policy
-				}
-				if hosts, said := with["allowed-endpoints"].(string); said {
-					found.Hosts = append(found.Hosts, strings.Fields(hosts)...)
-				}
-			}
-			out = append(out, found)
+			out = append(out, jobEgress{Workflow: name, Job: key})
 		}
 	}
 	return out
@@ -114,54 +84,26 @@ func declarations(body string) ([]declaredEgress, error) {
 	return out, nil
 }
 
-// Compare reports every way the workflows and the declarations disagree.
+// Compare reports every job the declarations do not name, and every
+// declaration that names no job.
 //
 // Both directions on purpose. A declaration with no job is how a list rots
 // into something nobody trusts, and a job with no declaration is the case this
 // guard exists for.
 func Compare(found []jobEgress, declared []declaredEgress) []string {
-	byKey := map[string]declaredEgress{}
+	named := map[string]bool{}
 	for _, d := range declared {
-		byKey[d.Key] = d
+		named[d.Key] = true
 	}
 	seen := map[string]bool{}
-
 	var out []string
 	for _, j := range found {
-		d, ok := byKey[j.Key()]
 		seen[j.Key()] = true
-
-		if j.Policy == "" {
+		if !named[j.Key()] {
 			out = append(out, fmt.Sprintf(
-				"%s hardens nothing: no step sets egress-policy, so its outbound calls are "+
-					"neither restricted nor recorded", j.Key()))
-			continue
-		}
-		if !ok {
-			out = append(out, fmt.Sprintf(
-				"%s is not declared in the suppliers list, so nothing says whether it may "+
-					"call out at all (it sets egress-policy: %s)", j.Key(), j.Policy))
-			continue
-		}
-		if d.Policy != j.Policy {
-			out = append(out, fmt.Sprintf(
-				"%s sets egress-policy: %s and the suppliers list declares %s",
-				j.Key(), j.Policy, d.Policy))
-			continue
-		}
-		if j.Policy != "block" {
-			continue
-		}
-		for _, h := range missing(j.Hosts, d.Hosts) {
-			out = append(out, fmt.Sprintf(
-				"%s allows %s, which the suppliers list does not declare for it", j.Key(), h))
-		}
-		for _, h := range missing(d.Hosts, j.Hosts) {
-			out = append(out, fmt.Sprintf(
-				"%s is declared to reach %s and its workflow does not allow it", j.Key(), h))
+				"%s is not declared in the suppliers list, so nothing says what it may reach", j.Key()))
 		}
 	}
-
 	for _, d := range declared {
 		if !seen[d.Key] {
 			out = append(out, fmt.Sprintf(
@@ -169,21 +111,6 @@ func Compare(found []jobEgress, declared []declaredEgress) []string {
 		}
 	}
 	sort.Strings(out)
-	return out
-}
-
-// missing returns the entries of a that are absent from b.
-func missing(a, b []string) []string {
-	in := map[string]bool{}
-	for _, x := range b {
-		in[x] = true
-	}
-	var out []string
-	for _, x := range a {
-		if !in[x] {
-			out = append(out, x)
-		}
-	}
 	return out
 }
 
@@ -203,9 +130,9 @@ A job that is not declared there is refused rather than skipped: a new job
 starts with no egress until somebody says what it needs, which is the only
 version of this rule that keeps covering what gets built next.
 
-The workflow keeps a copy because harden-runner reads its policy in a pre-step,
-before any step of the job can run. Change the suppliers list, then make the
-workflow match it - a workflow edit is a patch under .github/patches.
+Nothing on GitHub's runners holds a job to its entry since harden-runner was
+cut (#795). The entry is still what the pools are held to, and what epoch 16,
+decision 16 holds every job to again.
 `)
 	return b.String()
 }
@@ -297,7 +224,7 @@ func guardEgress(args []string) int {
 	// hold a subdirectory of composite action metadata, and counting entries
 	// reported that as a workflow - a summary line claiming more was checked
 	// than was.
-	fmt.Printf("every one of the %d jobs in %d workflows reaches only what the suppliers list declares\n",
+	fmt.Printf("every one of the %d jobs in %d workflows is declared in the suppliers list\n",
 		len(found), workflows)
 	return 0
 }

@@ -51,35 +51,5 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # The comment that used to sit here said this action "only ever
-          # queries GitHub's own advisory data ... no third-party endpoint to
-          # allow for." That was true while this repository had almost no
-          # dependencies, and stopped being true the moment it gained some:
-          # the action also enriches each dependency with OpenSSF Scorecard
-          # and deps.dev data, and those are third-party endpoints.
-          #
-          # The symptom was a bare `Error: fetch failed` three seconds in,
-          # with nothing naming a host. The cause is in harden-runner's own
-          # Post-step log, which records every DNS request it drops:
-          #
-          #   [dns-request-dropped] domain=api.securityscorecards.dev. matchedPolicy=NONE
-          #   [dns-request-dropped] domain=api.deps.dev.           matchedPolicy=NONE
-          #
-          # Both endpoints below are transcribed from that log rather than
-          # guessed, which is the same method the Semgrep lane's comment in
-          # pr-validation.yml describes: run it, read what it actually
-          # reached for, then allow exactly that.
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.deps.dev:443
-            api.github.com:443
-            api.securityscorecards.dev:443
-            github.com:443
       - name: "Dependency Review"
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0

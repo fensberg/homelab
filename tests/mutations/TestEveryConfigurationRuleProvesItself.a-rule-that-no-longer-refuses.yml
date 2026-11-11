@@ -1,5 +1,5 @@
 guard: TestEveryConfigurationRuleProvesItself
-file: policy/conftest/rules/job_hardening/job_hardening.rego
+file: policy/conftest/rules/job_timeout/job_timeout.rego
 find: |
   deny contains msg if {
   	count(lib.jobs) == 0

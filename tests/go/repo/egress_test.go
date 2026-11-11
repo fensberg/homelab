@@ -6,7 +6,8 @@ import (
 	"testing"
 )
 
-// Every job's outbound reach is what scripts/approved-suppliers.yml says.
+// Every job is declared in scripts/approved-suppliers.yml, and every entry
+// there names a job.
 //
 // The rule lives in `security guard-egress` rather than here, because it is a
 // refusal rather than an observation: it runs from `task validate` and the
@@ -34,7 +35,7 @@ func TestEveryJobsEgressIsDeclaredInTheSuppliersList(t *testing.T) {
 	if strings.Contains(body, "no jobs were found") || strings.Contains(body, "declares no egress at all") {
 		t.Fatalf("guard-egress could not see the repository, so nothing was checked:\n%s", body)
 	}
-	t.Errorf(`a job's outbound reach is not what scripts/approved-suppliers.yml declares:
+	t.Errorf(`a job and scripts/approved-suppliers.yml disagree:
 
 %s`, body)
 }

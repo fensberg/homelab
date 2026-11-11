@@ -582,6 +582,16 @@ the untrusted worker retire (Decision 1).
 reviewed code does, and it holds nothing that outlives the job. A guard holds
 it: a job that can reach the network runs nothing from the pull request.
 
+**Interim, 2026-11-12: the agent is cut from every job, and the gap is
+accepted.** The operator cut `harden-runner` from all 56 jobs at once rather
+than job by job. On GitHub's runners it failed to start on about 1.5% of jobs
+(#791), and left some runs that GitHub never heard finish, which could be
+neither cancelled nor rerun. On the estate's runners it had never held
+anything (#411). Until the pieces below land, nothing on GitHub's runners holds
+a job to the hosts its entry declares, and a job keeps root. The entries,
+`security guard-egress` and the egress rule stay, so each job still declares
+what it reaches. Each piece below closes part of the gap (#795).
+
 **What `harden-runner` did, and what does it instead.**
 
 | It did                        | Instead                                                                                                                 |

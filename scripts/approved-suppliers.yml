@@ -466,8 +466,8 @@ providers:
 
 # Network destinations a CI job may reach.
 #
-# harden-runner blocks egress by default and permits these. They were restated
-# across fifteen separate allowlists in nine workflows before this file existed,
+# Each job's entry under egress: below names its hosts from these. They were
+# restated across fifteen separate allowlists in nine workflows before this file existed,
 # which meant no single place answered "what can this repository call out to" -
 # and adding one endpoint to one workflow was invisible to every review that
 # was not already reading that file.
@@ -607,23 +607,21 @@ endpoints:
 # and adding an endpoint to one workflow was invisible to any review not
 # already reading that file.
 #
-# FAIL CLOSED. `security guard-egress` walks every job in every workflow. A job
-# that hardens the runner and is not named here is refused, so a new job starts
-# with no egress rather than with an allowlist nobody examined, and a job whose
-# workflow list differs from the one here - in either direction - is refused
-# too. Deleting an entry does not quietly widen anything; it fails the build.
+# FAIL CLOSED. `security guard-egress` walks every job in every workflow, and
+# refuses one not named here and an entry naming no job, so a new job starts
+# by declaring what it reaches. Each host must be an endpoint above
+# (policy/conftest/rules/supplier_egress).
 #
-# WHY THE WORKFLOW STILL CARRIES THE LIST. harden-runner installs its policy in
-# its pre-step, which GitHub runs before any step of the job, and the building
-# code requires it to be the job's first step. So nothing - no file read, no
-# local action, no earlier step - can hand it a value at runtime, and the only
-# alternative would be a gate job every lane waits behind. The workflow's copy
-# is therefore mechanical, this file owns it, and the guard refuses drift.
+# WHAT HOLDS IT, AND WHAT DOES NOT. The pools are held to their jobs' hosts by
+# the cluster's network. On GitHub's runners NOTHING holds a job to its entry:
+# the operator cut harden-runner from every job on 2026-11-12, because it broke
+# runs and never held the estate's own runners (#795). Until epoch 16, decision
+# 16 runs a pull request's code with no network, these entries say what each
+# job is meant to reach, and are not enforced there.
 #
-#   policy: block   the job may reach exactly the hosts listed, and nothing else
-#   policy: audit   the job's egress is recorded, not restricted, and the reason
-#                   it cannot be a list is written here rather than in a comment
-#                   somebody has to go and find
+#   policy: block   the job is meant to reach exactly the hosts listed
+#   policy: audit   the job reaches hosts no list can name, and the reason is
+#                   written here rather than in a comment somebody has to find
 
 # The estate's pools of pull-request runners, and what a runner in any of
 # them reaches to be a runner at all: to be handed a job, fetch the actions
@@ -831,9 +829,6 @@ egress:
       a set this repository has never transcribed. What bounds it is not the
       network: every product is pinned by digest and pulled from this
       estate's own registry, and the fabricator never pins one itself.
-    root: >-
-      Builds with Docker, which needs the Docker socket that
-      disable-sudo-and-containers removes.
 
   - job: fabricator.yml/package
     policy: block
@@ -891,11 +886,6 @@ egress:
       this one of the expedite workflow's three jobs downloads game files: the
       doorbell above and the release below are both blocked to a list.
 
-    root: >-
-      Installs lib32gcc-s1 with apt-get, which SteamCMD needs to ask for the
-      build id. That needs root, so disable-sudo-and-containers would break
-      the job it exists for. It no longer builds anything: the fabricator
-      builds the image from the pin this job records.
   - job: expedite.yml/release
     policy: block
     hosts:
@@ -1223,21 +1213,12 @@ egress:
       quietly turn verified findings into unverified ones, which is the
       opposite of what this lane is for.
 
-  - job: pr-validation.yml/egress-reachable
-    policy: audit
-    reason: >-
-      This job exists to show the probe host is reachable when nothing
-      restricts it, so that a refusal in egress-blocked means the policy
-      refused it rather than that the host was down. A block policy would
-      defeat the one thing it is for. It reaches the probe host and nothing
-      else.
-
-  - job: pr-validation.yml/egress-blocked
-    pool: source
+  - job: pr-validation.yml/shared-actions
     policy: block
     hosts:
       - api.github.com:443
       - github.com:443
+
   - job: warm-caches.yml/go
     policy: block
     hosts:
@@ -1265,11 +1246,6 @@ egress:
       - tuf-repo-cdn.sigstore.dev:443
       - www.bestpractices.dev:443
 
-    root: >-
-      ossf/scorecard-action is a Docker action (`runs: using: docker`), and
-      the runner starts it through the Docker socket that
-      disable-sudo-and-containers removes. The job is blocked to a list, so
-      this is the one blocking job where a later step could still reach root.
   - job: security-patrol.yml/patrol
     policy: block
     hosts:
