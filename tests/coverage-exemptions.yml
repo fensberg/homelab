@@ -205,15 +205,6 @@ files:
   - path: attestation/main.go
     uncovered: 5
     covered_by: nothing
-  - path: clerk/github.go
-    uncovered: 2
-    covered_by: nothing
-  - path: clerk/main.go
-    uncovered: 7
-    covered_by: nothing
-  - path: clerk/runnote.go
-    uncovered: 1
-    covered_by: nothing
   - path: sweeper/clear-branches.go
     uncovered: 6
     covered_by: nothing

@@ -589,13 +589,10 @@ endpoints:
 
   - group: independent-review
     reason: >-
-      Google's generative language API, reached by the two epoch-08 roles that
-      read this repository without its context: the clerk, which writes its own
-      account of a change or a record, and the inspector, which explains a
-      sensitive-path diff inside the attestation conversation. One endpoint
-      serves both, with two keys from two projects so neither role can exhaust
-      the other's quota, and neither project has a billing account attached -
-      so a runaway loop costs a rate limit rather than an invoice. The group is
+      Google's generative language API, reached by the inspector, which
+      explains a sensitive-path diff inside the attestation conversation. The
+      project has no billing account attached, so a runaway loop costs a rate
+      limit rather than an invoice. The group is
       named for the job rather than the vendor, so changing which model answers
       is this line plus the pins in versions.env.
     hosts:
@@ -653,18 +650,6 @@ pull_request_pools:
     - "*.blob.core.windows.net:443"
 
 egress:
-  - job: clerk.yml/read
-    policy: block
-    hosts:
-      - api.github.com:443
-      - generativelanguage.googleapis.com:443
-      - github.com:443
-      - objects.githubusercontent.com:443
-      - proxy.golang.org:443
-      - release-assets.githubusercontent.com:443
-      - storage.googleapis.com:443
-      - sum.golang.org:443
-
   - job: codeql.yml/analyze
     pool: source
     policy: block
@@ -1300,15 +1285,10 @@ egress:
     reason: >-
       Mints a token with each App key the workflows hold and throws it away,
       so a key that has stopped working is found within the hour (#527).
-      GitHub's API for the tokens, and the Go toolchain for the clerk's own
-      sign-in.
+      GitHub's API for the tokens.
     hosts:
       - api.github.com:443
       - github.com:443
-      - go.dev:443
-      - objects.githubusercontent.com:443
-      - release-assets.githubusercontent.com:443
-      - storage.googleapis.com:443
 
   - job: sensitive-paths.yml/tripwire
     pool: builds

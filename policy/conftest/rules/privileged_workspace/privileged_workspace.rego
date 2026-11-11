@@ -13,9 +13,16 @@ privileged contains [file, doc] if {
 
 moves_workspace := `\bgit\b[^\n;&|]*\s(checkout|switch|reset|restore|pull|merge|read-tree|stash\s+apply)\b`
 
+# No workflow need run on a privileged trigger. What must hold is that the
+# triggers were read at all: a reading that finds none finds nothing to refuse.
+read contains trigger if {
+	some doc in lib.workflows
+	some trigger in lib.triggers(doc)
+}
+
 deny contains msg if {
-	count(privileged) == 0
-	msg := "no workflow runs on a privileged trigger, and clerk.yml does - the reading has stopped matching"
+	count(read) == 0
+	msg := "no workflow's triggers could be read, so no privileged run could be found - the reading has stopped matching"
 }
 
 deny contains msg if {

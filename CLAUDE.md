@@ -760,16 +760,14 @@ floor a pull request may not drop below and is free to leave alone.
   quota is not a gate. Only the verb that explains a change reaches a model,
   and it degrades to the static reason when the model does not answer.
 
-  The clerk is the other party and is deliberately a separate program: it has
-  no lever at all, so a defect in its issue-filing has no business shipping
-  inside the binary standing in front of a merge. Same reasoning, opposite
-  conclusion - the split follows what a party can stop, not what it is made of.
+  The clerk, an AI reviewer that read each pull request once it was elevated
+  and could stop nothing, was shelved on 2026-11-11: its findings had not
+  earned the two keys it held. Its program is in the history.
 
 - **Open every pull request as a draft, and let the operator elevate it.**
   Draft is the working state. Checks run on drafts exactly as they do on ready
   ones, so all the iterating happens there: a lane fails, it is fixed, it fails
-  again. Marking it ready is a deliberate act by the person who decides, and it
-  is what asks the clerk to read the change.
+  again. Marking it ready is a deliberate act by the person who decides.
 
   The reason it is not the agent's call is worth stating plainly, because the
   agent will not notice it about itself. **It is a poor judge of when it has
@@ -779,32 +777,7 @@ floor a pull request may not drop below and is free to leave alone.
   "done fussing" cannot come from the party that is doing the fussing.
 
   So the sequence is: open a draft, iterate until every check but the human is
-  green, the operator elevates, the clerk reads it once and posts what it
-  found, the operator approves, the operator merges. The clerk sits between the
-  last push and the approval because that is the only point at which its
-  findings are still actionable.
-
-  Asking again is a comment, in the Dependabot shape:
-
-  | Command           | What it does                                       |
-  | ----------------- | -------------------------------------------------- |
-  | `@clerk snag`     | walk the work again                                |
-  | `@clerk handover` | read it again as a stranger who has just cloned it |
-
-  It reacts with eyes when it starts and a thumbs up when it is done, and with
-  a confused face if the command is not one it knows. **This works on a pull
-  request that has already merged**, because `refs/pull/N/head` outlives the
-  branch - so the clerk can be pointed at work that landed before it existed.
-
-  Re-requesting a review deliberately does **not** trigger it. That was tried
-  and removed: `review_requested` fires on any reviewer request, `CODEOWNERS`
-  requests one automatically the moment a pull request is elevated, and a single
-  elevation therefore ran the clerk twice.
-
-  And **the clerk can stop nothing**: its findings are code scanning alerts at
-  note level, and that check stays out of `main`'s required checks deliberately.
-  A criticism that blocks a merge is an outside party acquiring a power this
-  design withholds.
+  green, the operator elevates, the operator approves, the operator merges.
 
   The inspector's `tally` runs on every push regardless, because it costs
   nothing and its value is being current. It says nothing unless the change

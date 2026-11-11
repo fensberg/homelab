@@ -4,8 +4,8 @@ file: tests/coverage-baseline.json
 # a ratchet every change that adds tests moves, so an entry naming one
 # breaks whenever coverage improves - which is the ledger going red for the
 # opposite of a problem. Found exactly that way when go/clerk went 56 -> 63.8.
-find: '"go/clerk":'
-replace: '"go-clerk-was-here":'
+find: '"go/sweeper":'
+replace: '"go-sweeper-was-here":'
 mentions: "has no floor for"
 why: >
   A module with no floor has its coverage measured and compared against

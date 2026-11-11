@@ -391,7 +391,7 @@ func syncLocal(branch, sha string) error {
 //
 //	! [remote rejected] HEAD -> refs/signing/...
 //	  (refusing to allow a GitHub App to create or update workflow
-//	   `.github/workflows/clerk.yml` without `workflows` permission)
+//	   `.github/workflows/<a workflow>.yml` without `workflows` permission)
 //
 // That is the boundary working as designed - the branch had been cut from a
 // stale main, so relative to the new tip it reverted a workflow file - and it
