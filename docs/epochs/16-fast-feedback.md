@@ -490,7 +490,7 @@ key conversations.
 
 **Elevating.** Draft exists because the agent cannot be trusted to say it is
 done. A machine can say so instead: every required check green marks the pull
-request ready, and the clerk reads it then. **Recommend this.**
+request ready. **Recommend this.**
 
 **The sensitive-path conversation** was built for two people, and there is one.
 It opens on most pull requests, so it is a click nobody reads. The list can go
@@ -571,6 +571,110 @@ and it moves a real pin twice. It stands aside if a real pin, an open alert or a
 roll is under way, and it is left out of the delivery numbers. Every real
 incident is timed too, and a breach opens an issue.
 
+### 16. Pull-request code never has a network (agreed 2026-11-11)
+
+**The goal this serves.** The operator opens nothing and runs nothing: approve,
+merge, done. Security posture only improves. `harden-runner` leaves, as
+criterion 11 asks, and nothing loses its protection to get there. The pools and
+the untrusted worker retire (Decision 1).
+
+**The rule.** Code from a pull request never runs with a network. Only `main`'s
+reviewed code does, and it holds nothing that outlives the job. A guard holds
+it: a job that can reach the network runs nothing from the pull request.
+
+**What `harden-runner` did, and what does it instead.**
+
+| It did                        | Instead                                                                                                                 |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Held a job to a list of hosts | A check has no network: `docker run --network none`, held by the kernel. What comes in is the lockfiles, hash for hash. |
+| Removed sudo and Docker       | The check runs in a container as a user with no privileges                                                              |
+| Recorded each connection      | A check makes none. A trusted job is held by what its token may do, not by where it may go                              |
+
+**The shape of a check.** Two steps, on GitHub's runner:
+
+1. **Fetch.** The tools take what the pull request's lockfiles name, checked
+   against their hashes, and run none of its code: `go mod download`,
+   `tofu providers mirror`, `pnpm install --ignore-scripts`, Trivy's
+   `--download-db-only`. It holds no secret, and the only data in reach is the
+   pull request, which is public.
+2. **Run** the check in `homelab-checks` with no network. The fetched files are
+   mounted in; nothing else is.
+
+The image carries every tool a check uses, in one Dockerfile, from
+`scripts/deliveries.lock` by hash (#867). The fabricator builds it on `main`;
+a pull request that changes it builds its own, with `main`'s as the cache. What
+the image carries is fetched once, at build, and not by every run.
+
+**The shape of a trusted job.** It runs only `main`'s code, holds the smallest
+permission that does its job, and holds it only for the job:
+
+- **It writes to GitHub.** The check that makes a comment, a plan or a scan
+  result writes it as a file, with no token. A job defined on `main` reads the
+  file as data and posts it (`workflow_run`). The plan's comment and the
+  sensitive-paths comment split this way.
+- **It decides what runs.** The gates that read GitHub's API run `main`'s
+  script, not the pull request's, with a read-only token.
+- **It holds a key.** Procurement's deliveries and the key patrol trade the
+  job's GitHub identity for a token that lasts an hour, through Octo STS and a
+  trust policy in the repository. No App key is stored (epoch 15).
+
+A host list adds little here: GitHub's API is both where these jobs must go
+and the way a compromised step would leak a token. What holds them is commits
+pinned by hash, the least permission, and tokens that die with the job.
+
+**Every job, by what it holds** (57 in 16 workflows, 2026-11-11):
+
+| Jobs | What they hold                                              | Where they go                                                                                         |
+| ---- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| 21   | Nothing: the checks, the plan, the tally, the patrol        | Checks: fetch, then no network                                                                        |
+| 9    | A read token: the gates                                     | Trusted: `main`'s script                                                                              |
+| 7    | A write token: comments, code scanning, packages, the sweep | Ours split into a check and a poster. GitHub's own (CodeQL, Scorecard) stay as GitHub ships them      |
+| 1    | Nothing, in GitHub's action: dependency review              | As GitHub ships it                                                                                    |
+| 7    | A stored App key: procurement's deliveries, the key patrol  | Keep `harden-runner` until Octo STS replaces the key, then trusted                                    |
+| 1    | The clerk's App key and a model's key                       | Shelved 2026-11-11: its findings did not earn their keys                                              |
+| 5    | Nothing: the proofs of the pools and of `harden-runner`     | Retire with what they prove. One proof replaces them: a check that reaches for the network is refused |
+| 6    | A site's keys: converges, the roll, integration             | The estate's runners, which `harden-runner` never held (#411). Epoch 15                               |
+
+**Secrets found in a change** are GitHub's to verify. Its secret scanning and
+push protection are on, in code. Push protection refuses a key before it reaches
+the repository, which a scan afterwards cannot. TruffleHog stays as a second
+layer, unverified and with no network.
+
+**Posture, part by part.**
+
+| Part                     | Before                                                                | After                                            |
+| ------------------------ | --------------------------------------------------------------------- | ------------------------------------------------ |
+| A pull request's code    | On the estate's hardware, with a list of hosts                        | On GitHub's, with no network and nothing to hold |
+| What a check can run     | Whatever the runner image has                                         | One Dockerfile of ours, by hash                  |
+| What comes in            | Whatever an allowed host served                                       | What the lockfiles name, hash for hash           |
+| A key                    | Stored, held by an agent that failed to start on 2 in 136 jobs (#791) | Not stored: an hour's token, by trust policy     |
+| A leaked key in a change | Found after it landed                                                 | Refused at the push                              |
+| The untrusted worker     | 14 GiB of the site, and the sweeper's wipe that keeps it clean        | Gone                                             |
+
+**Rejected.**
+
+- **`unshare --net` on the runner** (2026-11-11): root for one command, a sudo
+  rule, three new names, and the check still ran on GitHub's image.
+- **An allow-listing proxy** (Smokescreen, 2026-11-11, #868 closed): once
+  pull-request code has no network, it guards a fetch that holds nothing and
+  trusted jobs whose only exit is the host they must reach.
+- **The pools on a bigger machine.** Decision 1, C: it does not fit the host.
+
+**Pieces, in order.**
+
+1. The mechanism, on the ledger and the removal check: fetch, then
+   `homelab-checks` with no network. The guard on the rule, and the proof that
+   a check reaching for the network is refused.
+2. Every other check moves. The comment jobs split; the gates run `main`'s
+   script.
+3. The pools, the untrusted worker, the sweeper's wipe and the pool proofs
+   retire. The roll's canary on the worker (05) is answered first.
+4. Push protection and secret scanning on, in code. TruffleHog without a
+   network.
+5. Octo STS replaces the stored App keys, and those jobs leave
+   `harden-runner`. With epoch 15.
+6. What is left on `harden-runner` is GitHub's own actions, each named.
+
 ## Depends on
 
 - **#772's follow-ups:** the roll proved on site0, for piece 14, which depends
@@ -612,7 +716,6 @@ reasons are in epoch 04.
 ## Deferred
 
 - Bazel, unless path filters and packages fall short.
-- Refining the clerk's prompt for three false findings on #772.
 
 ## Gotchas
 

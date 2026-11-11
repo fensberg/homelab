@@ -21,9 +21,7 @@
 # cannot tell - and that is the whole reason the rule is written here rather
 # than assumed.
 #
-# The same split already exists twice in this estate and is the model:
-# scripts/clerk/llm.go retries a 429 or a 5xx and returns immediately on any
-# other 4xx, because "a rejected key is rejected on the third attempt too"; and
+# The same split already exists in this estate and is the model:
 # expedite.yml bounds its Steam lookup at three attempts and then fails
 # loudly.
 #

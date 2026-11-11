@@ -33,9 +33,9 @@ import (
 //
 // Scope, stated honestly. This looks at package-level `var` only, because that
 // is the seam a test can move. A `const` endpoint cannot be pinned at all, but
-// flagging one would be wrong: scripts/clerk declares its endpoints as consts
-// and threads them through a struct field its tests set directly, which is the
-// better design rather than a violation. Detecting that shape statically is
+// flagging one would be wrong: a program that declares its endpoints as
+// consts and threads them through a struct field its tests set directly has
+// the better design rather than a violation. Detecting that shape statically is
 // not worth the false positives, so this guards the reassignable seam and says
 // nothing about the others.
 func TestPackagesWithANetworkEndpointPinItInTests(t *testing.T) {

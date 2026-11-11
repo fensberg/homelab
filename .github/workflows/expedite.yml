@@ -94,12 +94,9 @@ name: "Expedite"
 #   vars.PROCUREMENT_BOT_LOGIN
 #       Its bot login, <app-slug>[bot].
 #
-# That is now the ONE convention both Apps here use. The clerk used to insist
-# on base64 of the PEM, so whoever set this App up copied the App that already
-# existed and put base64 where the action wanted a PEM - failing at the token
-# step with a message pointing at neither (#382). scripts/clerk/github.go
-# accepts both shapes now, so the raw PEM is correct for both and
-# copying either App's setup works.
+# The raw PEM, because that is what the action reads. An App set up here
+# once copied another's base64 of the PEM, and failed at the token step with
+# a message pointing at neither (#382).
 #
 # All three were EXPEDITER_* until #416 renamed the role, and EXPEDITE_BOT_*
 # until the App was named for the role that holds it. The login is the App's

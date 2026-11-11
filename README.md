@@ -48,9 +48,7 @@ flowchart LR
 Formatting runs from the same `.pre-commit-config.yaml` at commit and in CI, so
 local and CI cannot disagree about it. The scanners overlap on purpose: "they
 are an independent check on code an LLM helped write"
-([pr-validation.yml](.github/workflows/pr-validation.yml)). An AI reviewer (the
-[clerk](.github/workflows/clerk.yml)) reads the pull request once it is marked
-ready, and can block nothing.
+([pr-validation.yml](.github/workflows/pr-validation.yml)).
 
 **A guard must fail when the behaviour breaks.** A test written alongside the
 change it guards tends to assert that the change is present, not that the
@@ -121,7 +119,7 @@ None of these needs credentials. Building a site needs a hypervisor and a
 
 ```text
 .
-├── .github/workflows/  CI: pull request lanes, plan, converge, scans, the clerk
+├── .github/workflows/  CI: pull request lanes, plan, converge, scans
 ├── .pre-commit-config.yaml  The commit and push gates
 ├── taskfile.yml        Every command, local and CI alike
 ├── config/             Config templates: sites, topology, vault references

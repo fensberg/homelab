@@ -76,7 +76,6 @@
   ],
   "baselines": {
     "go/attestation": 38.9,
-    "go/clerk": 65.6,
     "go/sweeper": 58.6,
     "go/contractor": 65.8,
     "go/procurement": 79.3,

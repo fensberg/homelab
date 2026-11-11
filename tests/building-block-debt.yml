@@ -9,7 +9,7 @@
 # that retires a copy deletes its line. Do not add to it to get past the guard
 # without saying why in the commit.
 debt:
-  # --- A GitHub API client, rebuilt per program (15)
+  # --- A GitHub API client, rebuilt per program (14)
   - ".github/workflows"
   - "Authorization"
   - "Content-Type"
@@ -18,7 +18,6 @@ debt:
   - "X-GitHub-Api-Version"
   - "application/json"
   - "application/vnd.github+json"
-  - "bad credentials for "
   - "https://api.github.com"
   - 'json:"workflow_runs"'
   - "no repository given: pass -repo owner/name or set GITHUB_REPOSITORY"
@@ -26,14 +25,12 @@ debt:
   - "pull_request"
   - "refs/heads/main"
 
-  # --- Git test isolation - required in every test that runs git, and copied into each (15)
+  # --- Git test isolation - required in every test that runs git, and copied into each (13)
   - "--abbrev-ref"
   - "--allow-empty"
   - "--is-ancestor"
   - "--remotes=origin"
-  - "GIT_AUTHOR_EMAIL=t@example.com"
   - "GIT_AUTHOR_NAME=t"
-  - "GIT_COMMITTER_EMAIL=t@example.com"
   - "GIT_COMMITTER_NAME=t"
   - "GIT_CONFIG_GLOBAL"
   - "GIT_CONFIG_GLOBAL=/dev/null"
@@ -43,7 +40,7 @@ debt:
   - "refs/signing/"
   - "user.email=a@example.com"
 
-  # --- Paths into this repository (16)
+  # --- Paths into this repository (13)
   - "backend_pg.tf"
   - ".pre-commit-config.yaml"
   - "age-encryption.org/v1"
@@ -52,14 +49,11 @@ debt:
   - "http://127.0.0.1:1"
   - "management.rendered.json"
   - "management.tpl.json"
-  - "modules/infrastructure/cluster/talos.tf"
   - "scripts/approved-suppliers.yml"
-  - "scripts/clerk/llm.go"
   - "scripts/deliveries.lock"
   - "scripts/versions.env"
-  - "site.auto.yml"
 
-  # --- Everything else: tool flags, vendor identifiers, status wording (51)
+  # --- Everything else: tool flags, vendor identifiers, status wording (50)
   - "demolish-site"
   - "-refresh=false"
   - " --hash=sha256:"
@@ -88,7 +82,6 @@ debt:
   - 'json:"private_key"'
   - 'json:"reason"'
   - 'json:"repo_url"'
-  - 'json:"rules"'
   - 'json:"sites"'
   - 'json:"source_control"'
   - 'json:"status"'

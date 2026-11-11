@@ -8,26 +8,22 @@ import (
 // There is one retry in this estate, and a second one cannot be written.
 //
 // WHY THIS SHAPE. There were three: a hand-rolled `for attempt in 1 2 3` loop
-// in expediter.yml (now expedite.yml), the bounded HTTP retry in scripts/clerk/llm.go, and the
-// shell helper. Three implementations of one policy is three places for it to
+// in expediter.yml (now expedite.yml), a bounded HTTP retry in the clerk (shelved
+// 2026-11-11), and the shell helper. Three implementations of one policy is three places for it to
 // drift, and the fourth would have been written the same way the third was -
 // by somebody who did not know the other two existed.
 //
 // So this does not check that the three agree. It DISCOVERS retry-shaped loops
-// across the whole repository and refuses any that is not one of the two
-// declared implementations. A caller writing a fourth is told where the
+// across the whole repository and refuses any that is not the one
+// declared implementation. A caller writing a fourth is told where the
 // existing one is, at the moment they write it, without anybody having to
 // remember to extend a list of files to look in.
 //
-// WHY TWO IMPLEMENTATIONS AND NOT ONE. scripts/retry.sh wraps a command and can
-// see only its exit status. scripts/clerk/llm.go retries an HTTP call and can
-// see the STATUS CODE, so it retries a 429 or a 5xx and returns immediately on
-// any other 4xx - "a rejected key is rejected on the third attempt too". That
-// is strictly more precise and a shell wrapper cannot express it. Collapsing
-// them would mean either losing that precision or shelling out from inside an
-// HTTP client, and both are worse than two implementations of one POLICY,
-// which is what is actually shared: bounded, never a verdict, every attempt
-// reported.
+// WHY ONE. scripts/retry.sh wraps a command and sees its exit status. The
+// clerk held a second, an HTTP retry that read the status code, and it left
+// with the clerk. A program that needs to tell a 429 from a 401 adds itself to
+// the declared list with what it sees that the helper cannot. What is shared is
+// the POLICY: bounded, never a verdict, every attempt reported.
 
 // A loop that runs something repeatedly until it works. Deliberately broad -
 // the point is to catch a shape somebody invents, not one they copy. Each is
@@ -52,11 +48,10 @@ func retryRule() map[string]any {
 	}
 }
 
-// The two places a retry is allowed to be implemented, and the reason each
+// The place a retry is allowed to be implemented, and the reason each
 // exists. Anything else is a third implementation.
 var declaredRetries = map[string]string{
 	"scripts/retry.sh":                "the shell helper: wraps a command, sees its exit status",
-	"scripts/clerk/llm.go":            "the HTTP retry: sees the status code, so it can tell a 429 from a 401",
 	"tests/go/repo/one_retry_test.go": "this file, which carries the shapes in order to refuse them",
 	"tests/go/repo/retry_test.go":     "the helper's own tests",
 }
@@ -99,10 +94,9 @@ bounded attempts, never a verdict, every attempt reported. Use it:
 
     scripts/retry.sh <attempts> <delay-seconds> <command> [args...]
 
-If what you need is an HTTP retry that can tell a 429 from a 401, that is
-scripts/clerk/llm.go and it is the other declared implementation. If it is
-genuinely neither, add this file to the declared list with one line saying
-what it sees that the other two cannot.`, f.Path, strings.TrimSpace(f.Text))
+If what you need genuinely cannot be a wrapped command, such as an HTTP retry
+that tells a 429 from a 401, add this file to the declared list with one line
+saying what it sees that the helper cannot.`, f.Path, strings.TrimSpace(f.Text))
 	}
 	if len(searched) == 0 {
 		t.Fatal("every candidate file was declared, so this test examined nothing")

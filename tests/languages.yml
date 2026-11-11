@@ -201,10 +201,6 @@ ungoverned:
     what: "githooks/, as above."
   - kind: "pre-push"
     what: "githooks/, as above."
-  - kind: "f14a06cf713fd7f9"
-    what: >-
-      A Go fuzz corpus entry under scripts/clerk/testdata. Written by the
-      toolchain, replayed by go test, never edited.
 
 # The number of ungoverned entries above. It may only fall.
-ungoverned_ceiling: 7
+ungoverned_ceiling: 6
