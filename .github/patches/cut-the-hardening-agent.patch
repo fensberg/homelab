@@ -1,0 +1,3081 @@
+diff --git a/.github/actionlint.yaml b/.github/actionlint.yaml
+index 3f59c995..d212616d 100644
+--- a/.github/actionlint.yaml
++++ b/.github/actionlint.yaml
+@@ -18,8 +18,8 @@ self-hosted-runner:
+ #
+ # `$/` is GitHub's self-repository reference, generally available since
+ # 2026-07-30: it resolves an action at the running commit with no checkout, and
+-# it is what lets .github/workflows/mobilize run harden-runner and checkout as a
+-# job's first step. actionlint v1.7.12 - still its newest release - predates it
++# it is what lets .github/workflows/mobilize run checkout as a job's first
++# step. actionlint v1.7.12 - still its newest release - predates it
+ # and reports "ref is missing".
+ #
+ # Scoped to that message AND to a reference into .github/workflows or
+diff --git a/.github/actions/versions/action.yml b/.github/actions/versions/action.yml
+index 1b4c8f64..24198b3b 100644
+--- a/.github/actions/versions/action.yml
++++ b/.github/actions/versions/action.yml
+@@ -26,7 +26,7 @@ runs:
+       # BASH_ENV or NODE_OPTIONS turn that into code execution. Most lanes
+       # already run a fork's code (go test, vitest, tofu), so they gain
+       # nothing - but the TruffleHog lane does not, and it is the one lane
+-      # deliberately left on egress-policy: audit. Exporting a free-form
++      # that reaches any host by design. Exporting a free-form
+       # KEY=VALUE would have handed that job code execution with open
+       # egress.
+       #
+diff --git a/.github/workflows/app-token/action.yml b/.github/workflows/app-token/action.yml
+index fb41d005..737c5139 100644
+--- a/.github/workflows/app-token/action.yml
++++ b/.github/workflows/app-token/action.yml
+@@ -13,7 +13,8 @@
+ # for it through the wrapper.
+ #
+ # The token is revoked in the action's post-step, which runs for an action
+-# nested under `$/` - shown by "Post Mobilize" running harden-runner's own.
++# nested under `$/` - shown, while Mobilize ran harden-runner, by "Post
++# Mobilize" running its post-step.
+ name: "App Token"
+ description: Mint a GitHub App installation token with explicitly named permissions.
+ 
+diff --git a/.github/workflows/codeql.yml b/.github/workflows/codeql.yml
+index 3da21963..8970f536 100644
+--- a/.github/workflows/codeql.yml
++++ b/.github/workflows/codeql.yml
+@@ -92,19 +92,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+-            objects.githubusercontent.com:443
+-            release-assets.githubusercontent.com:443
+-            uploads.github.com:443
+ 
+       - name: Initialize CodeQL
+         uses: github/codeql-action/init@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3
+diff --git a/.github/workflows/converge-estate.yml b/.github/workflows/converge-estate.yml
+index db0197d3..83fe45c3 100644
+--- a/.github/workflows/converge-estate.yml
++++ b/.github/workflows/converge-estate.yml
+@@ -53,13 +53,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+ 
+       - name: Pick the first site the config declares
+         id: site
+@@ -82,11 +75,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # audit, because harden-runner does nothing on this runner whatever
+-          # it is told; see this job's entry in scripts/approved-suppliers.yml.
+-          egress-policy: audit
+-          disable-sudo-and-containers: "false"
+ 
+       - name: Read pinned versions
+         uses: $/.github/actions/versions
+diff --git a/.github/workflows/dependency-review.yml b/.github/workflows/dependency-review.yml
+index 6b92419a..428bc6a3 100644
+--- a/.github/workflows/dependency-review.yml
++++ b/.github/workflows/dependency-review.yml
+@@ -51,35 +51,5 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # The comment that used to sit here said this action "only ever
+-          # queries GitHub's own advisory data ... no third-party endpoint to
+-          # allow for." That was true while this repository had almost no
+-          # dependencies, and stopped being true the moment it gained some:
+-          # the action also enriches each dependency with OpenSSF Scorecard
+-          # and deps.dev data, and those are third-party endpoints.
+-          #
+-          # The symptom was a bare `Error: fetch failed` three seconds in,
+-          # with nothing naming a host. The cause is in harden-runner's own
+-          # Post-step log, which records every DNS request it drops:
+-          #
+-          #   [dns-request-dropped] domain=api.securityscorecards.dev. matchedPolicy=NONE
+-          #   [dns-request-dropped] domain=api.deps.dev.           matchedPolicy=NONE
+-          #
+-          # Both endpoints below are transcribed from that log rather than
+-          # guessed, which is the same method the Semgrep lane's comment in
+-          # pr-validation.yml describes: run it, read what it actually
+-          # reached for, then allow exactly that.
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.deps.dev:443
+-            api.github.com:443
+-            api.securityscorecards.dev:443
+-            github.com:443
+       - name: "Dependency Review"
+         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+diff --git a/.github/workflows/deploy-infrastructure.yml b/.github/workflows/deploy-infrastructure.yml
+index d4c90699..0a9aa1ca 100644
+--- a/.github/workflows/deploy-infrastructure.yml
++++ b/.github/workflows/deploy-infrastructure.yml
+@@ -103,15 +103,6 @@ jobs:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+         with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+           # Deep enough to diff a push against the commit before it. This
+           # repository is small; the cost is seconds and the alternative is
+           # guessing.
+@@ -228,21 +219,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Stays audit, not block, until this job has actually run: it
+-          # applies whatever `environments/` and `modules/` turn out to
+-          # need - Proxmox, Cloudflare, Tailscale, object storage, the state
+-          # Postgres, the OpenTofu registry - and none of those hosts are
+-          # known yet because neither directory exists. Flip to block with
+-          # the observed allowed-endpoints before this job ever runs for
+-          # real - not before, since a guessed allowlist on the one job with
+-          # write access to real infrastructure is worse than an audited one.
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: audit
+-          disable-sudo-and-containers: "false"
+ 
+       - name: Determine Target Directory
+         id: set-env
+@@ -321,18 +297,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # audit, not block, for the same reason the apply job gives: this
+-          # reaches 1Password, Proxmox, Tailscale, Cloudflare, the Kubernetes
+-          # API and the OpenTofu registry, and several of those addresses are
+-          # deliberately not in git. Transcribe the observed endpoints after
+-          # the first real run, then flip to block.
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: audit
+-          disable-sudo-and-containers: "false"
+ 
+       - name: Read pinned versions
+         uses: $/.github/actions/versions
+@@ -446,12 +410,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # audit, for the converge's reason: harden-runner does nothing on
+-          # this runner. Owned by scripts/approved-suppliers.yml under
+-          # `egress:`, which says which job may reach what.
+-          egress-policy: audit
+-          disable-sudo-and-containers: "false"
+ 
+       - name: Read pinned versions
+         uses: $/.github/actions/versions
+@@ -515,10 +473,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # As the roll's, for its reason.
+-          egress-policy: audit
+-          disable-sudo-and-containers: "false"
+ 
+       - name: Read pinned versions
+         uses: $/.github/actions/versions
+@@ -578,17 +532,6 @@ jobs:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+         with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+-            objects.githubusercontent.com:443
+-            release-assets.githubusercontent.com:443
+           fetch-depth: 0
+ 
+       - name: Collect why it stopped
+@@ -727,17 +670,6 @@ jobs:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+         with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+-            objects.githubusercontent.com:443
+-            release-assets.githubusercontent.com:443
+           fetch-depth: 0
+ 
+       - name: Collect the verdicts
+diff --git a/.github/workflows/expedite.yml b/.github/workflows/expedite.yml
+index 4b98f0b1..ebbed501 100644
+--- a/.github/workflows/expedite.yml
++++ b/.github/workflows/expedite.yml
+@@ -154,23 +154,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            api.steampowered.com:443
+-            github.com:443
+-            go.dev:443
+-            objects.githubusercontent.com:443
+-            proxy.golang.org:443
+-            release-assets.githubusercontent.com:443
+-            storage.googleapis.com:443
+-            sum.golang.org:443
+ 
+       # Versions come from scripts/versions.env, which is the only place one
+       # is written. See .github/actions/versions for why this is a step
+@@ -254,13 +237,6 @@ jobs:
+       # setting, as the image build beside it.
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: audit
+-          disable-sudo-and-containers: "false"
+ 
+       - name: Ask SteamCMD what each build actually is
+         id: build
+@@ -457,23 +433,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            ghcr.io:443
+-            github.com:443
+-            go.dev:443
+-            objects.githubusercontent.com:443
+-            proxy.golang.org:443
+-            release-assets.githubusercontent.com:443
+-            storage.googleapis.com:443
+-            sum.golang.org:443
+ 
+       # Versions come from scripts/versions.env, which is the only place one
+       # is written. See .github/actions/versions for why this is a step
+diff --git a/.github/workflows/fabricator.yml b/.github/workflows/fabricator.yml
+index 2fe3699d..683e4edf 100644
+--- a/.github/workflows/fabricator.yml
++++ b/.github/workflows/fabricator.yml
+@@ -70,16 +70,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+ 
+       # The estate's own orders, then one for each application that has an
+       # image: named for its directory, built from image/ inside it, pinned by
+@@ -128,12 +118,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Audit, not block: the builds reach package archives, release
+-          # downloads and Valve's content servers, a set this repository has
+-          # never transcribed (approved-suppliers.yml records why).
+-          egress-policy: audit
+-          disable-sudo-and-containers: "false"
+ 
+       - name: Read pinned versions
+         uses: $/.github/actions/versions
+@@ -535,20 +519,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            ghcr.io:443
+-            github.com:443
+-            objects.githubusercontent.com:443
+-            pkg-containers.githubusercontent.com:443
+-            release-assets.githubusercontent.com:443
+ 
+       # Versions come from scripts/versions.env, which is the only place one
+       # is written. See .github/actions/versions for why this is a step
+@@ -775,22 +745,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+-            go.dev:443
+-            objects.githubusercontent.com:443
+-            proxy.golang.org:443
+-            release-assets.githubusercontent.com:443
+-            storage.googleapis.com:443
+-            sum.golang.org:443
+ 
+       - name: Read pinned versions
+         uses: $/.github/actions/versions
+@@ -943,19 +897,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+-            go.dev:443
+-            objects.githubusercontent.com:443
+-            proxy.golang.org:443
+-            release-assets.githubusercontent.com:443
+-            storage.googleapis.com:443
+-            sum.golang.org:443
+ 
+       - name: Read pinned versions
+         uses: $/.github/actions/versions
+diff --git a/.github/workflows/inspector.yml b/.github/workflows/inspector.yml
+index 0c4d01cd..5a806de3 100644
+--- a/.github/workflows/inspector.yml
++++ b/.github/workflows/inspector.yml
+@@ -61,18 +61,6 @@ jobs:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+         with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+-            objects.githubusercontent.com:443
+-            release-assets.githubusercontent.com:443
+-            storage.googleapis.com:443
+           fetch-depth: 0
+ 
+       - name: Read pinned versions
+diff --git a/.github/workflows/integration-tests.yml b/.github/workflows/integration-tests.yml
+index 4a206476..0c43369b 100644
+--- a/.github/workflows/integration-tests.yml
++++ b/.github/workflows/integration-tests.yml
+@@ -81,16 +81,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+ 
+       - name: List the sites to test
+         id: sites
+@@ -134,22 +124,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Stays audit, not block, until a real run's egress log gives an
+-          # allowed-endpoints list worth trusting. This job talks to 1Password,
+-          # Proxmox, Cloudflare, Tailscale, the Kubernetes API and the
+-          # OpenTofu registry, and several of those are addresses this
+-          # repository deliberately keeps out of git. Guessing them risks
+-          # either breaking the run or rubber-stamping an allowlist nobody
+-          # checked - the same reasoning, and the same resolution, as
+-          # deploy-infrastructure.yml. Transcribe the observed destinations
+-          # after the first real run, then flip to block.
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: audit
+-          disable-sudo-and-containers: "false"
+ 
+       - name: Read pinned versions
+         uses: $/.github/actions/versions
+diff --git a/.github/workflows/mobilize/action.yml b/.github/workflows/mobilize/action.yml
+index a7d0d767..f4eaac02 100644
+--- a/.github/workflows/mobilize/action.yml
++++ b/.github/workflows/mobilize/action.yml
+@@ -1,20 +1,19 @@
+-# How every job starts: harden the runner, then check out the repository.
++# How every job starts: check out the repository, from one place.
+ #
+-# THE ONE PLACE THE HARDEN-RUNNER COMMIT IS WRITTEN. It was restated in 31
+-# jobs and the copies agreed only because nobody had made a mistake yet. A job
+-# calls this instead:
++# Every job calls this first:
+ #
+ #   - uses: $/.github/workflows/mobilize
+-#     with:
+-#       egress-policy: block
+-#       allowed-endpoints: >
+-#         github.com:443
+ #
+-# PROVEN, NOT ASSUMED. harden-runner installs its policy in a pre-step, and
+-# GitHub documents pre-steps as unsupported for local actions. Under `$/` they
+-# run: the egress test lanes in pr-validation.yml requires a host outside the allowlist
+-# to be refused through this action, and its run shows "Pre Mobilize" and
+-# "Post Mobilize" executing harden-runner's own pre and post steps.
++# It hardened the runner first, with step-security's harden-runner, until
++# 2026-11-12. The operator cut the agent from every job that day: on GitHub's
++# runners it failed to start on some jobs (#725, #791) and left others that
++# GitHub never heard finish, and on the estate's runners it never held
++# anything. What a job may reach is still declared in
++# scripts/approved-suppliers.yml. On GitHub's runners nothing holds a job to
++# that list until epoch 16, decision 16 does, which runs a pull request's
++# code with no network at all (#795). The pools are still held by the
++# cluster's network. Every job starting here is what lets that land in one
++# place.
+ #
+ # WHY `$/` AND NOT `./`. .github/actions/secure-checkout tried this with `./`
+ # and every job failed: "Can't find 'action.yml' ... Did you forget to run
+@@ -22,35 +21,14 @@
+ # out of the workspace, and this is the step that fills it. `$/` resolves
+ # against the repository at the running commit with no checkout.
+ #
+-# WHY IT LIVES UNDER .github/workflows. It decides what every job may reach, so
++# WHY IT LIVES UNDER .github/workflows. It decides how every job starts, so
+ # it sits behind the same `workflows` permission the agent does not hold.
+ # GitHub loads workflows only from the top of that directory.
+ name: "Mobilize"
+ description: >-
+-  Harden the runner, then check out the repository - the first step of every
+-  job in this repository.
++  Check out the repository - the first step of every job in this repository.
+ 
+ inputs:
+-  egress-policy:
+-    description: >-
+-      block or audit, exactly as scripts/approved-suppliers.yml declares for the
+-      calling job. No default: harden-runner refuses an empty policy, which is
+-      the right answer for a job that did not say.
+-    required: true
+-  allowed-endpoints:
+-    description: >-
+-      The calling job's allowlist, copied from its entry in
+-      scripts/approved-suppliers.yml. `security guard-egress` refuses drift.
+-    required: false
+-    default: ""
+-  disable-sudo-and-containers:
+-    description: >-
+-      "true" removes sudo and container access from the runner account for the
+-      rest of the job, so a later step cannot switch egress enforcement off
+-      (#410). "false" only where the job genuinely needs root or Docker, with
+-      the reason declared beside its egress entry in
+-      scripts/approved-suppliers.yml. No default: every job says which.
+-    required: true
+   checkout:
+     description: >-
+       "false" for a job that never needs the repository. There is no way to
+@@ -62,152 +40,19 @@ inputs:
+     required: false
+     default: "1"
+ 
+-outputs:
+-  held:
+-    description: >-
+-      "true" where sudo was to be removed and is, "false" where it was to be
+-      and is not, and nothing for a job that keeps it. For a lane that proves
+-      the block, which has nothing to prove on a runner that is not held.
+-    value: ${{ steps.held.outputs.held }}
+-
+ runs:
+   using: composite
+   steps:
+-    - name: Harden the runner
+-      uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+-      with:
+-        egress-policy: ${{ inputs.egress-policy }}
+-        allowed-endpoints: ${{ inputs.allowed-endpoints }}
+-        disable-sudo-and-containers: ${{ inputs.disable-sudo-and-containers }}
+-
+     # A value other than "true" or "false" is refused rather than read as
+-    # false. For checkout a typo would silently skip it and leave every later
+-    # step running against an empty workspace; for sudo it would silently leave
+-    # root in place. harden-runner reads an unrecognised boolean as false, so
+-    # the refusal has to happen here.
+-    #
+-    # This runs after harden-runner rather than before it, because harden-runner
+-    # is what makes every later step watched - including this one.
+-    # ON THIS RUNNER, AND NOT ON SOME OTHER. Every job has a runner of its
+-    # own and its own copy of what hardens it, so a proof on one says nothing
+-    # of the next. On 2026-10-12 the agent failed to start on about one
+-    # runner in seven - it could not take the port its resolver listens on -
+-    # and a job on such a runner has no block on what it reaches and still
+-    # has sudo, with nothing saying so. It was noticed twice, because it
+-    # twice fell on the one lane that looks.
+-    #
+-    # So every job that asks for sudo to be gone looks for itself, before
+-    # anything else it does: sudo that still works is a runner where
+-    # enforcement is not in place, and the job stops there. It costs nothing.
+-    # The lane that proves a refused address is refused is still its own
+-    # (pr-validation.yml), since that one needs somewhere to be refused by.
+-    #
+-    # Only where sudo was to be removed. A job that keeps it says why beside
+-    # its entry in scripts/approved-suppliers.yml, and a runner on the estate
+-    # is not hardened by this at all.
+-    # SAID, AND NOT YET STOPPED FOR. This stopped the job, and about one of
+-    # GitHub's runners in eight is not held (#725), so most runs had a job
+-    # stopped and nothing could be merged without running jobs again -
+-    # the changes that move these jobs onto the estate's own runners among
+-    # them (#559). The operator loosened it for as long as that takes: a
+-    # runner that is not held is said, loudly and with why, and the job
+-    # goes on as it did before anything looked. It is not safer than it
+-    # was; it is no longer silent. When a pull request's jobs run on the
+-    # estate's runners this step has nothing left to look at there, and
+-    # for whatever still runs on GitHub's it goes back to stopping.
+-    - name: Whether this runner is held
+-      id: held
+-      if: inputs.disable-sudo-and-containers == 'true'
+-      shell: bash
+-      run: |
+-        if sudo -n true 2>/dev/null; then
+-          # Why, before stopping. The agent says of itself that it could not
+-          # take the port its resolver listens on, because something on the
+-          # runner already had it (#725), and does not say what. Sudo still
+-          # works here, which is the fault, and is what lets this look.
+-          # Process names and the agent's own log: nothing of the estate's.
+-          echo "::group::What holds the port the agent's resolver listens on"
+-          sudo ss -H -lunp 'sport = :53' || true
+-          sudo ss -H -ltnp 'sport = :53' || true
+-          echo "::endgroup::"
+-          # What that is. On 2026-10-12 the holder was a process named
+-          # dns-resolver, started before the job's own worker, so it is the
+-          # runner's and not the agent's or anything of this repository's.
+-          # Its command, what started it, the unit it belongs to and what
+-          # the runner is told to resolve by say whether it can be stood
+-          # down before the agent starts.
+-          echo "::group::What the holder of the port is"
+-          for pid in $(sudo ss -H -lunp 'sport = :53' | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u); do
+-            sudo ps -o pid,ppid,user,lstart,args -p "$pid" || true
+-            sudo readlink "/proc/$pid/exe" || true
+-            sudo systemctl status "$pid" --no-pager 2>&1 | head -8 || true
+-          done
+-          echo "--- /etc/resolv.conf"
+-          cat /etc/resolv.conf || true
+-          echo "::endgroup::"
+-          echo "::group::The agent's own account of itself"
+-          sudo systemctl status agent --no-pager 2>&1 | head -20 || true
+-          sudo journalctl -u agent --no-pager -n 40 2>&1 || true
+-          echo "::endgroup::"
+-          echo "::warning::THIS JOB RAN WITH NOTHING HELD. Sudo still works on this runner after it was to be removed, so what hardens the runner did not start here: nothing blocked what this job reached. The cause is known (#725) and the job was let go on by the operator's decision, until pull requests run on the estate's own runners (#559)."
+-          echo "held=false" >>"$GITHUB_OUTPUT"
+-        else
+-          echo "held=true" >>"$GITHUB_OUTPUT"
+-        fi
+-
+-    - name: Whether this runner reaches what it is allowed
+-      # The agent allows an address only when it has seen it resolve: the
+-      # names it resolves itself when it starts, and every lookup made
+-      # through the system's resolver, which it points at itself. On some of
+-      # GitHub's runners /etc/resolv.conf is written by GitHub's own egress
+-      # proxy (repoint-resolv-conf) and asks that proxy first, so lookups go
+-      # around the agent (#791). A connection then works only where the
+-      # proxy happens to answer with an address the agent also got - often
+-      # for github.com, rarely for a name whose addresses rotate - and the
+-      # job fails later, on "exit code 128" or "connection refused", naming
+-      # neither. So this asks what the job's programs ask: a runner whose
+-      # first nameserver is not the system resolver's stub is refused, and
+-      # then github.com is asked for, the way the checkout will. Where either
+-      # fails it prints how the runner resolves and stops. Nothing is tried
+-      # again: a job cannot move itself to another runner, and the runner's
+-      # resolver is not this job's to repair.
+-      # Only where the agent runs: on the estate's own runners it holds
+-      # nothing (the cluster's network does), and what they resolve through
+-      # is the cluster's, which says nothing about the agent.
+-      if: inputs.egress-policy == 'block' && runner.environment == 'github-hosted'
+-      shell: bash
+-      run: |
+-        said="$RUNNER_TEMP/reach-github"
+-        first="$(awk '$1 == "nameserver" { print $2; exit }' /etc/resolv.conf 2>/dev/null)"
+-        if [ "$first" = "127.0.0.53" ] && curl -sS -o /dev/null --max-time 15 https://github.com/ 2>"$said"; then
+-          exit 0
+-        fi
+-        # Readable without sudo, which the agent has removed by now. The
+-        # agent's own log is printed by its post step, at the end of the job.
+-        echo "::group::What the runner said"
+-        echo "the first nameserver programs ask is ${first:-none}"
+-        cat "$said" 2>/dev/null || true
+-        echo "::endgroup::"
+-        echo "::group::How the runner resolves"
+-        getent ahosts github.com || true
+-        resolvectl status --no-pager || true
+-        resolvectl statistics --no-pager || true
+-        echo "--- /etc/resolv.conf"
+-        cat /etc/resolv.conf || true
+-        echo "::endgroup::"
+-        echo "::error::This runner's lookups go around the hardening agent: programs ask ${first:-no nameserver} first rather than the system resolver, so the agent refuses whatever it did not see resolve (#791). Nothing in the change being tested caused this."
+-        exit 1
+-
++    # false: a typo would silently skip the checkout and leave every later
++    # step running against an empty workspace.
+     - name: Refuse an unrecognised value
+-      if: >-
+-        (inputs.checkout != 'true' && inputs.checkout != 'false') ||
+-        (inputs.disable-sudo-and-containers != 'true' && inputs.disable-sudo-and-containers != 'false')
++      if: inputs.checkout != 'true' && inputs.checkout != 'false'
+       shell: bash
+       env:
+         CHECKOUT: ${{ inputs.checkout }}
+-        SUDO: ${{ inputs.disable-sudo-and-containers }}
+       run: |
+-        echo "::error::mobilize takes checkout and disable-sudo-and-containers as \"true\" or \"false\"; it was given checkout: '$CHECKOUT', disable-sudo-and-containers: '$SUDO'."
++        echo "::error::mobilize takes checkout as \"true\" or \"false\"; it was given '$CHECKOUT'."
+         exit 1
+ 
+     - name: Check out the repository
+diff --git a/.github/workflows/plan-infrastructure.yml b/.github/workflows/plan-infrastructure.yml
+index 051bc477..7d2eb761 100644
+--- a/.github/workflows/plan-infrastructure.yml
++++ b/.github/workflows/plan-infrastructure.yml
+@@ -71,15 +71,6 @@ jobs:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+         with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+           # The change and what it is a change to: the commit under test is
+           # a merge on a pull request and the queue's own on a merge group,
+           # and either way its first parent is what it would land on.
+@@ -159,29 +150,6 @@ jobs:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+         with:
+-          # The Go toolchain and OpenTofu with its providers, as the Validate
+-          # lane fetches them, GitHub's API for the record, and its registry
+-          # for the release of the platform the site runs.
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            dl.k8s.io:443
+-            get.opentofu.org:443
+-            ghcr.io:443
+-            github.com:443
+-            go.dev:443
+-            objects.githubusercontent.com:443
+-            pkg-containers.githubusercontent.com:443
+-            proxy.golang.org:443
+-            registry.opentofu.org:443
+-            release-assets.githubusercontent.com:443
+-            storage.googleapis.com:443
+-            sum.golang.org:443
+           # All of it, so the change can be brought onto the current main.
+           fetch-depth: 0
+ 
+@@ -365,17 +333,6 @@ jobs:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+         with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+-            objects.githubusercontent.com:443
+-            release-assets.githubusercontent.com:443
+           # The repository is not this job's to read: the plan arrives as an
+           # artifact and the scripts through the action.
+           checkout: "false"
+@@ -443,12 +400,6 @@ jobs:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+         with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+           checkout: "false"
+ 
+       - name: Whether this change may land
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index 73f701dd..8259b63b 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -103,14 +103,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+ 
+       - name: Read main's last finished run
+         id: read
+@@ -151,14 +143,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+ 
+       - name: Compare what the queue would land with what the pull request tested
+         id: compare
+@@ -216,31 +200,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # pre-commit builds a Go toolchain for actionlint and a Node one
+-          # for prettier, which is why this list is the longest in the file.
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            codeload.github.com:443
+-            dl.google.com:443
+-            files.pythonhosted.org:443
+-            github.com:443
+-            go.dev:443
+-            nodejs.org:443
+-            objects.githubusercontent.com:443
+-            proxy.golang.org:443
+-            pypi.org:443
+-            raw.githubusercontent.com:443
+-            registry.npmjs.org:443
+-            release-assets.githubusercontent.com:443
+-            storage.googleapis.com:443
+-            sum.golang.org:443
+ 
+       # The same .pre-commit-config.yaml a developer runs, at the same pinned
+       # versions. That is the point: there is no second copy of prettier here
+@@ -335,20 +294,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # take-delivery.sh downloads the shellcheck release archive from
+-          # GitHub and installs it only if its SHA256 matches the lock.
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+-            objects.githubusercontent.com:443
+-            release-assets.githubusercontent.com:443
+ 
+       - name: Read pinned versions
+         uses: $/.github/actions/versions
+@@ -412,39 +357,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # get.opentofu.org serves both the installer and the GPG key it
+-          # verifies the release with. Provider downloads start at the registry
+-          # and are redirected to GitHub release assets. The schema fetches for
+-          # kubeconform come from raw.githubusercontent.com.
+-          #
+-          # actions/setup-go (confirmed from its own source at this pinned
+-          # commit, not assumed) has two real, different paths depending on
+-          # whether the hosted actions/go-versions manifest resolves: the
+-          # normal one walks api.github.com's git/trees + git/blobs endpoints
+-          # then downloads from github.com's releases, redirected to
+-          # release-assets.githubusercontent.com - confirmed as the actual
+-          # path taken in a real run. The fallback, unexercised so far but
+-          # real in the source, lists versions from go.dev and downloads the
+-          # archive from storage.googleapis.com. dl.google.com, which used to
+-          # be listed here, appears nowhere in setup-go's source - a full
+-          # grep of every file that touches a URL found no reference to it.
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            get.opentofu.org:443
+-            github.com:443
+-            go.dev:443
+-            objects.githubusercontent.com:443
+-            raw.githubusercontent.com:443
+-            registry.opentofu.org:443
+-            release-assets.githubusercontent.com:443
+-            storage.googleapis.com:443
+ 
+       # Versions come from scripts/versions.env, which is the only place one
+       # is written. See .github/actions/versions for why this is a step
+@@ -686,25 +598,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            dl.k8s.io:443
+-            get.opentofu.org:443
+-            github.com:443
+-            go.dev:443
+-            objects.githubusercontent.com:443
+-            proxy.golang.org:443
+-            registry.opentofu.org:443
+-            release-assets.githubusercontent.com:443
+-            storage.googleapis.com:443
+-            sum.golang.org:443
+ 
+       # Versions come from scripts/versions.env, which is the only place one
+       # is written. See .github/actions/versions for why this is a step
+@@ -844,22 +737,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+-            go.dev:443
+-            objects.githubusercontent.com:443
+-            proxy.golang.org:443
+-            release-assets.githubusercontent.com:443
+-            storage.googleapis.com:443
+-            sum.golang.org:443
+ 
+       # Versions come from scripts/versions.env, which is the only place one
+       # is written. See .github/actions/versions for why this is a step
+@@ -904,29 +781,9 @@ jobs:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+         with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+           # All of it, for the tags: the configuration rules plan each site
+           # with the release it runs, read from that release's tag (#843).
+           fetch-depth: 0
+-          allowed-endpoints: >
+-            api.github.com:443
+-            dl.k8s.io:443
+-            files.pythonhosted.org:443
+-            get.opentofu.org:443
+-            github.com:443
+-            go.dev:443
+-            objects.githubusercontent.com:443
+-            proxy.golang.org:443
+-            pypi.org:443
+-            registry.opentofu.org:443
+-            release-assets.githubusercontent.com:443
+-            storage.googleapis.com:443
+-            sum.golang.org:443
+ 
+       # Versions come from scripts/versions.env, which is the only place one
+       # is written. See .github/actions/versions for why this is a step
+@@ -1003,29 +860,9 @@ jobs:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+         with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+           # All of it, for the tags: the configuration rules plan each site
+           # with the release it runs, read from that release's tag (#843).
+           fetch-depth: 0
+-          allowed-endpoints: >
+-            api.github.com:443
+-            dl.k8s.io:443
+-            files.pythonhosted.org:443
+-            get.opentofu.org:443
+-            github.com:443
+-            go.dev:443
+-            objects.githubusercontent.com:443
+-            proxy.golang.org:443
+-            pypi.org:443
+-            registry.opentofu.org:443
+-            release-assets.githubusercontent.com:443
+-            storage.googleapis.com:443
+-            sum.golang.org:443
+ 
+       # Versions come from scripts/versions.env, which is the only place one
+       # is written. See .github/actions/versions for why this is a step
+@@ -1110,29 +947,9 @@ jobs:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+         with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+           # All of it, for the tags: the configuration rules plan each site
+           # with the release it runs, read from that release's tag (#843).
+           fetch-depth: 0
+-          allowed-endpoints: >
+-            api.github.com:443
+-            dl.k8s.io:443
+-            files.pythonhosted.org:443
+-            get.opentofu.org:443
+-            github.com:443
+-            go.dev:443
+-            objects.githubusercontent.com:443
+-            proxy.golang.org:443
+-            pypi.org:443
+-            registry.opentofu.org:443
+-            release-assets.githubusercontent.com:443
+-            storage.googleapis.com:443
+-            sum.golang.org:443
+ 
+       # Versions come from scripts/versions.env, which is the only place one
+       # is written. See .github/actions/versions for why this is a step
+@@ -1198,20 +1015,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+-            nodejs.org:443
+-            objects.githubusercontent.com:443
+-            registry.npmjs.org:443
+-            release-assets.githubusercontent.com:443
+ 
+       # Versions come from scripts/versions.env, which is the only place one
+       # is written. See .github/actions/versions for why this is a step
+@@ -1288,16 +1091,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+ 
+       - name: Every lane passed
+         env:
+@@ -1387,20 +1180,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            files.pythonhosted.org:443
+-            github.com:443
+-            objects.githubusercontent.com:443
+-            pypi.org:443
+-            release-assets.githubusercontent.com:443
+ 
+       # Versions come from scripts/versions.env, which is the only place one
+       # is written. See .github/actions/versions for why this is a step
+@@ -1437,18 +1216,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+-            objects.githubusercontent.com:443
+-            release-assets.githubusercontent.com:443
+ 
+       - name: Read pinned versions
+         uses: $/.github/actions/versions
+@@ -1477,20 +1244,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            files.pythonhosted.org:443
+-            github.com:443
+-            objects.githubusercontent.com:443
+-            pypi.org:443
+-            release-assets.githubusercontent.com:443
+ 
+       - name: Read pinned versions
+         uses: $/.github/actions/versions
+@@ -1520,20 +1273,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            files.pythonhosted.org:443
+-            github.com:443
+-            objects.githubusercontent.com:443
+-            pypi.org:443
+-            release-assets.githubusercontent.com:443
+ 
+       - name: Read pinned versions
+         uses: $/.github/actions/versions
+@@ -1567,19 +1306,6 @@ jobs:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+         with:
+-          # Stays audit, not block, until a real run's egress log gives an
+-          # allowed-endpoints list worth trusting - semgrep ci reaches its
+-          # rule registry at a set of hosts this repo has never actually
+-          # observed, and guessing them risks either breaking the scan or
+-          # rubber-stamping an allowlist nobody checked. See the Format lane
+-          # above for how that list gets built the right way: run audit
+-          # first, then transcribe the real destinations it logged.
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: audit
+-          disable-sudo-and-containers: "true"
+           fetch-depth: 0
+       - name: Read pinned versions
+         uses: $/.github/actions/versions
+@@ -1642,23 +1368,6 @@ jobs:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+         with:
+-          # Trivy pulls its misconfiguration database as an OCI artifact,
+-          # from ghcr.io with a Google mirror as fallback.
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            get.trivy.dev:443
+-            ghcr.io:443
+-            github.com:443
+-            mirror.gcr.io:443
+-            objects.githubusercontent.com:443
+-            pkg-containers.githubusercontent.com:443
+-            release-assets.githubusercontent.com:443
+           fetch-depth: 0
+ 
+       - name: Run Trivy Vulnerability Scanner
+@@ -1707,18 +1416,6 @@ jobs:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+         with:
+-          # DELIBERATELY audit, not block. TruffleHog verifies a candidate
+-          # secret by presenting it to the API of whichever vendor issued it,
+-          # and there is no way to know in advance which vendors those are - a
+-          # leaked key belongs to whoever it belongs to. An allowlist here
+-          # would not fail loudly; it would quietly turn verified findings into
+-          # unverified ones, which is the opposite of what this lane is for.
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: audit
+-          disable-sudo-and-containers: "true"
+           fetch-depth: 0
+ 
+       # Versions come from scripts/versions.env, which is the only place one
+@@ -1732,8 +1429,8 @@ jobs:
+       # `latest` and no input that can express a digest (the template is
+       # hardcoded to `image:tag`, never `image@sha256:...`). SHA-pinning the
+       # action only pins its orchestration script - it still silently pulls
+-      # whatever `latest` resolves to today on the one job in this repo
+-      # that's deliberately not egress-blocked. Taking delivery of the release
++      # whatever `latest` resolves to today, on a job that reaches any host
++      # by design. Taking delivery of the release
+       # archive from scripts/deliveries.lock by hash closes that gap the same
+       # way it does for tofu and kubeconform in the Validate lane above.
+       - name: Install trufflehog (locked)
+@@ -1755,89 +1452,30 @@ jobs:
+         run: go run -C scripts/security . guard-secrets -base "${BASE_SHA}" -head "${HEAD_SHA}"
+ 
+   # -----------------------------------------------------------------
+-  # EGRESS PROOF: that the shared first step still does what it claims.
++  # SHARED ACTIONS: that the actions every job reaches through $/ still do
++  # what they claim. Mobilize checks out the repository, and the shared
++  # github-script action hands a calling step's env to the script beside it.
++  # Both are referenced with $/, which GitHub resolves at the running commit;
++  # a change in how it does is found here, on the pull request that meets it.
+   #
+-  # Every job starts with $/.github/workflows/mobilize, which runs harden-runner
+-  # and checkout from one place. harden-runner's own report is not evidence -
+-  # it falls back to audit on several errors and carries on - so the only proof
+-  # a block policy is in force is a request it refused.
+-  #
+-  # NOT A GATE, deliberately. Each job gets its own VM, so this job passing
+-  # says nothing about another job's, and a gate every lane waited behind would
+-  # serialise them for a check that cannot vouch for them. What this catches is
+-  # the systemic break - a harden-runner bump, or GitHub changing how nested
+-  # actions run - on the pull request that introduces it. A start-of-job check
+-  # in every job was considered and not built: with sudo, a later step could
+-  # undo it, which is why sudo is removed instead (#410).
+-  #
+-  # THE CONTROL. `egress-reachable` shows the probe host answers when nothing
+-  # restricts it, so a refusal in `egress-blocked` is the policy and not an
+-  # outage. When this was first proven it also ran harden-runner directly as a
+-  # second control; nothing runs it directly any more, and keeping that job
+-  # would have been a second place its commit is written.
+-  #
+-  # The probe host is example.com: reserved by IANA for exactly this kind of
+-  # use, and on no job's allowlist anywhere in scripts/approved-suppliers.yml.
++  # It also proved harden-runner's block until the agent was cut on
++  # 2026-11-12 (#795), as "test / egress blocked".
+   # -----------------------------------------------------------------
+-  egress-reachable:
+-    # Nothing waits on this.
+-    continue-on-error: true
+-    # Skipped, which the queue reads as passed, when the queue would land
+-    # exactly what the pull request already tested (already-tested).
+-    needs: already-tested
+-    if: ${{ !cancelled() && github.event_name != 'push' && needs.already-tested.outputs.identical != 'true' }}
+-    name: "test / egress allowed"
+-    runs-on: ubuntu-24.04
+-    timeout-minutes: 5
+-    permissions:
+-      contents: read
+-    env:
+-      PROBE: https://example.com
+-    steps:
+-      - name: Mobilize
+-        uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          egress-policy: audit
+-          disable-sudo-and-containers: "true"
+-          checkout: "false"
+-
+-      - name: The probe host answers
+-        run: |
+-          if ! curl --silent --show-error --max-time 20 --output /dev/null "$PROBE"; then
+-            echo "::error::$PROBE did not answer with nothing blocking it, so a refusal in egress-blocked would prove nothing. Choose a probe host reachable from a GitHub-hosted runner."
+-            exit 1
+-          fi
+-          echo "$PROBE answers when unrestricted."
+-
+-  egress-blocked:
++  shared-actions:
+     # Nothing waits on this.
+     continue-on-error: true
+     # Skipped, which the queue reads as passed, when the queue would land
+     # exactly what the pull request already tested (already-tested).
+     needs: already-tested
+     if: ${{ !cancelled() && github.event_name != 'push' && needs.already-tested.outputs.identical != 'true' }}
+-    name: "test / egress blocked"
++    name: "test / shared actions"
+     runs-on: ubuntu-24.04
+     timeout-minutes: 5
+     permissions:
+       contents: read
+-    env:
+-      PROBE: https://example.com
+-      ALLOWED: https://github.com
+     steps:
+       - name: Mobilize
+-        id: mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          egress-policy: block
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+-          disable-sudo-and-containers: "true"
+ 
+       - name: The repository was checked out
+         run: |
+@@ -1846,46 +1484,6 @@ jobs:
+             exit 1
+           fi
+ 
+-      # The protection that makes a block stay a block. With sudo, any later
+-      # step in a job can stop harden-runner's agent or flush its rules and
+-      # then call out (#410).
+-      # Nothing to prove on a runner that is not held. About one of GitHub's
+-      # in eight is not (#725), mobilize says so, and this lane's three
+-      # proofs would each fail there for that one reason and not for
+-      # anything a pull request did. So they are asked of a runner that is
+-      # held, and one that is not says it proved nothing. Loosened with the
+-      # check in mobilize, and for as long.
+-      - name: Nothing is proved on a runner that is not held
+-        if: steps.mobilize.outputs.held != 'true'
+-        run: |
+-          echo "::warning::The egress proof proved nothing on this run: its runner was not held (#725)."
+-
+-      - name: Sudo is gone
+-        if: steps.mobilize.outputs.held == 'true'
+-        run: |
+-          if sudo -n true 2>/dev/null; then
+-            echo "::error::sudo still works after mobilize with disable-sudo-and-containers: \"true\". Any step in a blocking job could switch egress enforcement off."
+-            exit 1
+-          fi
+-          echo "sudo is refused, so no later step can dismantle enforcement."
+-
+-      - name: An allowed host answers
+-        if: steps.mobilize.outputs.held == 'true'
+-        run: |
+-          if ! curl --silent --show-error --max-time 20 --output /dev/null "$ALLOWED"; then
+-            echo "::error::$ALLOWED is on this job's allowlist and did not answer. The block is refusing everything, so a refused probe below would not show that it refuses selectively."
+-            exit 1
+-          fi
+-
+-      - name: The probe host is refused
+-        if: steps.mobilize.outputs.held == 'true'
+-        run: |
+-          if curl --silent --show-error --max-time 20 --output /dev/null "$PROBE"; then
+-            echo "::error::$PROBE answered under egress-policy: block through mobilize. harden-runner's policy was not installed, so every job in this repository is unwatched while reporting green."
+-            exit 1
+-          fi
+-          echo "$PROBE was refused: harden-runner enforces block through mobilize."
+-
+       # The plan-comment scripts are files beside the shared github-script
+       # action and read their values from process.env set on the calling step.
+       # Those jobs run only on infrastructure changes, so a script that cannot be
+@@ -1921,15 +1519,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # harden-runner does nothing in the estate's pools. What is
+-          # declared here is what the pool's own policy is held to, in
+-          # scripts/approved-suppliers.yml under `egress:`.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+ 
+       - name: Prove the pool holds
+         uses: $/.github/workflows/pool-proof
+@@ -1960,16 +1549,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # harden-runner does nothing in the estate's pools. What is
+-          # declared here is what the pool's own policy is held to, in
+-          # scripts/approved-suppliers.yml under `egress:`.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+-            proxy.golang.org:443
+ 
+       - name: Prove the pool holds
+         uses: $/.github/workflows/pool-proof
+@@ -2000,16 +1579,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # harden-runner does nothing in the estate's pools. What is
+-          # declared here is what the pool's own policy is held to, in
+-          # scripts/approved-suppliers.yml under `egress:`.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+-            registry.npmjs.org:443
+ 
+       - name: Prove the pool holds
+         uses: $/.github/workflows/pool-proof
+diff --git a/.github/workflows/scorecard.yml b/.github/workflows/scorecard.yml
+index 8fb8a2e8..5ce6d789 100644
+--- a/.github/workflows/scorecard.yml
++++ b/.github/workflows/scorecard.yml
+@@ -47,26 +47,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Scorecard queries several public datasets to build its grade.
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "false"
+-          allowed-endpoints: >
+-            api.deps.dev:443
+-            api.github.com:443
+-            api.osv.dev:443
+-            api.scorecard.dev:443
+-            api.securityscorecards.dev:443
+-            fulcio.sigstore.dev:443
+-            github.com:443
+-            oss-fuzz-build-logs.storage.googleapis.com:443
+-            rekor.sigstore.dev:443
+-            tuf-repo-cdn.sigstore.dev:443
+-            www.bestpractices.dev:443
+ 
+       - name: Run OpenSSF Scorecard
+         uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
+diff --git a/.github/workflows/security-patrol.yml b/.github/workflows/security-patrol.yml
+index 5b4cc322..93bd2635 100644
+--- a/.github/workflows/security-patrol.yml
++++ b/.github/workflows/security-patrol.yml
+@@ -80,20 +80,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+-            go.dev:443
+-            objects.githubusercontent.com:443
+-            release-assets.githubusercontent.com:443
+-            storage.googleapis.com:443
+ 
+       - name: Read pinned versions
+         uses: $/.github/actions/versions
+@@ -140,16 +126,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+ 
+       # The least a token can be asked for: to read this repository, which
+       # the job could do anyway. The action revokes it when the job ends.
+diff --git a/.github/workflows/sensitive-paths.yml b/.github/workflows/sensitive-paths.yml
+index 441b461e..d9f6012f 100644
+--- a/.github/workflows/sensitive-paths.yml
++++ b/.github/workflows/sensitive-paths.yml
+@@ -75,19 +75,6 @@ jobs:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+         with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+-            objects.githubusercontent.com:443
+-            proxy.golang.org:443
+-            release-assets.githubusercontent.com:443
+-            sum.golang.org:443
+           fetch-depth: 0
+ 
+       # Pinned, not whatever the image ships. scripts/attestation has zero
+diff --git a/.github/workflows/site-sweep.yml b/.github/workflows/site-sweep.yml
+index a1f6e010..32153878 100644
+--- a/.github/workflows/site-sweep.yml
++++ b/.github/workflows/site-sweep.yml
+@@ -55,20 +55,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+-            go.dev:443
+-            objects.githubusercontent.com:443
+-            release-assets.githubusercontent.com:443
+-            storage.googleapis.com:443
+ 
+       - name: Read pinned versions
+         uses: $/.github/actions/versions
+diff --git a/.github/workflows/warm-caches.yml b/.github/workflows/warm-caches.yml
+index bf5c9a91..122fe9fc 100644
+--- a/.github/workflows/warm-caches.yml
++++ b/.github/workflows/warm-caches.yml
+@@ -57,22 +57,6 @@ jobs:
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+-            go.dev:443
+-            objects.githubusercontent.com:443
+-            proxy.golang.org:443
+-            release-assets.githubusercontent.com:443
+-            storage.googleapis.com:443
+-            sum.golang.org:443
+ 
+       - name: Read pinned versions
+         uses: $/.github/actions/versions
+diff --git a/CLAUDE.md b/CLAUDE.md
+index a0f3a867..6a2bca50 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -563,69 +563,29 @@ depends on it and uses them.
+ - `scorecard.yml` — repository posture, weekly and on merges to `main`. It
+   grades the repository rather than the diff, so a pull request cannot change
+   its answer.
+-- **Egress is deny-by-default, eleven jobs are not, and five of those are not
+-  even watched.** Every job starts with `$/.github/workflows/mobilize`, which
+-  runs `harden-runner` and checkout from the one place either commit is written.
+-  Most jobs are `egress-policy: block` with an explicit allowlist, so a
+-  compromised action or linter cannot exfiltrate quietly, and they run with
+-  sudo removed (`disable-sudo-and-containers`) so no later step can switch the
+-  block off (#410). A job that keeps root says why beside its egress entry.
+-
+-  **On the self-hosted runner harden-runner does nothing.** The scale set's pods
+-  are ARC, and there harden-runner only writes its policy for a StepSecurity
+-  agent inside the cluster, which this estate does not run. So the four deploy
+-  jobs and the integration tests - the jobs holding the vault token - are
+-  neither restricted nor recorded, whatever their policy says, and
+-  `tests/go/repo/root_test.go` refuses any of them claiming `block`. Controlling
+-  their egress has to happen at the cluster's network layer (#411).
+-
+-  **Which job may reach what is declared once**, in `scripts/approved-suppliers.yml`
+-  under `egress:`: one entry per job, carrying the policy and - for a blocking
+-  job - the exact hosts. It was restated in sixteen allowlists across nine
+-  workflows, so no single place answered the question and adding an endpoint to
+-  one workflow was invisible to any review not already reading that file. This
+-  table used to be a seventeenth copy and is now that file.
+-
+-  `security guard-egress` walks **every** job in **every** workflow and refuses
+-  one the list does not name, so a new job starts with no egress rather than
+-  with an allowlist nobody examined. It refuses drift in either direction, and
+-  refuses an entry for a job that no longer exists.
+-
+-  The workflow still carries its allowlist because harden-runner installs its
+-  policy in a pre-step, which GitHub runs before any step of the job - so
+-  nothing read from the repository can reach it at runtime, short of a gate job
+-  every lane waits behind. The copy is mechanical; the suppliers list owns it.
+-
+-  The two image builds - `fabricator.yml` and `expedite.yml` - fetch from
+-  Valve, whose content servers are a set of hosts it changes, so an allowlist
+-  would break on Valve's schedule rather than this estate's. The fabricator's
+-  predecessor, `workload-images.yml`, was `audit` with no reason recorded
+-  anywhere until the expedite workflow was added beside it - the same
+-  undocumented drift the paragraph below describes, found by counting.
+-
+-  This paragraph used to claim there was exactly one exception, the TruffleHog
+-  lane, and named the reason: verification works by calling the API of whichever
+-  vendor issued a leaked key, so an allowlist would silently downgrade verified
+-  findings to unverified rather than fail. That reason is still good and still
+-  applies to `secrets`. The other seven had accumulated without it, and the
+-  invariant went on asserting the opposite - which is worse than the setting,
+-  because somebody deciding whether a new job needs an allowlist was being told
+-  every job already has one.
+-
+-  The four in `deploy-infrastructure.yml` and the one in `integration-tests.yml`
+-  are the ones worth arguing about: they run on the **self-hosted runner inside
+-  the estate**, holding a vault token with read and write on the site's
+-  own vault, while every pull request lane that holds nothing is blocked.
+-  There is a real case for them - a converge reaches the hypervisor, Talos, the
+-  overlay, object storage and 1Password, several at private addresses, and that
+-  allowlist would be long and brittle - but a case nobody wrote down is not a
+-  decision, it is a gap. See the epoch record.
+-
+-  **The rule is now: `block`, or `audit` with the reason written beside that
+-  job's entry in the suppliers list.** A guard whose exceptions are undocumented
+-  cannot be reviewed, and this one had seven - and a reason kept in a comment
+-  above the step is one nobody finds when they are deciding whether a new job
+-  needs an allowlist.
++- **Egress is declared for every job, and on GitHub's runners nothing holds a
++  job to it.** Every job starts with `$/.github/workflows/mobilize`, which
++  checks out the repository from the one place its commit is written. It also
++  ran step-security's `harden-runner` until 2026-11-12, when the operator cut
++  the agent from every job: on GitHub's runners it failed to start on some jobs
++  (#725, #791) and left others GitHub never heard finish, and on the estate's
++  runners it never held anything (#411). The gap is accepted and recorded
++  (#795) until epoch 16, decision 16 closes it, by running a pull request's
++  code with no network at all.
++
++  **Which job may reach what is declared once**, in
++  `scripts/approved-suppliers.yml` under `egress:`: one entry per job, carrying
++  its policy and, for a `block` job, the exact hosts, each an approved supplier.
++  `security guard-egress` walks every job in every workflow and refuses one the
++  list does not name, and an entry naming no job, so a new job starts by
++  saying what it reaches. The pull-request pools are held to their jobs' hosts
++  by the cluster's network; the jobs holding a site's keys run on the estate's
++  runners, held by nothing yet (#411, epoch 15).
++
++  The two image builds, `fabricator.yml` and `expedite.yml`, fetch from Valve,
++  whose content servers are a set of hosts it changes, and TruffleHog verifies
++  a leaked key by calling whichever vendor issued it. Those entries are `audit`,
++  with the reason written beside them.
+ 
+ - `integration-tests.yml` — the test tiers that need a real estate, on the
+   self-hosted runner: nightly, plus manual dispatch. Not reachable from a
+diff --git a/docs/epochs/16-fast-feedback.md b/docs/epochs/16-fast-feedback.md
+index d0778a4c..39669e55 100644
+--- a/docs/epochs/16-fast-feedback.md
++++ b/docs/epochs/16-fast-feedback.md
+@@ -582,6 +582,16 @@ the untrusted worker retire (Decision 1).
+ reviewed code does, and it holds nothing that outlives the job. A guard holds
+ it: a job that can reach the network runs nothing from the pull request.
+ 
++**Interim, 2026-11-12: the agent is cut from every job, and the gap is
++accepted.** The operator cut `harden-runner` from all 56 jobs at once rather
++than job by job. On GitHub's runners it failed to start on about 1.5% of jobs
++(#791), and left some runs that GitHub never heard finish, which could be
++neither cancelled nor rerun. On the estate's runners it had never held
++anything (#411). Until the pieces below land, nothing on GitHub's runners holds
++a job to the hosts its entry declares, and a job keeps root. The entries,
++`security guard-egress` and the egress rule stay, so each job still declares
++what it reaches. Each piece below closes part of the gap (#795).
++
+ **What `harden-runner` did, and what does it instead.**
+ 
+ | It did                        | Instead                                                                                                                 |
+diff --git a/docs/sensitive-path-tripwire.md b/docs/sensitive-path-tripwire.md
+index ff8f021c..18fb602e 100644
+--- a/docs/sensitive-path-tripwire.md
++++ b/docs/sensitive-path-tripwire.md
+@@ -95,16 +95,6 @@ jobs:
+       pull-requests: write
+     timeout-minutes: 5
+     steps:
+-      - name: Harden the runner
+-        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+-        with:
+-          egress-policy: block
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+-            objects.githubusercontent.com:443
+-            release-assets.githubusercontent.com:443
+-
+       - name: Checkout Code
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+         with:
+diff --git a/management/estate/repository/workflows.tf b/management/estate/repository/workflows.tf
+index 7fc55018..84f88c2c 100644
+--- a/management/estate/repository/workflows.tf
++++ b/management/estate/repository/workflows.tf
+@@ -22,7 +22,6 @@ resource "github_actions_repository_permissions" "this" {
+       "aquasecurity/setup-trivy@*",
+       "ossf/scorecard-action@*",
+       "pnpm/action-setup@*",
+-      "step-security/harden-runner@*",
+     ]
+   }
+ }
+diff --git a/policy/conftest/rules/job_hardening/job_hardening.rego b/policy/conftest/rules/job_hardening/job_hardening.rego
+deleted file mode 100644
+index 6aa380bb..00000000
+--- a/policy/conftest/rules/job_hardening/job_hardening.rego
++++ /dev/null
+@@ -1,64 +0,0 @@
+-# Every job hardens the runner first, wherever it runs. The other laws every
+-# job is held to are its bound (rules.job_timeout) and its checkouts
+-# (rules.job_checkouts).
+-package rules.job_hardening
+-
+-import data.lib
+-import rego.v1
+-
+-harden := "step-security/harden-runner@"
+-
+-deny contains msg if {
+-	count(lib.jobs) == 0
+-	msg := "found no jobs in any workflow, so no job was checked for hardening"
+-}
+-
+-# A job hardens the runner first. Every step before harden-runner runs
+-# unmonitored, so first is the whole property - either directly, or as the
+-# first step of a composite action from this repository.
+-deny contains msg if {
+-	some [file, name, job] in lib.jobs
+-	count(object.get(job, "steps", [])) == 0
+-	not job.uses
+-	msg := $"{file}: job \"{name}\" has no steps"
+-}
+-
+-deny contains msg if {
+-	some [file, name, job] in lib.jobs
+-	first := object.get(job.steps[0], "uses", "")
+-	not contains(first, harden)
+-	not lib.same_repo_action(first)
+-	msg := $"{file}: job \"{name}\" does not begin with harden-runner (its first step is \"{ident(job.steps[0])}\"). Every step before harden-runner runs unmonitored, so it must be the first step, not merely present - directly, or as the first step of a composite action from this repository referenced with $/."
+-}
+-
+-deny contains msg if {
+-	some [file, name, job] in lib.jobs
+-	first := object.get(job.steps[0], "uses", "")
+-	dir := lib.same_repo_action(first)
+-	not lib.steps_of(dir)
+-	msg := $"{file}: job \"{name}\" begins with {first}, and that action cannot be read: a job whose first step is an action nobody can inspect is a job nobody can say is hardened."
+-}
+-
+-deny contains msg if {
+-	some [file, name, job] in lib.jobs
+-	first := object.get(job.steps[0], "uses", "")
+-	dir := lib.same_repo_action(first)
+-	inner := lib.steps_of(dir)
+-	not starts_hardened(inner)
+-	msg := $"{file}: job \"{name}\" begins with {first}, whose own first step is \"{inner_ident(inner)}\" rather than harden-runner. A job may start with an action from this repository only when that action hardens the runner before anything else."
+-}
+-
+-starts_hardened(steps) if contains(object.get(steps[0], "uses", ""), harden)
+-
+-inner_ident(steps) := ident(steps[0]) if count(steps) > 0
+-
+-inner_ident(steps) := "(no steps)" if count(steps) == 0
+-
+-ident(step) := step.uses
+-
+-ident(step) := step.name if not step.uses
+-
+-ident(step) := "(unnamed step)" if {
+-	not step.uses
+-	not step.name
+-}
+diff --git a/policy/conftest/rules/job_hardening/job_hardening_test.rego b/policy/conftest/rules/job_hardening/job_hardening_test.rego
+deleted file mode 100644
+index 96ea9aea..00000000
+--- a/policy/conftest/rules/job_hardening/job_hardening_test.rego
++++ /dev/null
+@@ -1,60 +0,0 @@
+-package rules.job_hardening_test
+-
+-import data.rules.job_hardening
+-import rego.v1
+-
+-harden := {"uses": "step-security/harden-runner@0123456789abcdef0123456789abcdef01234567"}
+-
+-checkout(settings) := {"uses": "actions/checkout@0123456789abcdef0123456789abcdef01234567", "with": settings}
+-
+-workflow(jobs) := {"path": ".github/workflows/w.yml", "contents": {"jobs": jobs}}
+-
+-action(dir, steps) := {"path": $"{dir}/action.yml", "contents": {"runs": {"using": "composite", "steps": steps}}}
+-
+-job(steps) := {"runs-on": "ubuntu-latest", "timeout-minutes": 5, "steps": steps}
+-
+-denies(msgs, words) if {
+-	some msg in msgs
+-	contains(msg, words)
+-}
+-
+-test_a_hardened_bounded_job_with_a_safe_checkout_passes if {
+-	count(job_hardening.deny) == 0 with input as [workflow({"j": job([harden, checkout({"persist-credentials": false})])})]
+-}
+-
+-test_a_job_not_hardened_first_is_refused if {
+-	denies(job_hardening.deny, "does not begin with harden-runner") with input as [workflow({"j": job([checkout({"persist-credentials": false}), harden])})]
+-}
+-
+-test_a_job_may_begin_with_an_action_that_hardens_first if {
+-	files := [
+-		workflow({"j": job([{"uses": "$/.github/workflows/mobilize"}])}),
+-		action(".github/workflows/mobilize", [harden, checkout({"persist-credentials": false})]),
+-	]
+-	count(job_hardening.deny) == 0 with input as files
+-}
+-
+-test_an_action_that_does_not_harden_first_is_refused if {
+-	files := [
+-		workflow({"j": job([{"uses": "$/.github/actions/versions"}])}),
+-		action(".github/actions/versions", [{"name": "Export pinned versions", "run": "true"}]),
+-	]
+-	denies(job_hardening.deny, "whose own first step is \"Export pinned versions\"") with input as files
+-}
+-
+-test_an_action_that_cannot_be_read_is_refused if {
+-	denies(job_hardening.deny, "that action cannot be read") with input as [workflow({"j": job([{"uses": "$/.github/actions/gone"}])})]
+-}
+-
+-test_a_job_with_no_steps_is_refused if {
+-	denies(job_hardening.deny, "has no steps") with input as [workflow({"j": {"runs-on": "x", "timeout-minutes": 1}})]
+-}
+-
+-test_no_jobs_at_all_is_refused if {
+-	denies(job_hardening.deny, "found no jobs in any workflow") with input as []
+-}
+-
+-test_a_step_is_named_by_what_it_says_of_itself if {
+-	job_hardening.ident({}) == "(unnamed step)"
+-	job_hardening.inner_ident([]) == "(no steps)"
+-}
+diff --git a/policy/conftest/rules/supplier_egress/supplier_egress.rego b/policy/conftest/rules/supplier_egress/supplier_egress.rego
+index b44a041b..077a810e 100644
+--- a/policy/conftest/rules/supplier_egress/supplier_egress.rego
++++ b/policy/conftest/rules/supplier_egress/supplier_egress.rego
+@@ -1,8 +1,10 @@
+-# A workflow may not invent its own egress endpoint.
++# A job may reach only an approved supplier.
+ #
+ # These were restated across fifteen allowlists in nine workflows, so no single
+-# place answered "what can this repository call out to". Adding one endpoint to
+-# one workflow was invisible to any review not already reading that file.
++# place answered "what can this repository call out to". Each job's hosts are
++# declared under egress: in the suppliers list, and every one of them must be
++# an endpoint declared there with a reason. The workflows carried a copy of
++# each list for harden-runner until it was cut on 2026-11-12 (#795).
+ package rules.supplier_egress
+ 
+ import data.lib
+@@ -10,23 +12,19 @@ import rego.v1
+ 
+ list := [f.contents | some f in lib.at("scripts/approved-suppliers.yml")][0]
+ 
+-reaches contains [file, host] if {
+-	some file, doc in lib.workflows
+-	walk(doc, [path, v])
+-	count(path) > 0
+-	path[count(path) - 1] == "allowed-endpoints"
+-	is_string(v)
+-	some host in regex.split(`\s+`, trim_space(v))
+-	regex.match(`^[a-z0-9.-]+:\d+$`, host)
++reaches contains [job, host] if {
++	some e in object.get(list, "egress", [])
++	job := e.job
++	some host in object.get(e, "hosts", [])
+ }
+ 
+ deny contains msg if {
+ 	count(reaches) == 0
+-	msg := "no allowed-endpoints entries found, so this rule proves nothing"
++	msg := "no job in the egress section reaches a host, so this rule proves nothing"
+ }
+ 
+ deny contains msg if {
+-	some [file, host] in reaches
++	some [job, host] in reaches
+ 	not host in {h | some g in object.get(list, "endpoints", []); some h in object.get(g, "hosts", [])}
+-	msg := $"{file} reaches \"{host}\", which is not in the approved suppliers list. Declare it in scripts/approved-suppliers.yml with a reason rather than only in the workflow, so one place answers what this repository calls out to."
++	msg := $"{job} reaches \"{host}\", which is not in the approved suppliers list. Declare it under endpoints: with a reason, so one place answers what this repository calls out to."
+ }
+diff --git a/policy/conftest/rules/supplier_egress/supplier_egress_test.rego b/policy/conftest/rules/supplier_egress/supplier_egress_test.rego
+index c6d1d158..618b885e 100644
+--- a/policy/conftest/rules/supplier_egress/supplier_egress_test.rego
++++ b/policy/conftest/rules/supplier_egress/supplier_egress_test.rego
+@@ -23,7 +23,7 @@ pinned := "ghcr.io/owner/thing:1@sha256:aaaa"
+ 
+ source(u) := {"path": "clusters/core/app/source.yaml", "contents": {"kind": "HelmRepository", "spec": {"url": u}}}
+ 
+-workflow(hosts) := {"path": ".github/workflows/w.yml", "contents": {"jobs": {"j": {"steps": [{"with": {"allowed-endpoints": hosts}}]}}}}
++egress(hosts) := {"egress": [{"job": "w.yml/j", "policy": "block", "hosts": hosts}]}
+ 
+ hooks(repos) := {"path": ".pre-commit-config.yaml", "contents": {"repos": repos}}
+ 
+@@ -35,7 +35,7 @@ tf(source) := {"path": "management/p/.terraform.lock.hcl", "contents": {"provide
+ 	key := $"registry.opentofu.org/{source}"
+ }
+ 
+-good := [list({}), own, deployment(pinned), source("https://charts.example.org"), workflow("github.com:443\n"), hooks([hook, {"repo": "local"}]), tf("hashicorp/kubernetes")]
++good := [list(egress(["github.com:443"])), own, deployment(pinned), source("https://charts.example.org"), hooks([hook, {"repo": "local"}]), tf("hashicorp/kubernetes")]
+ 
+ swap(i, f) := array.flatten([array.slice(good, 0, i), [f], array.slice(good, i + 1, count(good))])
+ 
+@@ -49,9 +49,9 @@ test_everything_declared_and_pinned_passes if {
+ }
+ 
+ test_an_undeclared_egress_host_is_refused if {
+-	denies(supplier_egress.deny, `reaches "evil.example:443"`) with input as swap(4, workflow("github.com:443\nevil.example:443\n"))
++	denies(supplier_egress.deny, `w.yml/j reaches "evil.example:443"`) with input as swap(0, list(egress(["github.com:443", "evil.example:443"])))
+ }
+ 
+-test_no_allowed_endpoints_is_refused if {
+-	denies(supplier_egress.deny, "no allowed-endpoints entries found") with input as [list({})]
++test_no_job_reaching_a_host_is_refused if {
++	denies(supplier_egress.deny, "no job in the egress section reaches a host") with input as [list({})]
+ }
+diff --git a/scripts/approved-suppliers.yml b/scripts/approved-suppliers.yml
+index 388f28b5..ace205b5 100644
+--- a/scripts/approved-suppliers.yml
++++ b/scripts/approved-suppliers.yml
+@@ -466,8 +466,8 @@ providers:
+ 
+ # Network destinations a CI job may reach.
+ #
+-# harden-runner blocks egress by default and permits these. They were restated
+-# across fifteen separate allowlists in nine workflows before this file existed,
++# Each job's entry under egress: below names its hosts from these. They were
++# restated across fifteen separate allowlists in nine workflows before this file existed,
+ # which meant no single place answered "what can this repository call out to" -
+ # and adding one endpoint to one workflow was invisible to every review that
+ # was not already reading that file.
+@@ -607,23 +607,21 @@ endpoints:
+ # and adding an endpoint to one workflow was invisible to any review not
+ # already reading that file.
+ #
+-# FAIL CLOSED. `security guard-egress` walks every job in every workflow. A job
+-# that hardens the runner and is not named here is refused, so a new job starts
+-# with no egress rather than with an allowlist nobody examined, and a job whose
+-# workflow list differs from the one here - in either direction - is refused
+-# too. Deleting an entry does not quietly widen anything; it fails the build.
++# FAIL CLOSED. `security guard-egress` walks every job in every workflow, and
++# refuses one not named here and an entry naming no job, so a new job starts
++# by declaring what it reaches. Each host must be an endpoint above
++# (policy/conftest/rules/supplier_egress).
+ #
+-# WHY THE WORKFLOW STILL CARRIES THE LIST. harden-runner installs its policy in
+-# its pre-step, which GitHub runs before any step of the job, and the building
+-# code requires it to be the job's first step. So nothing - no file read, no
+-# local action, no earlier step - can hand it a value at runtime, and the only
+-# alternative would be a gate job every lane waits behind. The workflow's copy
+-# is therefore mechanical, this file owns it, and the guard refuses drift.
++# WHAT HOLDS IT, AND WHAT DOES NOT. The pools are held to their jobs' hosts by
++# the cluster's network. On GitHub's runners NOTHING holds a job to its entry:
++# the operator cut harden-runner from every job on 2026-11-12, because it broke
++# runs and never held the estate's own runners (#795). Until epoch 16, decision
++# 16 runs a pull request's code with no network, these entries say what each
++# job is meant to reach, and are not enforced there.
+ #
+-#   policy: block   the job may reach exactly the hosts listed, and nothing else
+-#   policy: audit   the job's egress is recorded, not restricted, and the reason
+-#                   it cannot be a list is written here rather than in a comment
+-#                   somebody has to go and find
++#   policy: block   the job is meant to reach exactly the hosts listed
++#   policy: audit   the job reaches hosts no list can name, and the reason is
++#                   written here rather than in a comment somebody has to find
+ 
+ # The estate's pools of pull-request runners, and what a runner in any of
+ # them reaches to be a runner at all: to be handed a job, fetch the actions
+@@ -831,9 +829,6 @@ egress:
+       a set this repository has never transcribed. What bounds it is not the
+       network: every product is pinned by digest and pulled from this
+       estate's own registry, and the fabricator never pins one itself.
+-    root: >-
+-      Builds with Docker, which needs the Docker socket that
+-      disable-sudo-and-containers removes.
+ 
+   - job: fabricator.yml/package
+     policy: block
+@@ -891,11 +886,6 @@ egress:
+       this one of the expedite workflow's three jobs downloads game files: the
+       doorbell above and the release below are both blocked to a list.
+ 
+-    root: >-
+-      Installs lib32gcc-s1 with apt-get, which SteamCMD needs to ask for the
+-      build id. That needs root, so disable-sudo-and-containers would break
+-      the job it exists for. It no longer builds anything: the fabricator
+-      builds the image from the pin this job records.
+   - job: expedite.yml/release
+     policy: block
+     hosts:
+@@ -1223,21 +1213,12 @@ egress:
+       quietly turn verified findings into unverified ones, which is the
+       opposite of what this lane is for.
+ 
+-  - job: pr-validation.yml/egress-reachable
+-    policy: audit
+-    reason: >-
+-      This job exists to show the probe host is reachable when nothing
+-      restricts it, so that a refusal in egress-blocked means the policy
+-      refused it rather than that the host was down. A block policy would
+-      defeat the one thing it is for. It reaches the probe host and nothing
+-      else.
+-
+-  - job: pr-validation.yml/egress-blocked
+-    pool: source
++  - job: pr-validation.yml/shared-actions
+     policy: block
+     hosts:
+       - api.github.com:443
+       - github.com:443
++
+   - job: warm-caches.yml/go
+     policy: block
+     hosts:
+@@ -1265,11 +1246,6 @@ egress:
+       - tuf-repo-cdn.sigstore.dev:443
+       - www.bestpractices.dev:443
+ 
+-    root: >-
+-      ossf/scorecard-action is a Docker action (`runs: using: docker`), and
+-      the runner starts it through the Docker socket that
+-      disable-sudo-and-containers removes. The job is blocked to a list, so
+-      this is the one blocking job where a later step could still reach root.
+   - job: security-patrol.yml/patrol
+     policy: block
+     hosts:
+diff --git a/scripts/details/suppliers/suppliers.go b/scripts/details/suppliers/suppliers.go
+index 4a2c7194..4b04dc86 100644
+--- a/scripts/details/suppliers/suppliers.go
++++ b/scripts/details/suppliers/suppliers.go
+@@ -16,10 +16,6 @@ import (
+ // Path is where the list is, from the top of the repository.
+ const Path = "scripts/approved-suppliers.yml"
+ 
+-// PolicyKey is what a workflow's step is handed its egress policy under,
+-// which the list's own entries are compared with.
+-const PolicyKey = "egress-policy"
+-
+ // Tool is one entry under tools: who supplies it, and everything else the
+ // entry says, by the name it says it under. What a field means is for
+ // whoever asks to say: one program orders deliveries and another checks
+diff --git a/scripts/security/guard-egress.go b/scripts/security/guard-egress.go
+index c8eb9a81..4ccc3615 100644
+--- a/scripts/security/guard-egress.go
++++ b/scripts/security/guard-egress.go
+@@ -1,33 +1,24 @@
+-// guard-egress refuses a workflow job whose outbound reach is not what
+-// scripts/approved-suppliers.yml says it is.
++// guard-egress refuses a workflow job that scripts/approved-suppliers.yml does
++// not name, and an entry there that names no job.
+ //
+-// Sixteen allowlists across nine workflows said what this estate may call out
+-// to, and no single place answered the question. Adding an endpoint to one
+-// workflow was invisible to any review not already reading that file, and a
+-// new job could arrive with an allowlist nobody had examined - or with none,
+-// which under egress-policy: block is a job that cannot run and under audit is
+-// a job that can reach anything.
++// Sixteen allowlists across nine workflows once said what this estate may call
++// out to, and no single place answered the question. The suppliers list owns
++// that under `egress:`, one entry per job. It walks EVERY job in EVERY
++// workflow rather than the jobs it was told about: a guard written against a
++// list stops covering whatever is built next, and nothing says so.
+ //
+-// So the suppliers list owns the mapping and this refuses divergence. It walks
+-// EVERY job in EVERY workflow rather than the jobs it was told about: a guard
+-// written against a list stops covering whatever is built next, and nothing
+-// says so, because the new thing was never one of its subjects.
++// Two ways to fail, and "not declared" is the important one:
+ //
+-// Five ways to fail, and "not declared" is the important one:
+-//
+-//	a job that hardens the runner and is not named in the suppliers list
+-//	a job with no harden-runner step at all
+-//	a declared policy that is not the policy the workflow sets
+-//	a block job whose hosts differ from the declared set, either direction
++//	a job the suppliers list does not name
+ //	an entry naming a job that no longer exists
+ //
+-// WHY THE WORKFLOW STILL CARRIES THE LIST. harden-runner installs its policy in
+-// its pre-step, which GitHub runs before any step of the job, and joblaw_test
+-// requires it to be the first step. Nothing can hand it a value read from the
+-// repository at runtime - not a file, not a local action, not an earlier step -
+-// short of a gate job every lane waits behind. The copy in the workflow is
+-// therefore mechanical, this file is the source of truth, and the guard is what
+-// makes the copy trustworthy.
++// WHAT NO LONGER HOLDS. The workflows carried a copy of each list for
++// harden-runner, which read it in a pre-step, and this refused any drift
++// between the copy and the list. The operator cut harden-runner from every
++// job on 2026-11-12 (#795), so nothing on GitHub's runners holds a job to its
++// list: what a job reaches is declared and not enforced there, until epoch
++// 16, decision 16 runs a pull request's code with no network. The pools are
++// still held to their jobs' lists by the cluster's network.
+ package main
+ 
+ import (
+@@ -43,12 +34,11 @@ import (
+ 	"homelab/details/suppliers"
+ )
+ 
+-// jobEgress is what a workflow says about one job's outbound reach.
++// jobEgress is one job of a workflow, by the name the suppliers list knows
++// it by.
+ type jobEgress struct {
+ 	Workflow string // "pr-validation.yml"
+ 	Job      string // "analyze"
+-	Policy   string // "block", "audit", or "" when nothing hardens the runner
+-	Hosts    []string
+ }
+ 
+ // Key is how a job is named in the suppliers list: the workflow file and the
+@@ -64,14 +54,7 @@ type declaredEgress struct {
+ }
+ 
+ // jobsIn reports every job of a workflow, from the workflow as the drafter
+-// redraws it.
+-//
+-// This matched lines: a job was two spaces and a name, its policy the first
+-// line saying egress-policy, its hosts whatever followed allowed-endpoints
+-// until a line that did not look like one. It was read that way because the
+-// program whose subject is suppliers would take none of its own. The
+-// drafter takes the one there is, and a job here is a job: its key under
+-// `jobs`, and what its steps hand the step that hardens the runner.
++// redraws it: its key under `jobs`.
+ func jobsIn(name string, docs []map[string]any) []jobEgress {
+ 	var out []jobEgress
+ 	for _, doc := range docs {
+@@ -82,20 +65,7 @@ func jobsIn(name string, docs []map[string]any) []jobEgress {
+ 		}
+ 		sort.Strings(keys)
+ 		for _, key := range keys {
+-			job, _ := jobs[key].(map[string]any)
+-			found := jobEgress{Workflow: name, Job: key}
+-			steps, _ := job["steps"].([]any)
+-			for _, st := range steps {
+-				step, _ := st.(map[string]any)
+-				with, _ := step["with"].(map[string]any)
+-				if policy, said := with[suppliers.PolicyKey].(string); said && found.Policy == "" {
+-					found.Policy = policy
+-				}
+-				if hosts, said := with["allowed-endpoints"].(string); said {
+-					found.Hosts = append(found.Hosts, strings.Fields(hosts)...)
+-				}
+-			}
+-			out = append(out, found)
++			out = append(out, jobEgress{Workflow: name, Job: key})
+ 		}
+ 	}
+ 	return out
+@@ -114,54 +84,26 @@ func declarations(body string) ([]declaredEgress, error) {
+ 	return out, nil
+ }
+ 
+-// Compare reports every way the workflows and the declarations disagree.
++// Compare reports every job the declarations do not name, and every
++// declaration that names no job.
+ //
+ // Both directions on purpose. A declaration with no job is how a list rots
+ // into something nobody trusts, and a job with no declaration is the case this
+ // guard exists for.
+ func Compare(found []jobEgress, declared []declaredEgress) []string {
+-	byKey := map[string]declaredEgress{}
++	named := map[string]bool{}
+ 	for _, d := range declared {
+-		byKey[d.Key] = d
++		named[d.Key] = true
+ 	}
+ 	seen := map[string]bool{}
+-
+ 	var out []string
+ 	for _, j := range found {
+-		d, ok := byKey[j.Key()]
+ 		seen[j.Key()] = true
+-
+-		if j.Policy == "" {
+-			out = append(out, fmt.Sprintf(
+-				"%s hardens nothing: no step sets egress-policy, so its outbound calls are "+
+-					"neither restricted nor recorded", j.Key()))
+-			continue
+-		}
+-		if !ok {
++		if !named[j.Key()] {
+ 			out = append(out, fmt.Sprintf(
+-				"%s is not declared in the suppliers list, so nothing says whether it may "+
+-					"call out at all (it sets egress-policy: %s)", j.Key(), j.Policy))
+-			continue
+-		}
+-		if d.Policy != j.Policy {
+-			out = append(out, fmt.Sprintf(
+-				"%s sets egress-policy: %s and the suppliers list declares %s",
+-				j.Key(), j.Policy, d.Policy))
+-			continue
+-		}
+-		if j.Policy != "block" {
+-			continue
+-		}
+-		for _, h := range missing(j.Hosts, d.Hosts) {
+-			out = append(out, fmt.Sprintf(
+-				"%s allows %s, which the suppliers list does not declare for it", j.Key(), h))
+-		}
+-		for _, h := range missing(d.Hosts, j.Hosts) {
+-			out = append(out, fmt.Sprintf(
+-				"%s is declared to reach %s and its workflow does not allow it", j.Key(), h))
++				"%s is not declared in the suppliers list, so nothing says what it may reach", j.Key()))
+ 		}
+ 	}
+-
+ 	for _, d := range declared {
+ 		if !seen[d.Key] {
+ 			out = append(out, fmt.Sprintf(
+@@ -172,21 +114,6 @@ func Compare(found []jobEgress, declared []declaredEgress) []string {
+ 	return out
+ }
+ 
+-// missing returns the entries of a that are absent from b.
+-func missing(a, b []string) []string {
+-	in := map[string]bool{}
+-	for _, x := range b {
+-		in[x] = true
+-	}
+-	var out []string
+-	for _, x := range a {
+-		if !in[x] {
+-			out = append(out, x)
+-		}
+-	}
+-	return out
+-}
+-
+ // ExplainEgress turns findings into the thing to do about them.
+ func ExplainEgress(findings []string) string {
+ 	var b strings.Builder
+@@ -203,9 +130,9 @@ A job that is not declared there is refused rather than skipped: a new job
+ starts with no egress until somebody says what it needs, which is the only
+ version of this rule that keeps covering what gets built next.
+ 
+-The workflow keeps a copy because harden-runner reads its policy in a pre-step,
+-before any step of the job can run. Change the suppliers list, then make the
+-workflow match it - a workflow edit is a patch under .github/patches.
++Nothing on GitHub's runners holds a job to its entry since harden-runner was
++cut (#795). The entry is still what the pools are held to, and what epoch 16,
++decision 16 holds every job to again.
+ `)
+ 	return b.String()
+ }
+@@ -297,7 +224,7 @@ func guardEgress(args []string) int {
+ 	// hold a subdirectory of composite action metadata, and counting entries
+ 	// reported that as a workflow - a summary line claiming more was checked
+ 	// than was.
+-	fmt.Printf("every one of the %d jobs in %d workflows reaches only what the suppliers list declares\n",
++	fmt.Printf("every one of the %d jobs in %d workflows is declared in the suppliers list\n",
+ 		len(found), workflows)
+ 	return 0
+ }
+diff --git a/scripts/security/guard-egress_test.go b/scripts/security/guard-egress_test.go
+index d7a242ea..8ee3d754 100644
+--- a/scripts/security/guard-egress_test.go
++++ b/scripts/security/guard-egress_test.go
+@@ -8,9 +8,8 @@ import (
+ 	"testing"
+ )
+ 
+-// The workflow parser has to see what the file says, including the cases that
+-// are not a tidy allowlist: a job with no harden-runner at all, and the `on:`
+-// block's two-space keys, which look exactly like job keys and are not.
++// Every job of a workflow is reported, whatever its steps say, and the
++// `on:` block's two-space keys, which look exactly like job keys, are not.
+ func TestWorkflowEgressReadsEveryJob(t *testing.T) {
+ 	body := `name: "Example"
+ on:
+@@ -22,33 +21,16 @@ permissions:
+   contents: read
+ 
+ jobs:
+-  hardened:
+-    name: "Hardened"
++  checks:
++    name: "Checks"
+     steps:
+-      - name: Harden Runner
+-        uses: step-security/harden-runner@e14015d # v2.21.1
+-        with:
+-          egress-policy: block
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
++      - name: Mobilize
++        uses: $/.github/workflows/mobilize
+ 
+-      - name: Checkout Code
+-        uses: actions/checkout@3d3c42e # v7.0.1
+-
+-  audited:
+-    name: "Audited"
+-    steps:
+-      - name: Harden Runner
+-        uses: step-security/harden-runner@e14015d # v2.21.1
+-        with:
+-          egress-policy: audit
+-
+-  unguarded:
+-    name: "Unguarded"
++  bare:
++    name: "Bare"
+     steps:
+-      - name: Checkout Code
+-        uses: actions/checkout@3d3c42e # v7.0.1
++      - run: "true"
+ `
+ 
+ 	docs, err := drafter.Documents([]byte(body))
+@@ -56,29 +38,12 @@ jobs:
+ 		t.Fatal(err)
+ 	}
+ 	got := jobsIn("example.yml", docs)
+-	if len(got) != 3 {
+-		t.Fatalf("got %d jobs, want 3 (schedule and workflow_dispatch are not jobs): %+v", len(got), got)
+-	}
+-
+-	// By its name, and not by where it was written: a workflow's jobs are a
+-	// mapping, which has no order to rely on.
+-	job := map[string]jobEgress{}
+-	for _, j := range got {
+-		job[j.Job] = j
+-	}
+-	if hardened := job["hardened"]; hardened.Key() != "example.yml/hardened" || hardened.Policy != "block" {
+-		t.Errorf("hardened job = %+v", hardened)
+-	}
+-	if strings.Join(job["hardened"].Hosts, " ") != "api.github.com:443 github.com:443" {
+-		t.Errorf("hosts = %v, want both endpoints and nothing from the following step", job["hardened"].Hosts)
+-	}
+-	if audited, read := job["audited"]; !read || audited.Policy != "audit" || len(audited.Hosts) != 0 {
+-		t.Errorf("audited job = %+v, want audit with no hosts", audited)
++	if len(got) != 2 {
++		t.Fatalf("got %d jobs, want 2 (schedule and workflow_dispatch are not jobs): %+v", len(got), got)
+ 	}
+-	// The one that matters: a job nothing hardens must be reported as a job,
+-	// not skipped. Skipping it is how a new job arrives unexamined.
+-	if unguarded, read := job["unguarded"]; !read || unguarded.Key() != "example.yml/unguarded" || unguarded.Policy != "" {
+-		t.Errorf("unguarded job = %+v, want it present with no policy", unguarded)
++	keys := []string{got[0].Key(), got[1].Key()}
++	if strings.Join(keys, " ") != "example.yml/bare example.yml/checks" {
++		t.Errorf("jobs = %v, want both, by their keys", keys)
+ 	}
+ }
+ 
+@@ -121,82 +86,19 @@ exemptions:
+ 	}
+ }
+ 
+-// Every way the two can disagree, each proved by its own counterexample. The
+-// table is the guard: a rule with no row here is a rule nothing would notice
+-// losing.
+-func TestCompareRefusesEveryKindOfDisagreement(t *testing.T) {
++// A job the suppliers list does not name is refused, and one it names is
++// silent. A new job must arrive declaring what it reaches, not unexamined.
++func TestCompareRefusesAJobNobodyDeclared(t *testing.T) {
+ 	declared := []declaredEgress{
+-		{Key: "a.yml/one", Policy: "block", Hosts: []string{"api.github.com:443", "github.com:443"}},
++		{Key: "a.yml/one", Policy: "block", Hosts: []string{"api.github.com:443"}},
+ 		{Key: "a.yml/two", Policy: "audit", Reason: "vendor hosts are not knowable in advance"},
+ 	}
+-
+-	cases := []struct {
+-		name  string
+-		found []jobEgress
+-		wants string // a phrase the finding must carry, or "" for no finding
+-	}{
+-		{
+-			name: "agreement is silence",
+-			found: []jobEgress{
+-				{Workflow: "a.yml", Job: "one", Policy: "block", Hosts: []string{"github.com:443", "api.github.com:443"}},
+-				{Workflow: "a.yml", Job: "two", Policy: "audit"},
+-			},
+-		},
+-		{
+-			name:  "a job nobody declared",
+-			found: []jobEgress{{Workflow: "a.yml", Job: "three", Policy: "block", Hosts: []string{"api.github.com:443"}}},
+-			wants: "is not declared in the suppliers list",
+-		},
+-		{
+-			name:  "a job nothing hardens",
+-			found: []jobEgress{{Workflow: "a.yml", Job: "three"}},
+-			wants: "hardens nothing",
+-		},
+-		{
+-			name:  "a policy that is not the declared one",
+-			found: []jobEgress{{Workflow: "a.yml", Job: "one", Policy: "audit"}},
+-			wants: "sets egress-policy: audit and the suppliers list declares block",
+-		},
+-		{
+-			name: "a host the declaration does not carry",
+-			found: []jobEgress{{Workflow: "a.yml", Job: "one",
+-				Policy: "block", Hosts: []string{"api.github.com:443", "github.com:443", "evil.example.com:443"}}},
+-			wants: "allows evil.example.com:443, which the suppliers list does not declare",
+-		},
+-		{
+-			name: "a declared host the workflow dropped",
+-			found: []jobEgress{{Workflow: "a.yml", Job: "one",
+-				Policy: "block", Hosts: []string{"api.github.com:443"}}},
+-			wants: "is declared to reach github.com:443 and its workflow does not allow it",
+-		},
++	if got := Compare([]jobEgress{{Workflow: "a.yml", Job: "one"}, {Workflow: "a.yml", Job: "two"}}, declared); len(got) != 0 {
++		t.Errorf("every job declared, and still refused: %v", got)
+ 	}
+-
+-	for _, c := range cases {
+-		t.Run(c.name, func(t *testing.T) {
+-			// Every case declares both jobs, so a missing one is only ever the
+-			// disagreement under test rather than a stale-entry finding too.
+-			found := c.found
+-			if c.name != "agreement is silence" {
+-				found = append(found, jobEgress{Workflow: "a.yml", Job: "two", Policy: "audit"})
+-				if c.found[0].Job != "one" {
+-					found = append(found, jobEgress{Workflow: "a.yml", Job: "one",
+-						Policy: "block", Hosts: []string{"api.github.com:443", "github.com:443"}})
+-				}
+-			}
+-			got := Compare(found, declared)
+-			if c.wants == "" {
+-				if len(got) != 0 {
+-					t.Fatalf("want no findings, got %v", got)
+-				}
+-				return
+-			}
+-			if len(got) == 0 {
+-				t.Fatalf("want a finding mentioning %q, got none", c.wants)
+-			}
+-			if !strings.Contains(strings.Join(got, "\n"), c.wants) {
+-				t.Errorf("findings do not mention %q:\n%s", c.wants, strings.Join(got, "\n"))
+-			}
+-		})
++	got := Compare([]jobEgress{{Workflow: "a.yml", Job: "one"}, {Workflow: "a.yml", Job: "two"}, {Workflow: "a.yml", Job: "three"}}, declared)
++	if len(got) != 1 || !strings.Contains(got[0], "a.yml/three is not declared in the suppliers list") {
++		t.Errorf("a job nobody declared was not refused by name: %v", got)
+ 	}
+ }
+ 
+@@ -205,7 +107,7 @@ func TestCompareRefusesEveryKindOfDisagreement(t *testing.T) {
+ // half is real.
+ func TestCompareRefusesADeclarationWithNoJob(t *testing.T) {
+ 	got := Compare(
+-		[]jobEgress{{Workflow: "a.yml", Job: "one", Policy: "audit"}},
++		[]jobEgress{{Workflow: "a.yml", Job: "one"}},
+ 		[]declaredEgress{
+ 			{Key: "a.yml/one", Policy: "audit"},
+ 			{Key: "a.yml/gone", Policy: "block", Hosts: []string{"api.github.com:443"}},
+@@ -215,11 +117,8 @@ func TestCompareRefusesADeclarationWithNoJob(t *testing.T) {
+ 	}
+ }
+ 
+-// The verb end to end, against a tree on disk.
+-//
+-// Both halves are checked: that it passes on a tree that agrees, and that the
+-// same tree with one endpoint added fails. A guard proved only in the passing
+-// direction is a guard that would pass if it did nothing at all.
++// The verb end to end, against a tree on disk: it passes a tree whose every
++// job is declared, and refuses the same tree with a job added that is not.
+ func TestTheVerbJudgesATreeOnDisk(t *testing.T) {
+ 	dir := t.TempDir()
+ 	if err := os.MkdirAll(filepath.Join(dir, workflowsDir), 0o755); err != nil {
+@@ -233,12 +132,8 @@ func TestTheVerbJudgesATreeOnDisk(t *testing.T) {
+ jobs:
+   one:
+     steps:
+-      - name: Harden Runner
+-        uses: step-security/harden-runner@e14015d # v2.21.1
+-        with:
+-          egress-policy: block
+-          allowed-endpoints: >
+-            api.github.com:443
++      - name: Mobilize
++        uses: $/.github/workflows/mobilize
+ `
+ 	suppliers := `egress:
+   - job: example.yml/one
+@@ -256,28 +151,17 @@ jobs:
+ 	write(suppliersPath, suppliers)
+ 
+ 	if rc := guardEgress([]string{"-root", dir}); rc != 0 {
+-		t.Fatalf("a tree that agrees was refused (rc %d)", rc)
+-	}
+-
+-	write(filepath.Join(workflowsDir, "example.yml"),
+-		strings.Replace(workflow, "            api.github.com:443\n",
+-			"            api.github.com:443\n            evil.example.com:443\n", 1))
+-	if rc := guardEgress([]string{"-root", dir}); rc == 0 {
+-		t.Fatal("a workflow reaching an endpoint the suppliers list does not declare was allowed")
++		t.Fatalf("a tree whose every job is declared was refused (rc %d)", rc)
+ 	}
+ 
+-	// And an undeclared job, which is the fail-closed case: a new job must
+-	// arrive with no egress rather than with an allowlist nobody examined.
+ 	write(filepath.Join(workflowsDir, "example.yml"), workflow+`
+   two:
+     steps:
+-      - name: Harden Runner
+-        uses: step-security/harden-runner@e14015d # v2.21.1
+-        with:
+-          egress-policy: audit
++      - name: Mobilize
++        uses: $/.github/workflows/mobilize
+ `)
+ 	if rc := guardEgress([]string{"-root", dir}); rc == 0 {
+-		t.Fatal("a job the suppliers list does not name was allowed to call out")
++		t.Fatal("a job the suppliers list does not name was let through")
+ 	}
+ }
+ 
+diff --git a/taskfile.yml b/taskfile.yml
+index 19141eab..9299465c 100644
+--- a/taskfile.yml
++++ b/taskfile.yml
+@@ -227,11 +227,10 @@ tasks:
+       - ./toolshed/security guard-deliveries
+ 
+   egress-guard:
+-    desc: "Refuse a workflow job whose outbound reach is not what the suppliers list declares"
++    desc: "Refuse a workflow job the suppliers list does not declare"
+     # scripts/approved-suppliers.yml owns which job may call out and to what.
+-    # The workflows carry a copy because harden-runner reads its policy in a
+-    # pre-step, before any step of the job runs, so nothing in the repository
+-    # can hand it a value at runtime. This is what makes the copy trustworthy.
++    # Nothing on GitHub's runners holds a job to it since harden-runner was
++    # cut (#795); the pools are held to it by the cluster's network.
+     #
+     # It walks every job in every workflow rather than a list of them: a job
+     # that is not declared is refused, so a new one starts with no egress
+diff --git a/tests/go/repo/egress_test.go b/tests/go/repo/egress_test.go
+index 114d40ed..24e19ab6 100644
+--- a/tests/go/repo/egress_test.go
++++ b/tests/go/repo/egress_test.go
+@@ -6,7 +6,8 @@ import (
+ 	"testing"
+ )
+ 
+-// Every job's outbound reach is what scripts/approved-suppliers.yml says.
++// Every job is declared in scripts/approved-suppliers.yml, and every entry
++// there names a job.
+ //
+ // The rule lives in `security guard-egress` rather than here, because it is a
+ // refusal rather than an observation: it runs from `task validate` and the
+@@ -34,7 +35,7 @@ func TestEveryJobsEgressIsDeclaredInTheSuppliersList(t *testing.T) {
+ 	if strings.Contains(body, "no jobs were found") || strings.Contains(body, "declares no egress at all") {
+ 		t.Fatalf("guard-egress could not see the repository, so nothing was checked:\n%s", body)
+ 	}
+-	t.Errorf(`a job's outbound reach is not what scripts/approved-suppliers.yml declares:
++	t.Errorf(`a job and scripts/approved-suppliers.yml disagree:
+ 
+ %s`, body)
+ }
+diff --git a/tests/go/repo/root_test.go b/tests/go/repo/root_test.go
+deleted file mode 100644
+index 8b1af3a8..00000000
+--- a/tests/go/repo/root_test.go
++++ /dev/null
+@@ -1,202 +0,0 @@
+-package repo
+-
+-import (
+-	list "homelab/details/suppliers"
+-	"path"
+-	"path/filepath"
+-	"sort"
+-	"strings"
+-	"testing"
+-)
+-
+-// Every job says whether it keeps root, and no job claims a protection its
+-// runner does not give.
+-//
+-// WHY ROOT. GitHub-hosted runners give the runner account passwordless sudo,
+-// and harden-runner enforces egress with an agent and firewall rules that root
+-// can stop or flush. So in a job that keeps sudo, a later step - the compromised
+-// dependency the block exists for - can switch the block off first (#410).
+-// mobilize forwards disable-sudo-and-containers and requires every job to state
+-// it; this requires the statement to be one the repository can stand behind.
+-//
+-// WHY RUNNERS. harden-runner returns early on the self-hosted ARC runner, where
+-// it only writes its policy to stdout for a StepSecurity agent this estate does
+-// not run, and inside a job container. There, `block` blocks nothing and
+-// removing sudo removes nothing (#411). A job claiming either would be a status
+-// that says something untrue, on exactly the jobs holding the vault token.
+-//
+-// WHERE "SELF-HOSTED" COMES FROM. The labels in .github/actionlint.yaml, which
+-// already have to name every self-hosted runner or a typo in runs-on fails at
+-// commit time. Reading that declaration rather than listing runners here means
+-// a new scale set is covered the moment it is usable.
+-
+-type egressRoot struct {
+-	Egress []struct {
+-		Job    string `yaml:"job"`
+-		Policy string `yaml:"policy"`
+-		Root   string `yaml:"root"`
+-	} `yaml:"egress"`
+-}
+-
+-func TestEveryJobSaysWhetherItKeepsRoot(t *testing.T) {
+-	light(t)
+-	tree := repository(t)
+-
+-	selfHosted := selfHostedLabels(t)
+-
+-	var suppliers egressRoot
+-	tree.YAMLInto(t, "scripts/approved-suppliers.yml", &suppliers)
+-	declared := map[string]struct{ policy, root string }{}
+-	for _, e := range suppliers.Egress {
+-		declared[e.Job] = struct{ policy, root string }{e.Policy, strings.TrimSpace(e.Root)}
+-	}
+-
+-	jobs, disabled := 0, 0
+-	for _, rel := range tree.Files(t) {
+-		if !authoredHere(t, rel) || !runnable(rel) || filepath.Base(rel) == "action.yml" {
+-			continue
+-		}
+-		var doc struct {
+-			Jobs map[string]struct {
+-				RunsOn    any              `yaml:"runs-on"`
+-				Container any              `yaml:"container"`
+-				Steps     []map[string]any `yaml:"steps"`
+-			} `yaml:"jobs"`
+-		}
+-		tree.YAMLInto(t, rel, &doc)
+-		var names []string
+-		for n := range doc.Jobs {
+-			names = append(names, n)
+-		}
+-		sort.Strings(names)
+-
+-		for _, n := range names {
+-			job := doc.Jobs[n]
+-			key := filepath.Base(rel) + "/" + n
+-			jobs++
+-
+-			var with map[string]any
+-			for _, step := range job.Steps {
+-				if uses, _ := step["uses"].(string); uses == "$/.github/workflows/mobilize" {
+-					with, _ = step["with"].(map[string]any)
+-					break
+-				}
+-			}
+-			if with == nil {
+-				t.Errorf("%s does not start with $/.github/workflows/mobilize, so nothing says whether it keeps root", key)
+-				continue
+-			}
+-			value, _ := with["disable-sudo-and-containers"].(string)
+-			policy, _ := with[list.PolicyKey].(string)
+-
+-			inert := ""
+-			if job.Container != nil {
+-				inert = "runs in a job container"
+-			} else if label := runsOnLabel(job.RunsOn); matchesAny(selfHosted, label) {
+-				inert = "runs on the self-hosted runner " + label
+-			}
+-
+-			switch {
+-			case value == "":
+-				t.Errorf(`%s does not say whether it keeps root.
+-
+-Give mobilize disable-sudo-and-containers: "true" - or "false" with the reason
+-declared as root: beside the job's egress entry. With sudo, any later step can
+-stop harden-runner's agent and then call out (#410).`, key)
+-				continue
+-			case value != "true" && value != "false":
+-				t.Errorf(`%s gives disable-sudo-and-containers %q, which is neither "true" nor "false".`, key, value)
+-				continue
+-			}
+-
+-			if inert != "" {
+-				if value == "true" {
+-					t.Errorf(`%s %s and claims disable-sudo-and-containers: "true".
+-
+-harden-runner returns before acting there, so sudo is not removed. A setting
+-that reads as a protection and does nothing is worse than none (#411). Say
+-"false".`, key, inert)
+-				}
+-				if policy == "block" {
+-					t.Errorf(`%s %s and claims egress-policy: block.
+-
+-harden-runner blocks nothing there - on the ARC runner it only writes its policy
+-for a cluster agent this estate does not run - so the job would read as
+-restricted while reaching anything (#411). Say audit until egress for that
+-runner is controlled somewhere that enforces it.`, key, inert)
+-				}
+-				continue
+-			}
+-
+-			reason := declared[key].root
+-			if value == "true" {
+-				disabled++
+-				if reason != "" {
+-					t.Errorf(`%s removes sudo and still declares a root: reason in
+-scripts/approved-suppliers.yml.
+-
+-A reason for an exception that is no longer taken is a standing permission
+-nobody is using, waiting for the next change to inherit it. Remove it.`, key)
+-				}
+-				continue
+-			}
+-			if reason == "" {
+-				t.Errorf(`%s keeps root with no reason declared.
+-
+-It runs on a GitHub-hosted runner where harden-runner does act, so leaving sudo
+-in place lets any later step in the job switch egress enforcement off (#410).
+-If the job genuinely needs root or Docker, say why as root: beside its egress
+-entry in scripts/approved-suppliers.yml. Otherwise give mobilize
+-disable-sudo-and-containers: "true".`, key)
+-			}
+-		}
+-	}
+-
+-	const fewestJobs = 10
+-	if jobs < fewestJobs {
+-		t.Fatalf("only %d job(s) were read, so this checked almost nothing", jobs)
+-	}
+-	if disabled == 0 {
+-		t.Fatal("no job removes sudo, which means the read is wrong or #410 has been undone everywhere")
+-	}
+-}
+-
+-// selfHostedLabels reads the runner labels .github/actionlint.yaml declares.
+-func selfHostedLabels(t *testing.T) map[string]bool {
+-	t.Helper()
+-	var doc struct {
+-		SelfHosted struct {
+-			Labels []string `yaml:"labels"`
+-		} `yaml:"self-hosted-runner"`
+-	}
+-	repository(t).YAMLInto(t, ".github/actionlint.yaml", &doc)
+-	if len(doc.SelfHosted.Labels) == 0 {
+-		t.Fatal(".github/actionlint.yaml declares no self-hosted runner, and the deploy jobs use one - the read has stopped matching")
+-	}
+-	out := map[string]bool{}
+-	for _, l := range doc.SelfHosted.Labels {
+-		out[l] = true
+-	}
+-	return out
+-}
+-
+-// runsOnLabel returns the label a job's runs-on names, for the single-label
+-// form every job here uses. A list or a group returns empty, which is treated
+-// as GitHub-hosted - the stricter of the two readings.
+-func runsOnLabel(v any) string {
+-	s, _ := v.(string)
+-	return s
+-}
+-
+-// matchesAny reports whether a runs-on label is one of the declared
+-// self-hosted labels, each of which may be a pattern: the estate's runners are
+-// named for their site, so a job names one with an expression and the
+-// declaration covers every site at once.
+-func matchesAny(patterns map[string]bool, label string) bool {
+-	for p := range patterns {
+-		if ok, err := path.Match(p, label); err == nil && ok {
+-			return true
+-		}
+-	}
+-	return false
+-}
+diff --git a/tests/mutations/TestEveryConfigurationRuleProvesItself.a-rule-main-does-not-collect.yml b/tests/mutations/TestEveryConfigurationRuleProvesItself.a-rule-main-does-not-collect.yml
+index 8dfc73e4..ff9b07d6 100644
+--- a/tests/mutations/TestEveryConfigurationRuleProvesItself.a-rule-main-does-not-collect.yml
++++ b/tests/mutations/TestEveryConfigurationRuleProvesItself.a-rule-main-does-not-collect.yml
+@@ -1,7 +1,7 @@
+ guard: TestEveryConfigurationRuleProvesItself
+-file: policy/conftest/rules/job_hardening/job_hardening.rego
+-find: "package rules.job_hardening\n"
+-replace: "package job_hardening\n"
++file: policy/conftest/rules/job_timeout/job_timeout.rego
++find: "package rules.job_timeout\n"
++replace: "package job_timeout\n"
+ mentions: "a rule anywhere else never runs and says nothing"
+ why: >
+   Conftest asks one namespace, main, and main collects the packages under
+diff --git a/tests/mutations/TestEveryConfigurationRuleProvesItself.a-rule-that-no-longer-refuses.yml b/tests/mutations/TestEveryConfigurationRuleProvesItself.a-rule-that-no-longer-refuses.yml
+index b556be6a..be762ea2 100644
+--- a/tests/mutations/TestEveryConfigurationRuleProvesItself.a-rule-that-no-longer-refuses.yml
++++ b/tests/mutations/TestEveryConfigurationRuleProvesItself.a-rule-that-no-longer-refuses.yml
+@@ -1,5 +1,5 @@
+ guard: TestEveryConfigurationRuleProvesItself
+-file: policy/conftest/rules/job_hardening/job_hardening.rego
++file: policy/conftest/rules/job_timeout/job_timeout.rego
+ find: |
+   deny contains msg if {
+   	count(lib.jobs) == 0
+diff --git a/tests/mutations/TestEveryJobSaysWhetherItKeepsRoot.12ad3df1.yml b/tests/mutations/TestEveryJobSaysWhetherItKeepsRoot.12ad3df1.yml
+deleted file mode 100644
+index 3c8e40c6..00000000
+--- a/tests/mutations/TestEveryJobSaysWhetherItKeepsRoot.12ad3df1.yml
++++ /dev/null
+@@ -1,21 +0,0 @@
+-guard: TestEveryJobSaysWhetherItKeepsRoot
+-file: .github/workflows/zz-keeps-root-quietly.yml
+-create: |
+-  name: planted
+-  on: push
+-  jobs:
+-    planted:
+-      runs-on: ubuntu-24.04
+-      timeout-minutes: 1
+-      steps:
+-        - uses: $/.github/workflows/mobilize
+-          with:
+-            egress-policy: block
+-            disable-sudo-and-containers: "false"
+-            checkout: "false"
+-mentions: "keeps root with no reason declared"
+-why: >
+-  Keeping root on a GitHub-hosted runner is sometimes right - a Docker
+-  action, an image build - but it reopens the way a later step can
+-  switch egress enforcement off, so it is an exception somebody has to
+-  write down beside the job's egress entry rather than a value in a file.
+diff --git a/tests/mutations/TestEveryJobSaysWhetherItKeepsRoot.585d82f2.yml b/tests/mutations/TestEveryJobSaysWhetherItKeepsRoot.585d82f2.yml
+deleted file mode 100644
+index 323afa5e..00000000
+--- a/tests/mutations/TestEveryJobSaysWhetherItKeepsRoot.585d82f2.yml
++++ /dev/null
+@@ -1,20 +0,0 @@
+-guard: TestEveryJobSaysWhetherItKeepsRoot
+-file: .github/workflows/zz-says-nothing-about-root.yml
+-create: |
+-  name: planted
+-  on: push
+-  jobs:
+-    planted:
+-      runs-on: ubuntu-24.04
+-      timeout-minutes: 1
+-      steps:
+-        - uses: $/.github/workflows/mobilize
+-          with:
+-            egress-policy: block
+-            checkout: "false"
+-mentions: "does not say whether it keeps root"
+-why: >
+-  With sudo, any later step in a job can stop harden-runner's agent or
+-  flush its rules and then call out, so a block holds only as long as
+-  root is gone (#410). A job that does not say is a job whose answer is
+-  "keep it" by default, which is the state every job was in.
+diff --git a/tests/mutations/TestEveryJobSaysWhetherItKeepsRoot.accab2e1.yml b/tests/mutations/TestEveryJobSaysWhetherItKeepsRoot.accab2e1.yml
+deleted file mode 100644
+index 867e600a..00000000
+--- a/tests/mutations/TestEveryJobSaysWhetherItKeepsRoot.accab2e1.yml
++++ /dev/null
+@@ -1,20 +0,0 @@
+-guard: TestEveryJobSaysWhetherItKeepsRoot
+-file: .github/workflows/zz-disables-sudo-on-arc.yml
+-create: |
+-  name: planted
+-  on: push
+-  jobs:
+-    planted:
+-      runs-on: homelab-site0
+-      timeout-minutes: 1
+-      steps:
+-        - uses: $/.github/workflows/mobilize
+-          with:
+-            egress-policy: audit
+-            disable-sudo-and-containers: "true"
+-            checkout: "false"
+-mentions: 'claims disable-sudo-and-containers: "true"'
+-why: >
+-  The same early return means sudo is not removed on that runner either.
+-  A setting that reads as a protection and does nothing is a status that
+-  says something untrue, on exactly the jobs where it would matter most.
+diff --git a/tests/mutations/TestEveryJobSaysWhetherItKeepsRoot.b27e063d.yml b/tests/mutations/TestEveryJobSaysWhetherItKeepsRoot.b27e063d.yml
+deleted file mode 100644
+index 75c53f0f..00000000
+--- a/tests/mutations/TestEveryJobSaysWhetherItKeepsRoot.b27e063d.yml
++++ /dev/null
+@@ -1,21 +0,0 @@
+-guard: TestEveryJobSaysWhetherItKeepsRoot
+-file: .github/workflows/zz-blocks-on-arc.yml
+-create: |
+-  name: planted
+-  on: push
+-  jobs:
+-    planted:
+-      runs-on: homelab-site0
+-      timeout-minutes: 1
+-      steps:
+-        - uses: $/.github/workflows/mobilize
+-          with:
+-            egress-policy: block
+-            disable-sudo-and-containers: "false"
+-            checkout: "false"
+-mentions: "claims egress-policy: block"
+-why: >
+-  harden-runner returns before acting on the ARC runner, so block there
+-  blocks nothing - and the jobs on that runner hold a token that reads and
+-  writes the whole vault. A job that reads as restricted while reaching
+-  anything is worse than one that says audit (#411).
+diff --git a/tests/mutations/TestEveryJobsEgressIsDeclaredInTheSuppliersList.5a0698a5.yml b/tests/mutations/TestEveryJobsEgressIsDeclaredInTheSuppliersList.5a0698a5.yml
+index bae9f966..e9206f4f 100644
+--- a/tests/mutations/TestEveryJobsEgressIsDeclaredInTheSuppliersList.5a0698a5.yml
++++ b/tests/mutations/TestEveryJobsEgressIsDeclaredInTheSuppliersList.5a0698a5.yml
+@@ -1,12 +1,9 @@
+ guard: TestEveryJobsEgressIsDeclaredInTheSuppliersList
+-file: .github/workflows/sensitive-paths.yml
+-find: "            api.github.com:443"
+-replace: "            api.github.com:443\n            evil.example.com:443"
+-mentions: "which the suppliers list does not declare for it"
++file: scripts/approved-suppliers.yml
++find: "  - job: pr-validation.yml/shared-actions\n"
++replace: "  - job: pr-validation.yml/shared-actions-was-here\n"
++mentions: "pr-validation.yml/shared-actions is not declared in the suppliers list"
+ why: >
+-  A job quietly gaining an endpoint is what this whole mapping exists to
+-  refuse, and it is the change most likely to look routine in a diff: one
+-  more line in a list of hosts, in a file somebody is reading for another
+-  reason. scripts/approved-suppliers.yml says which job may reach what, and
+-  a workflow that reaches further than its entry has widened this estate's
+-  outbound surface with nothing to say so.
++  A job the suppliers list does not name has said nothing about what it
++  reaches, and is the case this whole mapping exists to refuse: a new job
++  must start by declaring its hosts, not arrive unexamined.
+diff --git a/tests/mutations/TestTheConfigurationRulesHold.EveryJobHardensTheRunnerFirst.311d2fd8.yml b/tests/mutations/TestTheConfigurationRulesHold.EveryJobHardensTheRunnerFirst.311d2fd8.yml
+deleted file mode 100644
+index aacc5cf3..00000000
+--- a/tests/mutations/TestTheConfigurationRulesHold.EveryJobHardensTheRunnerFirst.311d2fd8.yml
++++ /dev/null
+@@ -1,20 +0,0 @@
+-guard: TestTheConfigurationRulesHold
+-rule: job_hardening
+-file: .github/workflows/zz-starts-with-an-unhardened-action.yml
+-create: |
+-  name: planted
+-  on: push
+-  jobs:
+-    planted:
+-      runs-on: ubuntu-24.04
+-      timeout-minutes: 1
+-      steps:
+-        - uses: $/.github/actions/versions
+-mentions: "whose own first step is"
+-why: >
+-  A job may now begin with a composite action from this repository instead
+-  of with harden-runner itself, which is what lets harden-runner be written
+-  once. That permission is only safe while the action's OWN first step is
+-  harden-runner - otherwise every step inside it runs unmonitored and the
+-  job still looks like it starts correctly. Planted, because no workflow in
+-  the tree starts with an unhardened action to edit into one.
+diff --git a/tests/mutations/TestTheConfigurationRulesHold.EveryJobHardensTheRunnerFirst.cd49835a.yml b/tests/mutations/TestTheConfigurationRulesHold.EveryJobHardensTheRunnerFirst.cd49835a.yml
+deleted file mode 100644
+index 155d5614..00000000
+--- a/tests/mutations/TestTheConfigurationRulesHold.EveryJobHardensTheRunnerFirst.cd49835a.yml
++++ /dev/null
+@@ -1,18 +0,0 @@
+-guard: TestTheConfigurationRulesHold
+-rule: job_hardening
+-file: .github/workflows/zz-starts-with-a-missing-action.yml
+-create: |
+-  name: planted
+-  on: push
+-  jobs:
+-    planted:
+-      runs-on: ubuntu-24.04
+-      timeout-minutes: 1
+-      steps:
+-        - uses: $/.github/workflows/does-not-exist
+-mentions: "that action cannot be read"
+-why: >
+-  An action this guard cannot read is an action it cannot say is hardened.
+-  Treating an unreadable reference as acceptable would turn a typo in the
+-  path, or an action deleted while a job still names it, into a job that
+-  passes the first-step rule by being unexaminable.
+diff --git a/tests/mutations/TestTheConfigurationRulesHold.an-action-that-no-longer-hardens-first.yml b/tests/mutations/TestTheConfigurationRulesHold.an-action-that-no-longer-hardens-first.yml
+deleted file mode 100644
+index d99beb5d..00000000
+--- a/tests/mutations/TestTheConfigurationRulesHold.an-action-that-no-longer-hardens-first.yml
++++ /dev/null
+@@ -1,9 +0,0 @@
+-guard: TestTheConfigurationRulesHold
+-rule: job_hardening
+-file: .github/workflows/mobilize/action.yml
+-find: "      uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1\n"
+-replace: "      uses: step-security/harden-runner-fork@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1\n"
+-mentions: "whose own first step is"
+-why: >
+-  A job that begins with the shared action is hardened only while the action
+-  begins with harden-runner; the action is where that is kept.
+diff --git a/tests/mutations/TestTheConfigurationRulesHold.an-egress-host-no-supplier-declares.yml b/tests/mutations/TestTheConfigurationRulesHold.an-egress-host-no-supplier-declares.yml
+new file mode 100644
+index 00000000..b7a4f672
+--- /dev/null
++++ b/tests/mutations/TestTheConfigurationRulesHold.an-egress-host-no-supplier-declares.yml
+@@ -0,0 +1,10 @@
++guard: TestTheConfigurationRulesHold
++rule: supplier_egress
++file: scripts/approved-suppliers.yml
++find: "  - job: sensitive-paths.yml/tripwire\n    pool: builds\n    policy: block\n    hosts:\n      - api.github.com:443\n"
++replace: "  - job: sensitive-paths.yml/tripwire\n    pool: builds\n    policy: block\n    hosts:\n      - api.github.com:443\n      - exfil.example.invalid:443\n"
++mentions: "which is not in the approved suppliers list"
++why: >
++  A host added to one job's entry and to no supplier's is a supplier nobody
++  gave a reason for, which is how fifteen allowlists in nine workflows came
++  to answer nothing between them.
+diff --git a/tests/mutations/TestTheConfigurationRulesHold.an-egress-host-only-the-workflow-names.yml b/tests/mutations/TestTheConfigurationRulesHold.an-egress-host-only-the-workflow-names.yml
+deleted file mode 100644
+index 1d2781e5..00000000
+--- a/tests/mutations/TestTheConfigurationRulesHold.an-egress-host-only-the-workflow-names.yml
++++ /dev/null
+@@ -1,10 +0,0 @@
+-guard: TestTheConfigurationRulesHold
+-rule: supplier_egress
+-file: .github/workflows/sensitive-paths.yml
+-find: "          allowed-endpoints: >\n            api.github.com:443\n"
+-replace: "          allowed-endpoints: >\n            api.github.com:443\n            exfil.example.invalid:443\n"
+-mentions: "which is not in the approved suppliers list"
+-why: >
+-  An endpoint added to one workflow's allowlist and nowhere else is invisible
+-  to any review not already reading that file, which is how fifteen
+-  allowlists in nine workflows came to answer nothing between them.
+diff --git a/tests/silencers.yml b/tests/silencers.yml
+index b9096bb7..0dfb7b40 100644
+--- a/tests/silencers.yml
++++ b/tests/silencers.yml
+@@ -194,4 +194,3 @@ judges_nothing:
+   actions/download-artifact: fetches an artifact
+   actions/upload-artifact: stores an artifact
+   actions/github-script: runs the repository's own scripts
+-  step-security/harden-runner: restricts what a job can reach; its policy is owned by guard-egress
