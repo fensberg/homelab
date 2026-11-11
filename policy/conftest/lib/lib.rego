@@ -287,6 +287,18 @@ uses contains [file, where, ref] if {
 	is_string(ref)
 }
 
+# outside_actions is every action from another repository a runnable file
+# names, by that repository: owner/repository, whatever path in it.
+outside_actions contains action if {
+	some [_, _, ref] in uses
+	not startswith(ref, "./")
+	not startswith(ref, "$/")
+	not startswith(ref, "docker://")
+	parts := split(split(ref, "@")[0], "/")
+	count(parts) >= 2
+	action := concat("/", [parts[0], parts[1]])
+}
+
 # triggers is the events a workflow runs on. YAML 1.1 reads the bare key `on`
 # as the boolean true, which is how Conftest's reader hands it over, so both
 # spellings are read; a list, a mapping or one name are all forms GitHub takes.

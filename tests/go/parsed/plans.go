@@ -9,11 +9,14 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
 	"testing"
 
+	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
 
 	"homelab/contractor/config"
@@ -352,7 +355,8 @@ func readKept(dir string) ([]steps.Unbuilt, error) {
 // planKey is what a site's plans are made from, as one digest: every
 // tracked file under the roots, the modules, the applications and the
 // config, every file the release holds - which is every file a module reads
-// from outside its own directory - and the site's own list of applications,
+// from outside its own directory - every file the OpenTofu reads by a path
+// written from its own directory, and the site's own list of applications,
 // by path and content.
 //
 // Planned with a release's modules, the release's commit stands for the
@@ -371,7 +375,16 @@ func (r *Tree) planKey(t testing.TB, site, revision string) (string, error) {
 			from = append(from, rel)
 		}
 	}
+	// A file a root reads from elsewhere in the repository is what its plan
+	// is made from too, wherever it is; one a module reads, only when the
+	// checkout's modules are planned.
+	for _, read := range r.readByPath(t) {
+		if strings.HasPrefix(read.By, "management/") || revision == "" {
+			from = append(from, read.File)
+		}
+	}
 	sort.Strings(from)
+	from = slices.Compact(from)
 	h := sha256.New()
 	_, _ = io.WriteString(h, site+"\x00")
 	// Only where there is a release, so the checkout's own plans keep the
@@ -389,4 +402,70 @@ func (r *Tree) planKey(t testing.TB, site, revision string) (string, error) {
 		_, _ = io.WriteString(h, "\x00")
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// Read is a file the OpenTofu reads, and the file that reads it.
+type Read struct {
+	File string
+	By   string
+}
+
+// readers are OpenTofu's functions that read a file by the path they are
+// handed.
+var readers = map[string]bool{
+	"file": true, "filebase64": true, "fileexists": true, "filemd5": true,
+	"filesha1": true, "filesha256": true, "filesha512": true,
+	"filebase64sha256": true, "filebase64sha512": true, "templatefile": true,
+}
+
+// readByPath is every file the OpenTofu reads by a path written from its
+// own directory - file("${path.module}/../x") - as a path from the top of
+// the repository. A read by a path handed in, or worked out from a local
+// value, is not followed: what the harness hands in is the config, which the
+// key holds already.
+func (r *Tree) readByPath(t testing.TB) []Read {
+	t.Helper()
+	var out []Read
+	for _, f := range r.OpenTofu(t) {
+		hclsyntax.VisitAll(f.Body, func(n hclsyntax.Node) hcl.Diagnostics {
+			call, ok := n.(*hclsyntax.FunctionCallExpr)
+			if !ok || !readers[call.Name] || len(call.Args) == 0 {
+				return nil
+			}
+			if rel, ok := fromOwnDirectory(path.Dir(f.Path), call.Args[0]); ok {
+				out = append(out, Read{File: rel, By: f.Path})
+			}
+			return nil
+		})
+	}
+	return out
+}
+
+// fromOwnDirectory is the path a "${path.module}/..." template names, from
+// the top of the repository, when the rest of it is written out.
+func fromOwnDirectory(dir string, expr hclsyntax.Expression) (string, bool) {
+	tpl, ok := expr.(*hclsyntax.TemplateExpr)
+	if !ok || len(tpl.Parts) < 2 {
+		return "", false
+	}
+	at, ok := tpl.Parts[0].(*hclsyntax.ScopeTraversalExpr)
+	if !ok || len(at.Traversal) != 2 || at.Traversal.RootName() != "path" {
+		return "", false
+	}
+	if attr, ok := at.Traversal[1].(hcl.TraverseAttr); !ok || attr.Name != "module" {
+		return "", false
+	}
+	var rest strings.Builder
+	for _, part := range tpl.Parts[1:] {
+		lit, ok := part.(*hclsyntax.LiteralValueExpr)
+		if !ok || lit.Val.Type() != cty.String {
+			return "", false
+		}
+		rest.WriteString(lit.Val.AsString())
+	}
+	rel := path.Clean(path.Join(dir, rest.String()))
+	if rel == ".." || strings.HasPrefix(rel, "../") {
+		return "", false
+	}
+	return rel, true
 }

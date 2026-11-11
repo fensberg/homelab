@@ -1,11 +1,16 @@
-# What a workflow in the repository may run: the platform's own actions, the
-# few others written here, and nothing else; and each only at a full commit,
-# so what runs is what was read and not whatever a tag points at today.
+# What a workflow in the repository may run: the actions the approved
+# suppliers list names, GitHub's own included, and nothing else; and each
+# only at a full commit, so what runs is what was read and not whatever a tag
+# points at today.
 #
-# An action that is not here is refused by the platform before a line of it
-# runs, whoever wrote the workflow that asks for it. A new one is added
-# here first, by the estate, and
-# policy/conftest/rules/plan_allowed_actions/plan_allowed_actions.rego fails until it is.
+# An action that is not on the list is refused by the platform before a line
+# of it runs, whoever wrote the workflow that asks for it. A new one is added
+# to the list first, in a pull request of its own, and
+# policy/conftest/rules/supplier_actions fails until it is.
+locals {
+  actions = yamldecode(file("${path.module}/../../../scripts/approved-suppliers.yml")).actions
+}
+
 resource "github_actions_repository_permissions" "this" {
   repository           = var.name
   enabled              = true
@@ -13,16 +18,9 @@ resource "github_actions_repository_permissions" "this" {
   sha_pinning_required = true
 
   allowed_actions_config {
-    github_owned_allowed = true
+    github_owned_allowed = false
     verified_allowed     = false
-    patterns_allowed = [
-      "aquasecurity/trivy-action@*",
-      # Called by the one above, not by a workflow: the platform holds an
-      # action that an action calls to the same list.
-      "aquasecurity/setup-trivy@*",
-      "ossf/scorecard-action@*",
-      "pnpm/action-setup@*",
-    ]
+    patterns_allowed     = sort([for a in local.actions : "${a.action}@*"])
   }
 }
 

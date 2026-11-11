@@ -100,3 +100,11 @@ test_a_runner_is_read_as_it_is_written if {
 	lib.runner_labels(["a", 3]) == ["a", ""]
 	lib.runner_labels({"group": "g"}) == []
 }
+
+test_an_outside_action_is_named_by_its_repository if {
+	sha := "0123456789012345678901234567890123456789"
+	refs := [$"actions/fetch@{sha}", $"github/scan/start@{sha}", $"someone/builds@{sha}", "./.github/workflows/local", "$/.github/workflows/shared", "docker://example.test/image:1", "alone@v1"]
+	workflow := {"path": ".github/workflows/w.yml", "contents": {"jobs": {"a": {"steps": [{"uses": r} | some r in refs]}}}}
+	composite := {"path": ".github/workflows/shared/action.yml", "contents": {"runs": {"using": "composite", "steps": [{"uses": $"else/where@{sha}"}]}}}
+	lib.outside_actions == {"actions/fetch", "github/scan", "someone/builds", "else/where"} with input as [workflow, composite]
+}
