@@ -1,0 +1,8 @@
+guard: TestARollWhoseVersionCannotBeReadIsNotAnswered
+file: scripts/roll-revert.sh
+find: '[ -n "$version" ] || fail'
+replace: "true || fail"
+mentions: "a versions file with no Talos version was answered"
+why: >-
+  An empty version is what made every stopped roll offer nothing and say so
+  to nobody (#853). It has to stop the answer, not become one.

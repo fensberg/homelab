@@ -448,12 +448,13 @@ run "a_workflows_token_reads_and_approves_nothing" {
 }
 
 # No rule the estate sets on a repository's branches and tags has anybody
-# who may pass it by, but the review, which the App that delivers passes.
+# who may pass it by, but the review, which the App that delivers passes,
+# and Dependabot's own branches, which only Dependabot may write (#871).
 run "nobody_passes_a_rule_on_the_repository_by" {
   command = plan
 
   assert {
-    condition     = length(module.repository["homelab"].rules) == 5 && alltrue([for name, passers in module.repository["homelab"].rules : passers == (name == "review" ? 1 : 0)])
+    condition     = length(module.repository["homelab"].rules) == 6 && alltrue([for name, passers in module.repository["homelab"].rules : passers == (contains(["review", "dependabot_branches"], name) ? 1 : 0)])
     error_message = "somebody may pass a rule on the repository's branches by"
   }
 }

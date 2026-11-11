@@ -9,7 +9,8 @@
 # stop merges, and nothing has to be told a pull request is a fix.
 #
 # Reads the newest finished run on main and ignores one that was cancelled,
-# which says nothing. On main itself everything runs. A failure to read fails
+# which says nothing. A run being rerun is not finished, and is read as the
+# attempt before it: rerunning a failure does not clear it (#856). On main itself everything runs. A failure to read fails
 # the job, and the gate with it: not knowing is not green.
 #
 # Prints, for $GITHUB_OUTPUT:
@@ -32,9 +33,15 @@ if [ "${EVENT}" = "push" ]; then
 	removal=true
 else
 	runs="$(api 'workflows/pr-validation.yml/runs?event=push&branch=main&per_page=20')"
-	run="$(jq -r 'first(.workflow_runs[] | select(.status == "completed" and .conclusion != "cancelled") | .id) // ""' <<<"${runs}")"
+	run="$(jq -r 'first(.workflow_runs[] | select((.status == "completed" and .conclusion != "cancelled") or (.status != "completed" and .run_attempt > 1)) | "\(.id) \(.status) \(.run_attempt)") // ""' <<<"${runs}")"
 	if [ -n "${run}" ]; then
-		jobs="$(api "runs/${run}/jobs?filter=latest&per_page=100")"
+		read -r id status attempt <<<"${run}"
+		if [ "${status}" = "completed" ]; then
+			jobs="$(api "runs/${id}/jobs?filter=latest&per_page=100")"
+		else
+			jobs="$(api "runs/${id}/attempts/$((attempt - 1))/jobs?per_page=100")"
+			echo "main's run is being rerun, so this reads the attempt before it" >&2
+		fi
 		failing="$(jq -r '.jobs[] | select(.conclusion == "failure" or .conclusion == "timed_out") | .name' <<<"${jobs}")"
 		if grep -q '^test / mutation' <<<"${failing}"; then
 			whole=true

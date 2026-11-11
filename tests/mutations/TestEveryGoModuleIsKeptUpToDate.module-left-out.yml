@@ -1,0 +1,8 @@
+guard: TestEveryGoModuleIsKeptUpToDate
+file: .github/dependabot.yml
+find: "      - /scripts/sweeper\n"
+replace: "      - /scripts/sweeper-was-here\n"
+mentions: "scripts/sweeper is a Go module and no Dependabot entry names it"
+why: >-
+  A module left off Dependabot's list is never proposed an update, and a fixed
+  vulnerability in it waits for somebody to notice (#864).

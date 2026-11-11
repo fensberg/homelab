@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"path"
 	"sort"
 	"strings"
 	"testing"
@@ -150,5 +151,51 @@ func TestAFloorIsMeasuredWhereTheGateIsHandedIt(t *testing.T) {
 	}
 	if got["js"] || len(got) != 3 {
 		t.Errorf("read %v; want the three the gate is handed and nothing else", got)
+	}
+}
+
+// Every Go module is kept up to date by Dependabot. Two of sixteen were,
+// and a vulnerability fixed in a module none of the others named got no pull
+// request (#864). A module is covered by an entry that names its directory,
+// or a pattern its directory matches.
+func TestEveryGoModuleIsKeptUpToDate(t *testing.T) {
+	light(t)
+	var config struct {
+		Updates []struct {
+			Ecosystem   string   `yaml:"package-ecosystem"`
+			Directory   string   `yaml:"directory"`
+			Directories []string `yaml:"directories"`
+		} `yaml:"updates"`
+	}
+	repository(t).YAMLInto(t, ".github/dependabot.yml", &config)
+	var named []string
+	for _, u := range config.Updates {
+		if u.Ecosystem != "gomod" {
+			continue
+		}
+		if u.Directory != "" {
+			named = append(named, u.Directory)
+		}
+		named = append(named, u.Directories...)
+	}
+	if len(named) == 0 {
+		t.Fatal(".github/dependabot.yml names no Go directory, so every module would pass for want of a list")
+	}
+	for _, dir := range goModuleDirs(t) {
+		covered := 0
+		for _, n := range named {
+			if ok, err := path.Match(n, "/"+dir); err != nil {
+				t.Fatalf("%q in .github/dependabot.yml is not a pattern: %v", n, err)
+			} else if ok {
+				covered++
+			}
+		}
+		switch covered {
+		case 0:
+			t.Errorf("%s is a Go module and no Dependabot entry names it, so nothing proposes its updates. Add it to a gomod entry in .github/dependabot.yml.", dir)
+		case 1:
+		default:
+			t.Errorf("%s is named by %d Dependabot entries, which would each open a pull request for the same bump", dir, covered)
+		}
 	}
 }

@@ -1,4 +1,5 @@
-# Every Dependabot ecosystem groups its updates.
+# Every Dependabot ecosystem groups its updates, and a Go one takes every
+# dependency.
 #
 # Ungrouped, every bump is its own pull request and they conflict with each
 # other over the lockfile. A group takes everything, for minor and patch, and
@@ -13,7 +14,18 @@ config := ".github/dependabot.yml"
 
 updates := [u | some f in lib.at(config); some u in object.get(f.contents, "updates", [])]
 
-where(u) := $"{u["package-ecosystem"]} in {u.directory}"
+# An entry names one directory or several; it is named by whichever.
+where(u) := $"{u["package-ecosystem"]} in {u.directory}" if u.directory
+
+where(u) := $"{u["package-ecosystem"]} in {concat(", ", u.directories)}" if not u.directory
+
+# A Go entry takes every dependency, not only what a go.mod requires
+# directly. One taken in through another had a fixed vulnerability and got no
+# pull request (#864).
+takes_every_dependency(u) if {
+	some a in object.get(u, "allow", [])
+	a["dependency-type"] == "all"
+}
 
 deny contains msg if {
 	count(updates) == 0
@@ -52,4 +64,11 @@ deny contains msg if {
 	some name, g in object.get(u, "groups", {})
 	"major" in object.get(g, "update-types", [])
 	msg := $"{where(u)} group \"{name}\" includes update-type \"major\": a breaking change should arrive as its own pull request."
+}
+
+deny contains msg if {
+	some u in updates
+	u["package-ecosystem"] == "gomod"
+	not takes_every_dependency(u)
+	msg := $"{where(u)} bumps only what a go.mod requires directly: a vulnerability fixed in a module taken in through another gets no pull request. Add an allow entry of dependency-type all."
 }

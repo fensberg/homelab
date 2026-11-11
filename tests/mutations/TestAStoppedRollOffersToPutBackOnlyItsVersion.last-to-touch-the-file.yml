@@ -1,0 +1,9 @@
+guard: TestAStoppedRollOffersToPutBackOnlyItsVersion
+file: scripts/roll-revert.sh
+find: 'git log -1 --format=%H -G ''^TALOS_VERSION='' -- "$versions"'
+replace: 'git log -1 --format=%H -- "$versions"'
+mentions: 'want "sha='
+why: >-
+  The versions file moves with every tool's pin, so the last commit to touch
+  it is seldom the bump. A revert built from that commit puts back some other
+  tool, and the machines stay where they were.

@@ -30,6 +30,8 @@ resource "github_repository_ruleset" "releases" {
 }
 
 # On every branch: history is not rewritten, and every commit is signed.
+# Dependabot's branches have rules of their own below: it rebases them, which
+# is a rewrite, and this refused it (#871).
 resource "github_repository_ruleset" "all_branches" {
   repository  = var.name
   name        = "all branches"
@@ -39,12 +41,48 @@ resource "github_repository_ruleset" "all_branches" {
   conditions {
     ref_name {
       include = ["~ALL"]
-      exclude = []
+      exclude = [local.dependabot_branches]
     }
   }
 
   rules {
     non_fast_forward    = true
+    required_signatures = true
+  }
+}
+
+# Dependabot's branches: only Dependabot makes or moves them, so it may
+# rebase its own pull requests, and nobody else may push to them at all.
+# Before, anybody with write could, as long as the push was not a rewrite.
+# Its commits are signed by GitHub, as every branch requires.
+locals {
+  dependabot_branches = "refs/heads/dependabot/**"
+  # GitHub's number for Dependabot, the same on every repository.
+  dependabot = 29110
+}
+
+resource "github_repository_ruleset" "dependabot_branches" {
+  repository  = var.name
+  name        = "dependabot branches"
+  target      = "branch"
+  enforcement = "active"
+
+  conditions {
+    ref_name {
+      include = [local.dependabot_branches]
+      exclude = []
+    }
+  }
+
+  bypass_actors {
+    actor_type  = "Integration"
+    actor_id    = local.dependabot
+    bypass_mode = "always"
+  }
+
+  rules {
+    creation            = true
+    update              = true
     required_signatures = true
   }
 }

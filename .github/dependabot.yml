@@ -45,6 +45,11 @@ updates:
       interval: daily
     cooldown:
       default-days: 7
+    # Every dependency, not only those a go.mod names directly: a fixed
+    # vulnerability in one taken in through another got no pull request
+    # (#864).
+    allow:
+      - dependency-type: all
     groups:
       contractor-go:
         applies-to: version-updates
@@ -119,8 +124,50 @@ updates:
       interval: daily
     cooldown:
       default-days: 7
+    # Every dependency, not only those a go.mod names directly: a fixed
+    # vulnerability in one taken in through another got no pull request
+    # (#864).
+    allow:
+      - dependency-type: all
     groups:
       tests-go:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # Every other Go module: the programs beside the contractor, and each
+  # application's own tests. Kept apart from both entries above, for the same
+  # reason they are kept apart from each other. Two of sixteen modules were
+  # covered until #864; tests/go/repo refuses a go.mod that no entry names.
+  - package-ecosystem: gomod
+    directories:
+      - /modules/applications/*/tests
+      - /scripts/attestation
+      - /scripts/details
+      - /scripts/drafter
+      - /scripts/engineer
+      - /scripts/inspector
+      - /scripts/lawyer
+      - /scripts/procurement
+      - /scripts/safety-officer
+      - /scripts/security
+      - /scripts/signedpush
+      - /scripts/superintendent
+      - /scripts/sweeper
+    schedule:
+      interval: daily
+    cooldown:
+      default-days: 7
+    # Every dependency, not only those a go.mod names directly: a fixed
+    # vulnerability in one taken in through another got no pull request
+    # (#864).
+    allow:
+      - dependency-type: all
+    groups:
+      programs-go:
         applies-to: version-updates
         patterns:
           - "*"
