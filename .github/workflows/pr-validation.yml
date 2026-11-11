@@ -103,14 +103,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            github.com:443
 
       - name: Read main's last finished run
         id: read
@@ -151,14 +143,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            github.com:443
 
       - name: Compare what the queue would land with what the pull request tested
         id: compare
@@ -216,31 +200,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # pre-commit builds a Go toolchain for actionlint and a Node one
-          # for prettier, which is why this list is the longest in the file.
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            codeload.github.com:443
-            dl.google.com:443
-            files.pythonhosted.org:443
-            github.com:443
-            go.dev:443
-            nodejs.org:443
-            objects.githubusercontent.com:443
-            proxy.golang.org:443
-            pypi.org:443
-            raw.githubusercontent.com:443
-            registry.npmjs.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
 
       # The same .pre-commit-config.yaml a developer runs, at the same pinned
       # versions. That is the point: there is no second copy of prettier here
@@ -335,20 +294,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # take-delivery.sh downloads the shellcheck release archive from
-          # GitHub and installs it only if its SHA256 matches the lock.
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            github.com:443
-            objects.githubusercontent.com:443
-            release-assets.githubusercontent.com:443
 
       - name: Read pinned versions
         uses: $/.github/actions/versions
@@ -412,39 +357,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # get.opentofu.org serves both the installer and the GPG key it
-          # verifies the release with. Provider downloads start at the registry
-          # and are redirected to GitHub release assets. The schema fetches for
-          # kubeconform come from raw.githubusercontent.com.
-          #
-          # actions/setup-go (confirmed from its own source at this pinned
-          # commit, not assumed) has two real, different paths depending on
-          # whether the hosted actions/go-versions manifest resolves: the
-          # normal one walks api.github.com's git/trees + git/blobs endpoints
-          # then downloads from github.com's releases, redirected to
-          # release-assets.githubusercontent.com - confirmed as the actual
-          # path taken in a real run. The fallback, unexercised so far but
-          # real in the source, lists versions from go.dev and downloads the
-          # archive from storage.googleapis.com. dl.google.com, which used to
-          # be listed here, appears nowhere in setup-go's source - a full
-          # grep of every file that touches a URL found no reference to it.
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            get.opentofu.org:443
-            github.com:443
-            go.dev:443
-            objects.githubusercontent.com:443
-            raw.githubusercontent.com:443
-            registry.opentofu.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
 
       # Versions come from scripts/versions.env, which is the only place one
       # is written. See .github/actions/versions for why this is a step
@@ -686,25 +598,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            dl.k8s.io:443
-            get.opentofu.org:443
-            github.com:443
-            go.dev:443
-            objects.githubusercontent.com:443
-            proxy.golang.org:443
-            registry.opentofu.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
 
       # Versions come from scripts/versions.env, which is the only place one
       # is written. See .github/actions/versions for why this is a step
@@ -844,22 +737,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            github.com:443
-            go.dev:443
-            objects.githubusercontent.com:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
 
       # Versions come from scripts/versions.env, which is the only place one
       # is written. See .github/actions/versions for why this is a step
@@ -904,29 +781,9 @@ jobs:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
         with:
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
           # All of it, for the tags: the configuration rules plan each site
           # with the release it runs, read from that release's tag (#843).
           fetch-depth: 0
-          allowed-endpoints: >
-            api.github.com:443
-            dl.k8s.io:443
-            files.pythonhosted.org:443
-            get.opentofu.org:443
-            github.com:443
-            go.dev:443
-            objects.githubusercontent.com:443
-            proxy.golang.org:443
-            pypi.org:443
-            registry.opentofu.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
 
       # Versions come from scripts/versions.env, which is the only place one
       # is written. See .github/actions/versions for why this is a step
@@ -1003,29 +860,9 @@ jobs:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
         with:
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
           # All of it, for the tags: the configuration rules plan each site
           # with the release it runs, read from that release's tag (#843).
           fetch-depth: 0
-          allowed-endpoints: >
-            api.github.com:443
-            dl.k8s.io:443
-            files.pythonhosted.org:443
-            get.opentofu.org:443
-            github.com:443
-            go.dev:443
-            objects.githubusercontent.com:443
-            proxy.golang.org:443
-            pypi.org:443
-            registry.opentofu.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
 
       # Versions come from scripts/versions.env, which is the only place one
       # is written. See .github/actions/versions for why this is a step
@@ -1110,29 +947,9 @@ jobs:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
         with:
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
           # All of it, for the tags: the configuration rules plan each site
           # with the release it runs, read from that release's tag (#843).
           fetch-depth: 0
-          allowed-endpoints: >
-            api.github.com:443
-            dl.k8s.io:443
-            files.pythonhosted.org:443
-            get.opentofu.org:443
-            github.com:443
-            go.dev:443
-            objects.githubusercontent.com:443
-            proxy.golang.org:443
-            pypi.org:443
-            registry.opentofu.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
 
       # Versions come from scripts/versions.env, which is the only place one
       # is written. See .github/actions/versions for why this is a step
@@ -1198,20 +1015,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            github.com:443
-            nodejs.org:443
-            objects.githubusercontent.com:443
-            registry.npmjs.org:443
-            release-assets.githubusercontent.com:443
 
       # Versions come from scripts/versions.env, which is the only place one
       # is written. See .github/actions/versions for why this is a step
@@ -1288,16 +1091,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            github.com:443
 
       - name: Every lane passed
         env:
@@ -1387,20 +1180,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            files.pythonhosted.org:443
-            github.com:443
-            objects.githubusercontent.com:443
-            pypi.org:443
-            release-assets.githubusercontent.com:443
 
       # Versions come from scripts/versions.env, which is the only place one
       # is written. See .github/actions/versions for why this is a step
@@ -1437,18 +1216,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            github.com:443
-            objects.githubusercontent.com:443
-            release-assets.githubusercontent.com:443
 
       - name: Read pinned versions
         uses: $/.github/actions/versions
@@ -1477,20 +1244,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            files.pythonhosted.org:443
-            github.com:443
-            objects.githubusercontent.com:443
-            pypi.org:443
-            release-assets.githubusercontent.com:443
 
       - name: Read pinned versions
         uses: $/.github/actions/versions
@@ -1520,20 +1273,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            files.pythonhosted.org:443
-            github.com:443
-            objects.githubusercontent.com:443
-            pypi.org:443
-            release-assets.githubusercontent.com:443
 
       - name: Read pinned versions
         uses: $/.github/actions/versions
@@ -1567,19 +1306,6 @@ jobs:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
         with:
-          # Stays audit, not block, until a real run's egress log gives an
-          # allowed-endpoints list worth trusting - semgrep ci reaches its
-          # rule registry at a set of hosts this repo has never actually
-          # observed, and guessing them risks either breaking the scan or
-          # rubber-stamping an allowlist nobody checked. See the Format lane
-          # above for how that list gets built the right way: run audit
-          # first, then transcribe the real destinations it logged.
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: audit
-          disable-sudo-and-containers: "true"
           fetch-depth: 0
       - name: Read pinned versions
         uses: $/.github/actions/versions
@@ -1642,23 +1368,6 @@ jobs:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
         with:
-          # Trivy pulls its misconfiguration database as an OCI artifact,
-          # from ghcr.io with a Google mirror as fallback.
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            get.trivy.dev:443
-            ghcr.io:443
-            github.com:443
-            mirror.gcr.io:443
-            objects.githubusercontent.com:443
-            pkg-containers.githubusercontent.com:443
-            release-assets.githubusercontent.com:443
           fetch-depth: 0
 
       - name: Run Trivy Vulnerability Scanner
@@ -1707,18 +1416,6 @@ jobs:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
         with:
-          # DELIBERATELY audit, not block. TruffleHog verifies a candidate
-          # secret by presenting it to the API of whichever vendor issued it,
-          # and there is no way to know in advance which vendors those are - a
-          # leaked key belongs to whoever it belongs to. An allowlist here
-          # would not fail loudly; it would quietly turn verified findings into
-          # unverified ones, which is the opposite of what this lane is for.
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: audit
-          disable-sudo-and-containers: "true"
           fetch-depth: 0
 
       # Versions come from scripts/versions.env, which is the only place one
@@ -1732,8 +1429,8 @@ jobs:
       # `latest` and no input that can express a digest (the template is
       # hardcoded to `image:tag`, never `image@sha256:...`). SHA-pinning the
       # action only pins its orchestration script - it still silently pulls
-      # whatever `latest` resolves to today on the one job in this repo
-      # that's deliberately not egress-blocked. Taking delivery of the release
+      # whatever `latest` resolves to today, on a job that reaches any host
+      # by design. Taking delivery of the release
       # archive from scripts/deliveries.lock by hash closes that gap the same
       # way it does for tofu and kubeconform in the Validate lane above.
       - name: Install trufflehog (locked)
@@ -1755,89 +1452,30 @@ jobs:
         run: go run -C scripts/security . guard-secrets -base "${BASE_SHA}" -head "${HEAD_SHA}"
 
   # -----------------------------------------------------------------
-  # EGRESS PROOF: that the shared first step still does what it claims.
+  # SHARED ACTIONS: that the actions every job reaches through $/ still do
+  # what they claim. Mobilize checks out the repository, and the shared
+  # github-script action hands a calling step's env to the script beside it.
+  # Both are referenced with $/, which GitHub resolves at the running commit;
+  # a change in how it does is found here, on the pull request that meets it.
   #
-  # Every job starts with $/.github/workflows/mobilize, which runs harden-runner
-  # and checkout from one place. harden-runner's own report is not evidence -
-  # it falls back to audit on several errors and carries on - so the only proof
-  # a block policy is in force is a request it refused.
-  #
-  # NOT A GATE, deliberately. Each job gets its own VM, so this job passing
-  # says nothing about another job's, and a gate every lane waited behind would
-  # serialise them for a check that cannot vouch for them. What this catches is
-  # the systemic break - a harden-runner bump, or GitHub changing how nested
-  # actions run - on the pull request that introduces it. A start-of-job check
-  # in every job was considered and not built: with sudo, a later step could
-  # undo it, which is why sudo is removed instead (#410).
-  #
-  # THE CONTROL. `egress-reachable` shows the probe host answers when nothing
-  # restricts it, so a refusal in `egress-blocked` is the policy and not an
-  # outage. When this was first proven it also ran harden-runner directly as a
-  # second control; nothing runs it directly any more, and keeping that job
-  # would have been a second place its commit is written.
-  #
-  # The probe host is example.com: reserved by IANA for exactly this kind of
-  # use, and on no job's allowlist anywhere in scripts/approved-suppliers.yml.
+  # It also proved harden-runner's block until the agent was cut on
+  # 2026-11-12 (#795), as "test / egress blocked".
   # -----------------------------------------------------------------
-  egress-reachable:
+  shared-actions:
     # Nothing waits on this.
     continue-on-error: true
     # Skipped, which the queue reads as passed, when the queue would land
     # exactly what the pull request already tested (already-tested).
     needs: already-tested
     if: ${{ !cancelled() && github.event_name != 'push' && needs.already-tested.outputs.identical != 'true' }}
-    name: "test / egress allowed"
+    name: "test / shared actions"
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
-    env:
-      PROBE: https://example.com
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          egress-policy: audit
-          disable-sudo-and-containers: "true"
-          checkout: "false"
-
-      - name: The probe host answers
-        run: |
-          if ! curl --silent --show-error --max-time 20 --output /dev/null "$PROBE"; then
-            echo "::error::$PROBE did not answer with nothing blocking it, so a refusal in egress-blocked would prove nothing. Choose a probe host reachable from a GitHub-hosted runner."
-            exit 1
-          fi
-          echo "$PROBE answers when unrestricted."
-
-  egress-blocked:
-    # Nothing waits on this.
-    continue-on-error: true
-    # Skipped, which the queue reads as passed, when the queue would land
-    # exactly what the pull request already tested (already-tested).
-    needs: already-tested
-    if: ${{ !cancelled() && github.event_name != 'push' && needs.already-tested.outputs.identical != 'true' }}
-    name: "test / egress blocked"
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    env:
-      PROBE: https://example.com
-      ALLOWED: https://github.com
-    steps:
-      - name: Mobilize
-        id: mobilize
-        uses: $/.github/workflows/mobilize
-        with:
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          egress-policy: block
-          allowed-endpoints: >
-            api.github.com:443
-            github.com:443
-          disable-sudo-and-containers: "true"
 
       - name: The repository was checked out
         run: |
@@ -1845,46 +1483,6 @@ jobs:
             echo "::error::mobilize ran and the workspace holds no checkout."
             exit 1
           fi
-
-      # The protection that makes a block stay a block. With sudo, any later
-      # step in a job can stop harden-runner's agent or flush its rules and
-      # then call out (#410).
-      # Nothing to prove on a runner that is not held. About one of GitHub's
-      # in eight is not (#725), mobilize says so, and this lane's three
-      # proofs would each fail there for that one reason and not for
-      # anything a pull request did. So they are asked of a runner that is
-      # held, and one that is not says it proved nothing. Loosened with the
-      # check in mobilize, and for as long.
-      - name: Nothing is proved on a runner that is not held
-        if: steps.mobilize.outputs.held != 'true'
-        run: |
-          echo "::warning::The egress proof proved nothing on this run: its runner was not held (#725)."
-
-      - name: Sudo is gone
-        if: steps.mobilize.outputs.held == 'true'
-        run: |
-          if sudo -n true 2>/dev/null; then
-            echo "::error::sudo still works after mobilize with disable-sudo-and-containers: \"true\". Any step in a blocking job could switch egress enforcement off."
-            exit 1
-          fi
-          echo "sudo is refused, so no later step can dismantle enforcement."
-
-      - name: An allowed host answers
-        if: steps.mobilize.outputs.held == 'true'
-        run: |
-          if ! curl --silent --show-error --max-time 20 --output /dev/null "$ALLOWED"; then
-            echo "::error::$ALLOWED is on this job's allowlist and did not answer. The block is refusing everything, so a refused probe below would not show that it refuses selectively."
-            exit 1
-          fi
-
-      - name: The probe host is refused
-        if: steps.mobilize.outputs.held == 'true'
-        run: |
-          if curl --silent --show-error --max-time 20 --output /dev/null "$PROBE"; then
-            echo "::error::$PROBE answered under egress-policy: block through mobilize. harden-runner's policy was not installed, so every job in this repository is unwatched while reporting green."
-            exit 1
-          fi
-          echo "$PROBE was refused: harden-runner enforces block through mobilize."
 
       # The plan-comment scripts are files beside the shared github-script
       # action and read their values from process.env set on the calling step.
@@ -1921,15 +1519,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # harden-runner does nothing in the estate's pools. What is
-          # declared here is what the pool's own policy is held to, in
-          # scripts/approved-suppliers.yml under `egress:`.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            github.com:443
 
       - name: Prove the pool holds
         uses: $/.github/workflows/pool-proof
@@ -1960,16 +1549,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # harden-runner does nothing in the estate's pools. What is
-          # declared here is what the pool's own policy is held to, in
-          # scripts/approved-suppliers.yml under `egress:`.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            github.com:443
-            proxy.golang.org:443
 
       - name: Prove the pool holds
         uses: $/.github/workflows/pool-proof
@@ -2000,16 +1579,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # harden-runner does nothing in the estate's pools. What is
-          # declared here is what the pool's own policy is held to, in
-          # scripts/approved-suppliers.yml under `egress:`.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            github.com:443
-            registry.npmjs.org:443
 
       - name: Prove the pool holds
         uses: $/.github/workflows/pool-proof

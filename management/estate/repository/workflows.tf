@@ -22,7 +22,6 @@ resource "github_actions_repository_permissions" "this" {
       "aquasecurity/setup-trivy@*",
       "ossf/scorecard-action@*",
       "pnpm/action-setup@*",
-      "step-security/harden-runner@*",
     ]
   }
 }

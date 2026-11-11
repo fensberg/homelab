@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: supplier_egress
+file: scripts/approved-suppliers.yml
+find: "  - job: sensitive-paths.yml/tripwire\n    pool: builds\n    policy: block\n    hosts:\n      - api.github.com:443\n"
+replace: "  - job: sensitive-paths.yml/tripwire\n    pool: builds\n    policy: block\n    hosts:\n      - api.github.com:443\n      - exfil.example.invalid:443\n"
+mentions: "which is not in the approved suppliers list"
+why: >
+  A host added to one job's entry and to no supplier's is a supplier nobody
+  gave a reason for, which is how fifteen allowlists in nine workflows came
+  to answer nothing between them.

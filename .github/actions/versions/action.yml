@@ -26,7 +26,7 @@ runs:
       # BASH_ENV or NODE_OPTIONS turn that into code execution. Most lanes
       # already run a fork's code (go test, vitest, tofu), so they gain
       # nothing - but the TruffleHog lane does not, and it is the one lane
-      # deliberately left on egress-policy: audit. Exporting a free-form
+      # that reaches any host by design. Exporting a free-form
       # KEY=VALUE would have handed that job code execution with open
       # egress.
       #

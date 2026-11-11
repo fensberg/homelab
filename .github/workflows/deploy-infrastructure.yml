@@ -103,15 +103,6 @@ jobs:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
         with:
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            github.com:443
           # Deep enough to diff a push against the commit before it. This
           # repository is small; the cost is seconds and the alternative is
           # guessing.
@@ -228,21 +219,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # Stays audit, not block, until this job has actually run: it
-          # applies whatever `environments/` and `modules/` turn out to
-          # need - Proxmox, Cloudflare, Tailscale, object storage, the state
-          # Postgres, the OpenTofu registry - and none of those hosts are
-          # known yet because neither directory exists. Flip to block with
-          # the observed allowed-endpoints before this job ever runs for
-          # real - not before, since a guessed allowlist on the one job with
-          # write access to real infrastructure is worse than an audited one.
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: audit
-          disable-sudo-and-containers: "false"
 
       - name: Determine Target Directory
         id: set-env
@@ -321,18 +297,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # audit, not block, for the same reason the apply job gives: this
-          # reaches 1Password, Proxmox, Tailscale, Cloudflare, the Kubernetes
-          # API and the OpenTofu registry, and several of those addresses are
-          # deliberately not in git. Transcribe the observed endpoints after
-          # the first real run, then flip to block.
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: audit
-          disable-sudo-and-containers: "false"
 
       - name: Read pinned versions
         uses: $/.github/actions/versions
@@ -446,12 +410,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # audit, for the converge's reason: harden-runner does nothing on
-          # this runner. Owned by scripts/approved-suppliers.yml under
-          # `egress:`, which says which job may reach what.
-          egress-policy: audit
-          disable-sudo-and-containers: "false"
 
       - name: Read pinned versions
         uses: $/.github/actions/versions
@@ -515,10 +473,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # As the roll's, for its reason.
-          egress-policy: audit
-          disable-sudo-and-containers: "false"
 
       - name: Read pinned versions
         uses: $/.github/actions/versions
@@ -578,17 +532,6 @@ jobs:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
         with:
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            github.com:443
-            objects.githubusercontent.com:443
-            release-assets.githubusercontent.com:443
           fetch-depth: 0
 
       - name: Collect why it stopped
@@ -727,17 +670,6 @@ jobs:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
         with:
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            github.com:443
-            objects.githubusercontent.com:443
-            release-assets.githubusercontent.com:443
           fetch-depth: 0
 
       - name: Collect the verdicts

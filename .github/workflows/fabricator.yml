@@ -70,16 +70,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            github.com:443
 
       # The estate's own orders, then one for each application that has an
       # image: named for its directory, built from image/ inside it, pinned by
@@ -128,12 +118,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # Audit, not block: the builds reach package archives, release
-          # downloads and Valve's content servers, a set this repository has
-          # never transcribed (approved-suppliers.yml records why).
-          egress-policy: audit
-          disable-sudo-and-containers: "false"
 
       - name: Read pinned versions
         uses: $/.github/actions/versions
@@ -535,20 +519,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            ghcr.io:443
-            github.com:443
-            objects.githubusercontent.com:443
-            pkg-containers.githubusercontent.com:443
-            release-assets.githubusercontent.com:443
 
       # Versions come from scripts/versions.env, which is the only place one
       # is written. See .github/actions/versions for why this is a step
@@ -775,22 +745,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            github.com:443
-            go.dev:443
-            objects.githubusercontent.com:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
 
       - name: Read pinned versions
         uses: $/.github/actions/versions
@@ -943,19 +897,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # Owned by scripts/approved-suppliers.yml under `egress:`.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            github.com:443
-            go.dev:443
-            objects.githubusercontent.com:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
 
       - name: Read pinned versions
         uses: $/.github/actions/versions

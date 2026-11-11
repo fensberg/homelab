@@ -8,9 +8,8 @@ import (
 	"testing"
 )
 
-// The workflow parser has to see what the file says, including the cases that
-// are not a tidy allowlist: a job with no harden-runner at all, and the `on:`
-// block's two-space keys, which look exactly like job keys and are not.
+// Every job of a workflow is reported, whatever its steps say, and the
+// `on:` block's two-space keys, which look exactly like job keys, are not.
 func TestWorkflowEgressReadsEveryJob(t *testing.T) {
 	body := `name: "Example"
 on:
@@ -22,33 +21,16 @@ permissions:
   contents: read
 
 jobs:
-  hardened:
-    name: "Hardened"
+  checks:
+    name: "Checks"
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d # v2.21.1
-        with:
-          egress-policy: block
-          allowed-endpoints: >
-            api.github.com:443
-            github.com:443
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
 
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e # v7.0.1
-
-  audited:
-    name: "Audited"
+  bare:
+    name: "Bare"
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d # v2.21.1
-        with:
-          egress-policy: audit
-
-  unguarded:
-    name: "Unguarded"
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e # v7.0.1
+      - run: "true"
 `
 
 	docs, err := drafter.Documents([]byte(body))
@@ -56,29 +38,12 @@ jobs:
 		t.Fatal(err)
 	}
 	got := jobsIn("example.yml", docs)
-	if len(got) != 3 {
-		t.Fatalf("got %d jobs, want 3 (schedule and workflow_dispatch are not jobs): %+v", len(got), got)
+	if len(got) != 2 {
+		t.Fatalf("got %d jobs, want 2 (schedule and workflow_dispatch are not jobs): %+v", len(got), got)
 	}
-
-	// By its name, and not by where it was written: a workflow's jobs are a
-	// mapping, which has no order to rely on.
-	job := map[string]jobEgress{}
-	for _, j := range got {
-		job[j.Job] = j
-	}
-	if hardened := job["hardened"]; hardened.Key() != "example.yml/hardened" || hardened.Policy != "block" {
-		t.Errorf("hardened job = %+v", hardened)
-	}
-	if strings.Join(job["hardened"].Hosts, " ") != "api.github.com:443 github.com:443" {
-		t.Errorf("hosts = %v, want both endpoints and nothing from the following step", job["hardened"].Hosts)
-	}
-	if audited, read := job["audited"]; !read || audited.Policy != "audit" || len(audited.Hosts) != 0 {
-		t.Errorf("audited job = %+v, want audit with no hosts", audited)
-	}
-	// The one that matters: a job nothing hardens must be reported as a job,
-	// not skipped. Skipping it is how a new job arrives unexamined.
-	if unguarded, read := job["unguarded"]; !read || unguarded.Key() != "example.yml/unguarded" || unguarded.Policy != "" {
-		t.Errorf("unguarded job = %+v, want it present with no policy", unguarded)
+	keys := []string{got[0].Key(), got[1].Key()}
+	if strings.Join(keys, " ") != "example.yml/bare example.yml/checks" {
+		t.Errorf("jobs = %v, want both, by their keys", keys)
 	}
 }
 
@@ -121,82 +86,19 @@ exemptions:
 	}
 }
 
-// Every way the two can disagree, each proved by its own counterexample. The
-// table is the guard: a rule with no row here is a rule nothing would notice
-// losing.
-func TestCompareRefusesEveryKindOfDisagreement(t *testing.T) {
+// A job the suppliers list does not name is refused, and one it names is
+// silent. A new job must arrive declaring what it reaches, not unexamined.
+func TestCompareRefusesAJobNobodyDeclared(t *testing.T) {
 	declared := []declaredEgress{
-		{Key: "a.yml/one", Policy: "block", Hosts: []string{"api.github.com:443", "github.com:443"}},
+		{Key: "a.yml/one", Policy: "block", Hosts: []string{"api.github.com:443"}},
 		{Key: "a.yml/two", Policy: "audit", Reason: "vendor hosts are not knowable in advance"},
 	}
-
-	cases := []struct {
-		name  string
-		found []jobEgress
-		wants string // a phrase the finding must carry, or "" for no finding
-	}{
-		{
-			name: "agreement is silence",
-			found: []jobEgress{
-				{Workflow: "a.yml", Job: "one", Policy: "block", Hosts: []string{"github.com:443", "api.github.com:443"}},
-				{Workflow: "a.yml", Job: "two", Policy: "audit"},
-			},
-		},
-		{
-			name:  "a job nobody declared",
-			found: []jobEgress{{Workflow: "a.yml", Job: "three", Policy: "block", Hosts: []string{"api.github.com:443"}}},
-			wants: "is not declared in the suppliers list",
-		},
-		{
-			name:  "a job nothing hardens",
-			found: []jobEgress{{Workflow: "a.yml", Job: "three"}},
-			wants: "hardens nothing",
-		},
-		{
-			name:  "a policy that is not the declared one",
-			found: []jobEgress{{Workflow: "a.yml", Job: "one", Policy: "audit"}},
-			wants: "sets egress-policy: audit and the suppliers list declares block",
-		},
-		{
-			name: "a host the declaration does not carry",
-			found: []jobEgress{{Workflow: "a.yml", Job: "one",
-				Policy: "block", Hosts: []string{"api.github.com:443", "github.com:443", "evil.example.com:443"}}},
-			wants: "allows evil.example.com:443, which the suppliers list does not declare",
-		},
-		{
-			name: "a declared host the workflow dropped",
-			found: []jobEgress{{Workflow: "a.yml", Job: "one",
-				Policy: "block", Hosts: []string{"api.github.com:443"}}},
-			wants: "is declared to reach github.com:443 and its workflow does not allow it",
-		},
+	if got := Compare([]jobEgress{{Workflow: "a.yml", Job: "one"}, {Workflow: "a.yml", Job: "two"}}, declared); len(got) != 0 {
+		t.Errorf("every job declared, and still refused: %v", got)
 	}
-
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			// Every case declares both jobs, so a missing one is only ever the
-			// disagreement under test rather than a stale-entry finding too.
-			found := c.found
-			if c.name != "agreement is silence" {
-				found = append(found, jobEgress{Workflow: "a.yml", Job: "two", Policy: "audit"})
-				if c.found[0].Job != "one" {
-					found = append(found, jobEgress{Workflow: "a.yml", Job: "one",
-						Policy: "block", Hosts: []string{"api.github.com:443", "github.com:443"}})
-				}
-			}
-			got := Compare(found, declared)
-			if c.wants == "" {
-				if len(got) != 0 {
-					t.Fatalf("want no findings, got %v", got)
-				}
-				return
-			}
-			if len(got) == 0 {
-				t.Fatalf("want a finding mentioning %q, got none", c.wants)
-			}
-			if !strings.Contains(strings.Join(got, "\n"), c.wants) {
-				t.Errorf("findings do not mention %q:\n%s", c.wants, strings.Join(got, "\n"))
-			}
-		})
+	got := Compare([]jobEgress{{Workflow: "a.yml", Job: "one"}, {Workflow: "a.yml", Job: "two"}, {Workflow: "a.yml", Job: "three"}}, declared)
+	if len(got) != 1 || !strings.Contains(got[0], "a.yml/three is not declared in the suppliers list") {
+		t.Errorf("a job nobody declared was not refused by name: %v", got)
 	}
 }
 
@@ -205,7 +107,7 @@ func TestCompareRefusesEveryKindOfDisagreement(t *testing.T) {
 // half is real.
 func TestCompareRefusesADeclarationWithNoJob(t *testing.T) {
 	got := Compare(
-		[]jobEgress{{Workflow: "a.yml", Job: "one", Policy: "audit"}},
+		[]jobEgress{{Workflow: "a.yml", Job: "one"}},
 		[]declaredEgress{
 			{Key: "a.yml/one", Policy: "audit"},
 			{Key: "a.yml/gone", Policy: "block", Hosts: []string{"api.github.com:443"}},
@@ -215,11 +117,8 @@ func TestCompareRefusesADeclarationWithNoJob(t *testing.T) {
 	}
 }
 
-// The verb end to end, against a tree on disk.
-//
-// Both halves are checked: that it passes on a tree that agrees, and that the
-// same tree with one endpoint added fails. A guard proved only in the passing
-// direction is a guard that would pass if it did nothing at all.
+// The verb end to end, against a tree on disk: it passes a tree whose every
+// job is declared, and refuses the same tree with a job added that is not.
 func TestTheVerbJudgesATreeOnDisk(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, workflowsDir), 0o755); err != nil {
@@ -233,12 +132,8 @@ func TestTheVerbJudgesATreeOnDisk(t *testing.T) {
 jobs:
   one:
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d # v2.21.1
-        with:
-          egress-policy: block
-          allowed-endpoints: >
-            api.github.com:443
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
 `
 	suppliers := `egress:
   - job: example.yml/one
@@ -256,28 +151,17 @@ jobs:
 	write(suppliersPath, suppliers)
 
 	if rc := guardEgress([]string{"-root", dir}); rc != 0 {
-		t.Fatalf("a tree that agrees was refused (rc %d)", rc)
+		t.Fatalf("a tree whose every job is declared was refused (rc %d)", rc)
 	}
 
-	write(filepath.Join(workflowsDir, "example.yml"),
-		strings.Replace(workflow, "            api.github.com:443\n",
-			"            api.github.com:443\n            evil.example.com:443\n", 1))
-	if rc := guardEgress([]string{"-root", dir}); rc == 0 {
-		t.Fatal("a workflow reaching an endpoint the suppliers list does not declare was allowed")
-	}
-
-	// And an undeclared job, which is the fail-closed case: a new job must
-	// arrive with no egress rather than with an allowlist nobody examined.
 	write(filepath.Join(workflowsDir, "example.yml"), workflow+`
   two:
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d # v2.21.1
-        with:
-          egress-policy: audit
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
 `)
 	if rc := guardEgress([]string{"-root", dir}); rc == 0 {
-		t.Fatal("a job the suppliers list does not name was allowed to call out")
+		t.Fatal("a job the suppliers list does not name was let through")
 	}
 }
 

@@ -53,13 +53,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # Owned by scripts/approved-suppliers.yml under `egress:`.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            github.com:443
 
       - name: Pick the first site the config declares
         id: site
@@ -82,11 +75,6 @@ jobs:
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
-        with:
-          # audit, because harden-runner does nothing on this runner whatever
-          # it is told; see this job's entry in scripts/approved-suppliers.yml.
-          egress-policy: audit
-          disable-sudo-and-containers: "false"
 
       - name: Read pinned versions
         uses: $/.github/actions/versions

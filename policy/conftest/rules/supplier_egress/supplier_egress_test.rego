@@ -23,7 +23,7 @@ pinned := "ghcr.io/owner/thing:1@sha256:aaaa"
 
 source(u) := {"path": "clusters/core/app/source.yaml", "contents": {"kind": "HelmRepository", "spec": {"url": u}}}
 
-workflow(hosts) := {"path": ".github/workflows/w.yml", "contents": {"jobs": {"j": {"steps": [{"with": {"allowed-endpoints": hosts}}]}}}}
+egress(hosts) := {"egress": [{"job": "w.yml/j", "policy": "block", "hosts": hosts}]}
 
 hooks(repos) := {"path": ".pre-commit-config.yaml", "contents": {"repos": repos}}
 
@@ -35,7 +35,7 @@ tf(source) := {"path": "management/p/.terraform.lock.hcl", "contents": {"provide
 	key := $"registry.opentofu.org/{source}"
 }
 
-good := [list({}), own, deployment(pinned), source("https://charts.example.org"), workflow("github.com:443\n"), hooks([hook, {"repo": "local"}]), tf("hashicorp/kubernetes")]
+good := [list(egress(["github.com:443"])), own, deployment(pinned), source("https://charts.example.org"), hooks([hook, {"repo": "local"}]), tf("hashicorp/kubernetes")]
 
 swap(i, f) := array.flatten([array.slice(good, 0, i), [f], array.slice(good, i + 1, count(good))])
 
@@ -49,9 +49,9 @@ test_everything_declared_and_pinned_passes if {
 }
 
 test_an_undeclared_egress_host_is_refused if {
-	denies(supplier_egress.deny, `reaches "evil.example:443"`) with input as swap(4, workflow("github.com:443\nevil.example:443\n"))
+	denies(supplier_egress.deny, `w.yml/j reaches "evil.example:443"`) with input as swap(0, list(egress(["github.com:443", "evil.example:443"])))
 }
 
-test_no_allowed_endpoints_is_refused if {
-	denies(supplier_egress.deny, "no allowed-endpoints entries found") with input as [list({})]
+test_no_job_reaching_a_host_is_refused if {
+	denies(supplier_egress.deny, "no job in the egress section reaches a host") with input as [list({})]
 }

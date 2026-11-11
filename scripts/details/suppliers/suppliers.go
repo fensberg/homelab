@@ -16,10 +16,6 @@ import (
 // Path is where the list is, from the top of the repository.
 const Path = "scripts/approved-suppliers.yml"
 
-// PolicyKey is what a workflow's step is handed its egress policy under,
-// which the list's own entries are compared with.
-const PolicyKey = "egress-policy"
-
 // Tool is one entry under tools: who supplies it, and everything else the
 // entry says, by the name it says it under. What a field means is for
 // whoever asks to say: one program orders deliveries and another checks

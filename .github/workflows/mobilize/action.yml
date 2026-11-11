@@ -1,20 +1,19 @@
-# How every job starts: harden the runner, then check out the repository.
+# How every job starts: check out the repository, from one place.
 #
-# THE ONE PLACE THE HARDEN-RUNNER COMMIT IS WRITTEN. It was restated in 31
-# jobs and the copies agreed only because nobody had made a mistake yet. A job
-# calls this instead:
+# Every job calls this first:
 #
 #   - uses: $/.github/workflows/mobilize
-#     with:
-#       egress-policy: block
-#       allowed-endpoints: >
-#         github.com:443
 #
-# PROVEN, NOT ASSUMED. harden-runner installs its policy in a pre-step, and
-# GitHub documents pre-steps as unsupported for local actions. Under `$/` they
-# run: the egress test lanes in pr-validation.yml requires a host outside the allowlist
-# to be refused through this action, and its run shows "Pre Mobilize" and
-# "Post Mobilize" executing harden-runner's own pre and post steps.
+# It hardened the runner first, with step-security's harden-runner, until
+# 2026-11-12. The operator cut the agent from every job that day: on GitHub's
+# runners it failed to start on some jobs (#725, #791) and left others that
+# GitHub never heard finish, and on the estate's runners it never held
+# anything. What a job may reach is still declared in
+# scripts/approved-suppliers.yml. On GitHub's runners nothing holds a job to
+# that list until epoch 16, decision 16 does, which runs a pull request's
+# code with no network at all (#795). The pools are still held by the
+# cluster's network. Every job starting here is what lets that land in one
+# place.
 #
 # WHY `$/` AND NOT `./`. .github/actions/secure-checkout tried this with `./`
 # and every job failed: "Can't find 'action.yml' ... Did you forget to run
@@ -22,35 +21,14 @@
 # out of the workspace, and this is the step that fills it. `$/` resolves
 # against the repository at the running commit with no checkout.
 #
-# WHY IT LIVES UNDER .github/workflows. It decides what every job may reach, so
+# WHY IT LIVES UNDER .github/workflows. It decides how every job starts, so
 # it sits behind the same `workflows` permission the agent does not hold.
 # GitHub loads workflows only from the top of that directory.
 name: "Mobilize"
 description: >-
-  Harden the runner, then check out the repository - the first step of every
-  job in this repository.
+  Check out the repository - the first step of every job in this repository.
 
 inputs:
-  egress-policy:
-    description: >-
-      block or audit, exactly as scripts/approved-suppliers.yml declares for the
-      calling job. No default: harden-runner refuses an empty policy, which is
-      the right answer for a job that did not say.
-    required: true
-  allowed-endpoints:
-    description: >-
-      The calling job's allowlist, copied from its entry in
-      scripts/approved-suppliers.yml. `security guard-egress` refuses drift.
-    required: false
-    default: ""
-  disable-sudo-and-containers:
-    description: >-
-      "true" removes sudo and container access from the runner account for the
-      rest of the job, so a later step cannot switch egress enforcement off
-      (#410). "false" only where the job genuinely needs root or Docker, with
-      the reason declared beside its egress entry in
-      scripts/approved-suppliers.yml. No default: every job says which.
-    required: true
   checkout:
     description: >-
       "false" for a job that never needs the repository. There is no way to
@@ -62,152 +40,19 @@ inputs:
     required: false
     default: "1"
 
-outputs:
-  held:
-    description: >-
-      "true" where sudo was to be removed and is, "false" where it was to be
-      and is not, and nothing for a job that keeps it. For a lane that proves
-      the block, which has nothing to prove on a runner that is not held.
-    value: ${{ steps.held.outputs.held }}
-
 runs:
   using: composite
   steps:
-    - name: Harden the runner
-      uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
-      with:
-        egress-policy: ${{ inputs.egress-policy }}
-        allowed-endpoints: ${{ inputs.allowed-endpoints }}
-        disable-sudo-and-containers: ${{ inputs.disable-sudo-and-containers }}
-
     # A value other than "true" or "false" is refused rather than read as
-    # false. For checkout a typo would silently skip it and leave every later
-    # step running against an empty workspace; for sudo it would silently leave
-    # root in place. harden-runner reads an unrecognised boolean as false, so
-    # the refusal has to happen here.
-    #
-    # This runs after harden-runner rather than before it, because harden-runner
-    # is what makes every later step watched - including this one.
-    # ON THIS RUNNER, AND NOT ON SOME OTHER. Every job has a runner of its
-    # own and its own copy of what hardens it, so a proof on one says nothing
-    # of the next. On 2026-10-12 the agent failed to start on about one
-    # runner in seven - it could not take the port its resolver listens on -
-    # and a job on such a runner has no block on what it reaches and still
-    # has sudo, with nothing saying so. It was noticed twice, because it
-    # twice fell on the one lane that looks.
-    #
-    # So every job that asks for sudo to be gone looks for itself, before
-    # anything else it does: sudo that still works is a runner where
-    # enforcement is not in place, and the job stops there. It costs nothing.
-    # The lane that proves a refused address is refused is still its own
-    # (pr-validation.yml), since that one needs somewhere to be refused by.
-    #
-    # Only where sudo was to be removed. A job that keeps it says why beside
-    # its entry in scripts/approved-suppliers.yml, and a runner on the estate
-    # is not hardened by this at all.
-    # SAID, AND NOT YET STOPPED FOR. This stopped the job, and about one of
-    # GitHub's runners in eight is not held (#725), so most runs had a job
-    # stopped and nothing could be merged without running jobs again -
-    # the changes that move these jobs onto the estate's own runners among
-    # them (#559). The operator loosened it for as long as that takes: a
-    # runner that is not held is said, loudly and with why, and the job
-    # goes on as it did before anything looked. It is not safer than it
-    # was; it is no longer silent. When a pull request's jobs run on the
-    # estate's runners this step has nothing left to look at there, and
-    # for whatever still runs on GitHub's it goes back to stopping.
-    - name: Whether this runner is held
-      id: held
-      if: inputs.disable-sudo-and-containers == 'true'
-      shell: bash
-      run: |
-        if sudo -n true 2>/dev/null; then
-          # Why, before stopping. The agent says of itself that it could not
-          # take the port its resolver listens on, because something on the
-          # runner already had it (#725), and does not say what. Sudo still
-          # works here, which is the fault, and is what lets this look.
-          # Process names and the agent's own log: nothing of the estate's.
-          echo "::group::What holds the port the agent's resolver listens on"
-          sudo ss -H -lunp 'sport = :53' || true
-          sudo ss -H -ltnp 'sport = :53' || true
-          echo "::endgroup::"
-          # What that is. On 2026-10-12 the holder was a process named
-          # dns-resolver, started before the job's own worker, so it is the
-          # runner's and not the agent's or anything of this repository's.
-          # Its command, what started it, the unit it belongs to and what
-          # the runner is told to resolve by say whether it can be stood
-          # down before the agent starts.
-          echo "::group::What the holder of the port is"
-          for pid in $(sudo ss -H -lunp 'sport = :53' | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u); do
-            sudo ps -o pid,ppid,user,lstart,args -p "$pid" || true
-            sudo readlink "/proc/$pid/exe" || true
-            sudo systemctl status "$pid" --no-pager 2>&1 | head -8 || true
-          done
-          echo "--- /etc/resolv.conf"
-          cat /etc/resolv.conf || true
-          echo "::endgroup::"
-          echo "::group::The agent's own account of itself"
-          sudo systemctl status agent --no-pager 2>&1 | head -20 || true
-          sudo journalctl -u agent --no-pager -n 40 2>&1 || true
-          echo "::endgroup::"
-          echo "::warning::THIS JOB RAN WITH NOTHING HELD. Sudo still works on this runner after it was to be removed, so what hardens the runner did not start here: nothing blocked what this job reached. The cause is known (#725) and the job was let go on by the operator's decision, until pull requests run on the estate's own runners (#559)."
-          echo "held=false" >>"$GITHUB_OUTPUT"
-        else
-          echo "held=true" >>"$GITHUB_OUTPUT"
-        fi
-
-    - name: Whether this runner reaches what it is allowed
-      # The agent allows an address only when it has seen it resolve: the
-      # names it resolves itself when it starts, and every lookup made
-      # through the system's resolver, which it points at itself. On some of
-      # GitHub's runners /etc/resolv.conf is written by GitHub's own egress
-      # proxy (repoint-resolv-conf) and asks that proxy first, so lookups go
-      # around the agent (#791). A connection then works only where the
-      # proxy happens to answer with an address the agent also got - often
-      # for github.com, rarely for a name whose addresses rotate - and the
-      # job fails later, on "exit code 128" or "connection refused", naming
-      # neither. So this asks what the job's programs ask: a runner whose
-      # first nameserver is not the system resolver's stub is refused, and
-      # then github.com is asked for, the way the checkout will. Where either
-      # fails it prints how the runner resolves and stops. Nothing is tried
-      # again: a job cannot move itself to another runner, and the runner's
-      # resolver is not this job's to repair.
-      # Only where the agent runs: on the estate's own runners it holds
-      # nothing (the cluster's network does), and what they resolve through
-      # is the cluster's, which says nothing about the agent.
-      if: inputs.egress-policy == 'block' && runner.environment == 'github-hosted'
-      shell: bash
-      run: |
-        said="$RUNNER_TEMP/reach-github"
-        first="$(awk '$1 == "nameserver" { print $2; exit }' /etc/resolv.conf 2>/dev/null)"
-        if [ "$first" = "127.0.0.53" ] && curl -sS -o /dev/null --max-time 15 https://github.com/ 2>"$said"; then
-          exit 0
-        fi
-        # Readable without sudo, which the agent has removed by now. The
-        # agent's own log is printed by its post step, at the end of the job.
-        echo "::group::What the runner said"
-        echo "the first nameserver programs ask is ${first:-none}"
-        cat "$said" 2>/dev/null || true
-        echo "::endgroup::"
-        echo "::group::How the runner resolves"
-        getent ahosts github.com || true
-        resolvectl status --no-pager || true
-        resolvectl statistics --no-pager || true
-        echo "--- /etc/resolv.conf"
-        cat /etc/resolv.conf || true
-        echo "::endgroup::"
-        echo "::error::This runner's lookups go around the hardening agent: programs ask ${first:-no nameserver} first rather than the system resolver, so the agent refuses whatever it did not see resolve (#791). Nothing in the change being tested caused this."
-        exit 1
-
+    # false: a typo would silently skip the checkout and leave every later
+    # step running against an empty workspace.
     - name: Refuse an unrecognised value
-      if: >-
-        (inputs.checkout != 'true' && inputs.checkout != 'false') ||
-        (inputs.disable-sudo-and-containers != 'true' && inputs.disable-sudo-and-containers != 'false')
+      if: inputs.checkout != 'true' && inputs.checkout != 'false'
       shell: bash
       env:
         CHECKOUT: ${{ inputs.checkout }}
-        SUDO: ${{ inputs.disable-sudo-and-containers }}
       run: |
-        echo "::error::mobilize takes checkout and disable-sudo-and-containers as \"true\" or \"false\"; it was given checkout: '$CHECKOUT', disable-sudo-and-containers: '$SUDO'."
+        echo "::error::mobilize takes checkout as \"true\" or \"false\"; it was given '$CHECKOUT'."
         exit 1
 
     - name: Check out the repository

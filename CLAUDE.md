@@ -563,69 +563,29 @@ depends on it and uses them.
 - `scorecard.yml` — repository posture, weekly and on merges to `main`. It
   grades the repository rather than the diff, so a pull request cannot change
   its answer.
-- **Egress is deny-by-default, eleven jobs are not, and five of those are not
-  even watched.** Every job starts with `$/.github/workflows/mobilize`, which
-  runs `harden-runner` and checkout from the one place either commit is written.
-  Most jobs are `egress-policy: block` with an explicit allowlist, so a
-  compromised action or linter cannot exfiltrate quietly, and they run with
-  sudo removed (`disable-sudo-and-containers`) so no later step can switch the
-  block off (#410). A job that keeps root says why beside its egress entry.
+- **Egress is declared for every job, and on GitHub's runners nothing holds a
+  job to it.** Every job starts with `$/.github/workflows/mobilize`, which
+  checks out the repository from the one place its commit is written. It also
+  ran step-security's `harden-runner` until 2026-11-12, when the operator cut
+  the agent from every job: on GitHub's runners it failed to start on some jobs
+  (#725, #791) and left others GitHub never heard finish, and on the estate's
+  runners it never held anything (#411). The gap is accepted and recorded
+  (#795) until epoch 16, decision 16 closes it, by running a pull request's
+  code with no network at all.
 
-  **On the self-hosted runner harden-runner does nothing.** The scale set's pods
-  are ARC, and there harden-runner only writes its policy for a StepSecurity
-  agent inside the cluster, which this estate does not run. So the four deploy
-  jobs and the integration tests - the jobs holding the vault token - are
-  neither restricted nor recorded, whatever their policy says, and
-  `tests/go/repo/root_test.go` refuses any of them claiming `block`. Controlling
-  their egress has to happen at the cluster's network layer (#411).
+  **Which job may reach what is declared once**, in
+  `scripts/approved-suppliers.yml` under `egress:`: one entry per job, carrying
+  its policy and, for a `block` job, the exact hosts, each an approved supplier.
+  `security guard-egress` walks every job in every workflow and refuses one the
+  list does not name, and an entry naming no job, so a new job starts by
+  saying what it reaches. The pull-request pools are held to their jobs' hosts
+  by the cluster's network; the jobs holding a site's keys run on the estate's
+  runners, held by nothing yet (#411, epoch 15).
 
-  **Which job may reach what is declared once**, in `scripts/approved-suppliers.yml`
-  under `egress:`: one entry per job, carrying the policy and - for a blocking
-  job - the exact hosts. It was restated in sixteen allowlists across nine
-  workflows, so no single place answered the question and adding an endpoint to
-  one workflow was invisible to any review not already reading that file. This
-  table used to be a seventeenth copy and is now that file.
-
-  `security guard-egress` walks **every** job in **every** workflow and refuses
-  one the list does not name, so a new job starts with no egress rather than
-  with an allowlist nobody examined. It refuses drift in either direction, and
-  refuses an entry for a job that no longer exists.
-
-  The workflow still carries its allowlist because harden-runner installs its
-  policy in a pre-step, which GitHub runs before any step of the job - so
-  nothing read from the repository can reach it at runtime, short of a gate job
-  every lane waits behind. The copy is mechanical; the suppliers list owns it.
-
-  The two image builds - `fabricator.yml` and `expedite.yml` - fetch from
-  Valve, whose content servers are a set of hosts it changes, so an allowlist
-  would break on Valve's schedule rather than this estate's. The fabricator's
-  predecessor, `workload-images.yml`, was `audit` with no reason recorded
-  anywhere until the expedite workflow was added beside it - the same
-  undocumented drift the paragraph below describes, found by counting.
-
-  This paragraph used to claim there was exactly one exception, the TruffleHog
-  lane, and named the reason: verification works by calling the API of whichever
-  vendor issued a leaked key, so an allowlist would silently downgrade verified
-  findings to unverified rather than fail. That reason is still good and still
-  applies to `secrets`. The other seven had accumulated without it, and the
-  invariant went on asserting the opposite - which is worse than the setting,
-  because somebody deciding whether a new job needs an allowlist was being told
-  every job already has one.
-
-  The four in `deploy-infrastructure.yml` and the one in `integration-tests.yml`
-  are the ones worth arguing about: they run on the **self-hosted runner inside
-  the estate**, holding a vault token with read and write on the site's
-  own vault, while every pull request lane that holds nothing is blocked.
-  There is a real case for them - a converge reaches the hypervisor, Talos, the
-  overlay, object storage and 1Password, several at private addresses, and that
-  allowlist would be long and brittle - but a case nobody wrote down is not a
-  decision, it is a gap. See the epoch record.
-
-  **The rule is now: `block`, or `audit` with the reason written beside that
-  job's entry in the suppliers list.** A guard whose exceptions are undocumented
-  cannot be reviewed, and this one had seven - and a reason kept in a comment
-  above the step is one nobody finds when they are deciding whether a new job
-  needs an allowlist.
+  The two image builds, `fabricator.yml` and `expedite.yml`, fetch from Valve,
+  whose content servers are a set of hosts it changes, and TruffleHog verifies
+  a leaked key by calling whichever vendor issued it. Those entries are `audit`,
+  with the reason written beside them.
 
 - `integration-tests.yml` — the test tiers that need a real estate, on the
   self-hosted runner: nightly, plus manual dispatch. Not reachable from a

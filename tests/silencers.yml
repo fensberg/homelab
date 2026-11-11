@@ -194,4 +194,3 @@ judges_nothing:
   actions/download-artifact: fetches an artifact
   actions/upload-artifact: stores an artifact
   actions/github-script: runs the repository's own scripts
-  step-security/harden-runner: restricts what a job can reach; its policy is owned by guard-egress
