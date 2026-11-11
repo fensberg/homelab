@@ -2,6 +2,7 @@ package main
 
 import (
 	"homelab/details/drafter"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -183,4 +184,63 @@ func TestTheVerbRefusesASuppliersListWithNoEgressSection(t *testing.T) {
 	if rc := guardEgress([]string{"-root", dir}); rc == 0 {
 		t.Fatal("a suppliers list declaring no egress at all was accepted")
 	}
+}
+
+// What the verb cannot read, it refuses: a passing check over nothing is the
+// one outcome that must never look like a clean run.
+func TestTheVerbRefusesWhatItCannotRead(t *testing.T) {
+	tree := func(t *testing.T, suppliers string, workflow string) string {
+		t.Helper()
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, workflowsDir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(dir, "scripts"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if suppliers != "" {
+			if err := os.WriteFile(filepath.Join(dir, suppliersPath), []byte(suppliers), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if workflow != "" {
+			if err := os.WriteFile(filepath.Join(dir, workflowsDir, "example.yml"), []byte(workflow), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return dir
+	}
+	declared := "egress:\n  - job: example.yml/one\n    policy: block\n    hosts:\n      - api.github.com:443\n"
+	for _, c := range []struct {
+		name, says string
+		args       []string
+	}{
+		{"a flag it does not know", "flag provided but not defined", []string{"-nonsense"}},
+		{"no suppliers list", "cannot read " + suppliersPath, []string{"-root", tree(t, "", "jobs:\n  one:\n    steps: []\n")}},
+		{"a suppliers list that is not YAML", "cannot read " + suppliersPath, []string{"-root", tree(t, "egress: [", "jobs:\n  one:\n    steps: []\n")}},
+		{"no workflow at all", "so this checked nothing", []string{"-root", tree(t, declared, "")}},
+	} {
+		rc, said := refusal(t, c.args)
+		if rc == 0 {
+			t.Errorf("%s: the guard passed having checked nothing", c.name)
+		} else if !strings.Contains(said, c.says) {
+			t.Errorf("%s: refused for another reason, saying %q, want %q", c.name, said, c.says)
+		}
+	}
+}
+
+// refusal runs the verb and gives its exit code and what it said on stderr.
+func refusal(t *testing.T, args []string) (int, string) {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := os.Stderr
+	os.Stderr = w
+	rc := guardEgress(args)
+	os.Stderr = saved
+	_ = w.Close()
+	said, _ := io.ReadAll(r)
+	return rc, string(said)
 }
