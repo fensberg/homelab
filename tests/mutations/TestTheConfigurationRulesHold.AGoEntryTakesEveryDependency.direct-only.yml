@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+rule: dependabot
+file: .github/dependabot.yml
+find: "    allow:\n      - dependency-type: all\n    groups:\n      tests-go:"
+replace: "    groups:\n      tests-go:"
+mentions: "bumps only what a go.mod requires directly"
+why: >-
+  Without it Dependabot bumps only what a go.mod names, and a vulnerability
+  fixed in a module taken in through another gets no pull request (#864).

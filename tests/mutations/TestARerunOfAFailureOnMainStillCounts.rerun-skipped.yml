@@ -1,0 +1,9 @@
+guard: TestARerunOfAFailureOnMainStillCounts
+file: scripts/main-failing.sh
+find: ' or (.status != "completed" and .run_attempt > 1)'
+replace: " or false"
+mentions: "main's failed run is being rerun and a pull request was told"
+why: >-
+  A rerun is not finished, so without this the run before the failure is read
+  and a pull request owes nothing while the rerun takes, which is long enough
+  to land past a failing main (#856).

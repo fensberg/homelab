@@ -602,19 +602,9 @@ jobs:
         id: bump
         env:
           TOUCHED: ${{ needs.roll-handover.outputs.touched || needs.roll.outputs.touched }}
-        run: |
-          # The change that moved the machines: the last commit to touch the
-          # module that declares their version.
-          sha=$(git log -1 --format=%H -- modules/infrastructure/machine-image/)
-          version=$(sed -n 's/^ *talos_version *= *"\(v[0-9.]*\)".*/\1/p' modules/infrastructure/machine-image/machine-image.tf)
-          from=$(sed -n 's/^ *talos_upgrades_from *= *"\(v[0-9.]*\)".*/\1/p' modules/infrastructure/machine-image/machine-image.tf)
-          patch=false
-          [ "${version%.*}" = "$from" ] && patch=true
-          {
-            echo "sha=$sha"
-            echo "version=$version"
-            echo "revertible=$([ "$TOUCHED" = true ] && [ "$patch" = true ] && echo true || echo false)"
-          } >> "$GITHUB_OUTPUT"
+        # The commit that moved TALOS_VERSION, the version before it, and
+        # whether a revert is offered (#853).
+        run: scripts/roll-revert.sh >> "$GITHUB_OUTPUT"
 
       - name: Mint the revert token
         id: revert-token
@@ -628,8 +618,8 @@ jobs:
           owner: ${{ github.repository_owner }}
           repositories: ${{ github.event.repository.name }}
 
-      # The module put back as it was before the bump, and nothing else: the
-      # tree is main's with that one directory swapped, signed by GitHub as
+      # TALOS_VERSION put back as it was before the bump, and nothing else:
+      # the tree is main's with that one line changed, signed by GitHub as
       # the converge's revert is. A pull request, never merged here.
       - name: Offer a revert of the bump
         id: revert
@@ -638,19 +628,20 @@ jobs:
           GH_TOKEN: ${{ steps.revert-token.outputs.token }}
           SHA: ${{ steps.bump.outputs.sha }}
           VERSION: ${{ steps.bump.outputs.version }}
+          PREVIOUS: ${{ steps.bump.outputs.previous }}
           REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          before=$(git rev-parse "$SHA^:modules/infrastructure/machine-image")
+          versions="$(sed "s/^TALOS_VERSION=.*/TALOS_VERSION=$PREVIOUS/" scripts/versions.env)"$'\n'
           tree=$(gh api "repos/$REPO/git/trees" \
             -f base_tree="$(git rev-parse "HEAD^{tree}")" \
-            -f "tree[][path]=modules/infrastructure/machine-image" \
-            -f "tree[][mode]=040000" \
-            -f "tree[][type]=tree" \
-            -f "tree[][sha]=$before" \
+            -f "tree[][path]=scripts/versions.env" \
+            -f "tree[][mode]=100644" \
+            -f "tree[][type]=blob" \
+            -f "tree[][content]=$versions" \
             --jq .sha)
           commit=$(gh api "repos/$REPO/git/commits" \
-            -f message="revert: the machines go back from Talos $VERSION" \
+            -f message="revert: the machines go back from Talos $VERSION to $PREVIOUS" \
             -f tree="$tree" \
             -f "parents[]=$(git rev-parse HEAD)" \
             --jq .sha)
@@ -659,7 +650,7 @@ jobs:
           url=$(gh pr create --draft --base main --head "$branch" \
             --title "revert: the machine roll to Talos $VERSION stopped" \
             --body "$(printf '%s\n' \
-              "The machine roll to Talos $VERSION stopped part-way. Merging this puts modules/infrastructure/machine-image back as it was before ${SHA::8}; the next window then rolls the machines already moved back to the version before, the same way they went forward. Talos moves between patch versions in either direction." \
+              "The machine roll to Talos $VERSION stopped part-way. Merging this puts TALOS_VERSION in scripts/versions.env back to $PREVIOUS, as it was before ${SHA::8}, and changes nothing else; the next window then rolls the machines already moved back to $PREVIOUS, the same way they went forward. Talos moves between patch versions in either direction." \
               "" \
               "**Do not merge it if the failure is not the version's** - a runner, the cluster, a check of the roll's own. Read the issue the roll opened, and the run, first." \
               "" \
