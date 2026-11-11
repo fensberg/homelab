@@ -1283,6 +1283,8 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+      # To ask again what main is failing (scripts/main-failing.sh).
+      actions: read
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
@@ -1304,7 +1306,24 @@ jobs:
           GATE: ${{ needs.already-tested.result }}
           EVENT: ${{ github.event_name }}
           REMOVAL: ${{ needs.main-failing.outputs.removal }}
+          MUTATION: ${{ needs.main-failing.outputs.mutation }}
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
         run: |
+          # What main is failing now, and not when this run began. Rerunning
+          # a failed lane keeps the answer the run started with, so a lane
+          # main came to owe since then would never run (#856).
+          if [ "${EVENT}" != "push" ]; then
+            now="$(scripts/main-failing.sh)"
+            if grep -qx 'mutation=true' <<<"${now}" && [ "${MUTATION}" != "true" ]; then
+              echo "::error::main is now failing the ledger, and this run did not run all of it. Push, or update the branch, to run it."
+              exit 1
+            fi
+            if grep -qx 'removal=true' <<<"${now}" && [ "${REMOVAL}" != "true" ]; then
+              echo "::error::main is now failing the removal check, and this run did not run it. Push, or update the branch, to run it."
+              exit 1
+            fi
+          fi
           # The queue would land exactly what the pull request tested, and
           # the lanes were skipped for it: said by the comparison itself, and
           # only when the comparison succeeded.
