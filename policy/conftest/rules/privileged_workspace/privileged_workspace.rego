@@ -16,7 +16,7 @@ moves_workspace := `\bgit\b[^\n;&|]*\s(checkout|switch|reset|restore|pull|merge|
 # No workflow need run on a privileged trigger. What must hold is that the
 # triggers were read at all: a reading that finds none finds nothing to refuse.
 read contains trigger if {
-	some _, doc in lib.workflows
+	some doc in lib.workflows
 	some trigger in lib.triggers(doc)
 }
 
