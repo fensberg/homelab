@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: supplier_actions
+file: scripts/approved-suppliers.yml
+find: "action: actions/setup-node"
+replace: "action: actions/setup-nodes"
+mentions: "uses actions/setup-node, which is not in the approved suppliers list"
+why: >
+  An action a workflow uses and the list does not name is refused by GitHub
+  only once a job asks for it, after the merge. The rule refuses it in the
+  pull request, and a new action becomes a change to the list.

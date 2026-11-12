@@ -1,0 +1,11 @@
+guard: TestTheConfigurationRulesHold
+rule: supplier_actions
+file: policy/conftest/lib/lib.rego
+find: "\tnot startswith(ref, \"$/\")\n"
+replace: "\tref != \"\"\n"
+mentions: "a workflow uses $/.github, which is not in the approved suppliers list"
+why: >
+  The repository's own actions are named `$/` and are not supplied by
+  anybody. Taken for outside actions, every job's Mobilize step would be
+  held to the suppliers list as if from another repository, so the
+  exclusion is what lets the list name only what comes from outside.

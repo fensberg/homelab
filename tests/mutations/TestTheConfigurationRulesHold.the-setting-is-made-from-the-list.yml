@@ -1,0 +1,12 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_allowed_actions
+file: scripts/approved-suppliers.yml
+find: "action: pnpm/action-setup"
+replace: "action: pnpm/action-set-up"
+mentions: "uses pnpm/action-setup, which it would refuse"
+why: >
+  The repository's allowed-actions setting is made from the suppliers list,
+  so a mistyped entry there is an action GitHub refuses after the merge, as
+  a job that never starts. The estate's plan is made again when the list
+  changes, though the list is outside the estate's directory, and the rule
+  judges what the setting would be.

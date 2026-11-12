@@ -89,6 +89,57 @@ func TestAPinnedPlanIsKeptByItsReleaseAndTheRoots(t *testing.T) {
 	}
 }
 
+// A file the OpenTofu reads by a path written from its own directory is
+// what the plan is made from, wherever in the repository it is: a root's,
+// whichever modules are planned, and a module's only with the checkout's.
+func TestAFileTheOpenTofuReadsIsWhatThePlanIsMadeFrom(t *testing.T) {
+	tree := planned(t)
+	tree.Write(t, "management/somewhere/picks.tf", `locals {
+  listed = yamldecode(file("${path.module}/../../lists/listed.yml"))
+  handed = file(var.handed)
+  beyond = file("${path.module}/../../../outside")
+}
+`)
+	tree.Write(t, "modules/something/picks.tf", `locals {
+  pinned = file("${path.module}/../../lists/pinned.env")
+}
+`)
+	tree.Write(t, "lists/listed.yml", "a: 1\n")
+	tree.Write(t, "lists/pinned.env", "A=1\n")
+	tree.Index(t)
+	key := func(revision string) string {
+		t.Helper()
+		k, err := tree.planKey(t, "site0", revision)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return k
+	}
+	checkout, pinned := key(""), key("aaaa")
+	tree.Write(t, "lists/listed.yml", "a: 2\n")
+	tree.Index(t)
+	if key("") == checkout || key("aaaa") == pinned {
+		t.Error("a change to a file a root reads kept a plan's old key")
+	}
+	checkout, pinned = key(""), key("aaaa")
+	tree.Write(t, "lists/pinned.env", "A=2\n")
+	tree.Index(t)
+	if key("") == checkout {
+		t.Error("a change to a file the checkout's module reads kept the old key")
+	}
+	if key("aaaa") != pinned {
+		t.Error("a change to a file the checkout's module reads gave a pinned plan a new key, though it plans with the release's")
+	}
+	reads := map[string]string{}
+	for _, read := range tree.readByPath(t) {
+		reads[read.File] = read.By
+	}
+	want := map[string]string{"lists/listed.yml": "management/somewhere/picks.tf", "lists/pinned.env": "modules/something/picks.tf"}
+	if len(reads) != len(want) || reads["lists/listed.yml"] != want["lists/listed.yml"] || reads["lists/pinned.env"] != want["lists/pinned.env"] {
+		t.Errorf("the files read were %v; want %v, and neither a path handed in nor one beyond the repository", reads, want)
+	}
+}
+
 // Kept plans are a site's every root, or none: a plan of some of its roots
 // is not its plan.
 func TestKeptPlansAreEveryRootOrNone(t *testing.T) {

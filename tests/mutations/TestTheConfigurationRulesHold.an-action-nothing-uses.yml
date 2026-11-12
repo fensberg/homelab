@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: supplier_actions
+file: .github/workflows/scorecard.yml
+find: "uses: ossf/scorecard-action@"
+replace: "uses: ossf/scorecard-actions@"
+mentions: "names ossf/scorecard-action, which no workflow uses"
+why: >
+  An entry nothing uses widens what GitHub lets run beyond what the jobs
+  run. Every entry must be used, so an action dropped from the workflows
+  comes off the list.

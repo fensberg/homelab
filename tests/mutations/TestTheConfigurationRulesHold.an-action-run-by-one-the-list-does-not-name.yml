@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: supplier_actions
+file: scripts/approved-suppliers.yml
+find: "called_by: [aquasecurity/trivy-action]"
+replace: "called_by: [aquasecurity/trivy-scan]"
+mentions: "says aquasecurity/trivy-scan runs aquasecurity/setup-trivy, but does not name aquasecurity/trivy-scan itself"
+why: >
+  An action only another action runs is listed for that action, and stands
+  only while it does. A caller named wrongly would keep the entry on the list
+  with nothing holding it there.

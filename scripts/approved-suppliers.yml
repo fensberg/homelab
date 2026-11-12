@@ -40,6 +40,9 @@
 #                 repository. policy/conftest/rules/suppliers/suppliers.rego fails the build.
 #   Catches:      a workflow inventing its own egress endpoint instead of
 #                 declaring it here.
+#   Catches:      a GitHub Action a workflow uses that is not declared here.
+#                 GitHub itself refuses it too: the repository's
+#                 allowed-actions setting is made from the actions section.
 #   DOES NOT      a command pasted into a terminal. Nothing in CI can see that.
 #   CATCH:        Only cluster admission control can refuse it, which is a
 #                 separate piece of work - see the epoch record.
@@ -1640,6 +1643,71 @@ hooks:
     reason: >-
       The commit-msg hook that enforces conventional commits, and with them the
       rule that refuses a Claude co-authorship trailer.
+
+# GitHub Actions: code that runs inside a job, with the job's token and
+# whatever the job can reach.
+#
+# Every action any job runs, GitHub's own included, by owner/repository.
+# The repository's allowed-actions setting is made from this list, in
+# management/estate/repository, and allows nothing else: an action that is
+# not here is refused by GitHub before a line of it runs, whoever wrote the
+# workflow. Each is also pinned to a full commit where it is used, which the
+# same setting requires.
+#
+# called_by names the actions that run this one themselves, from their own
+# code, rather than a workflow here: GitHub holds those to this list too.
+# policy/conftest/rules/supplier_actions refuses an action a workflow uses
+# that is not here, and an entry nothing uses.
+#
+# Dependabot's own jobs are not held by the setting: GitHub runs them past it.
+actions:
+  - action: actions/checkout
+    reason: >-
+      Checks out the commit a job is for. Every job's first step, through
+      Mobilize.
+  - action: actions/cache
+    called_by: [aquasecurity/trivy-action, aquasecurity/setup-trivy]
+    reason: >-
+      Keeps Trivy and its vulnerability database between runs. Run by the
+      Trivy actions, not by a workflow here.
+  - action: actions/create-github-app-token
+    reason: >-
+      Turns an App's key into a token that lasts an hour, for the few jobs
+      that write to the repository. Octo STS is to replace it, along with
+      the stored keys.
+  - action: actions/dependency-review-action
+    reason: >-
+      Refuses a pull request that brings in a dependency with a known
+      vulnerability or a licence the estate does not take.
+  - action: actions/download-artifact
+    reason: Hands a file one job made to a later job in the same run.
+  - action: actions/github-script
+    reason: >-
+      Calls GitHub's API from a step, for the jobs that read or write a pull
+      request, a check or an issue.
+  - action: actions/setup-go
+    reason: Installs the pinned Go for the jobs that build or test Go.
+  - action: actions/setup-node
+    reason: Installs the pinned Node for the jobs that run the TypeScript tests.
+  - action: actions/upload-artifact
+    reason: Keeps a file a job made, for a later job or for a person to read.
+  - action: aquasecurity/setup-trivy
+    called_by: [aquasecurity/trivy-action]
+    reason: Installs Trivy. Run by trivy-action, not by a workflow here.
+  - action: aquasecurity/trivy-action
+    reason: >-
+      Scans the repository for vulnerable dependencies and wrong
+      configuration, by the people who make Trivy.
+  - action: github/codeql-action
+    reason: >-
+      CodeQL's analysis, and the upload that puts every scanner's findings in
+      the repository's code scanning.
+  - action: ossf/scorecard-action
+    reason: >-
+      The OpenSSF Scorecard: scores the repository's own supply-chain
+      practices, from the foundation that publishes the measure.
+  - action: pnpm/action-setup
+    reason: Installs the pinned pnpm for the jobs that install the Node packages.
 
 exemptions: []
 

@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_allowed_actions
+file: management/estate/repository/workflows.tf
+find: "github_owned_allowed = false"
+replace: "github_owned_allowed = true"
+mentions: "every action GitHub publishes"
+why: >
+  One word lets in every action under GitHub's own organisations, listed
+  nowhere and with no reason, beside the list. The platform says nothing
+  when it is set.
