@@ -175,6 +175,10 @@ unprovable:
     reason: table
   - test: TestARunProvesTheWholeLedgerOrTheChangeItCanRead
     reason: table
+  # Its two lists are what every check runs in, found from the repository,
+  # and what is not: each entry fails if the environment stops holding it.
+  - test: TestWhatEveryCheckRunsInReachesTheWholeLedger
+    reason: table
   # The reader behind TestNoCodePicksASiteByName, whose own ledger entry
   # proves the guard. Its table holds the values it must find and the prose it
   # must leave.
