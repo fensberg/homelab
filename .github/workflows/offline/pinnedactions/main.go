@@ -34,6 +34,7 @@ import (
 	"os/exec"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -195,28 +196,25 @@ func uses(files ...string) ([]string, error) {
 	if err := json.Unmarshal(out, &docs); err != nil {
 		return nil, fmt.Errorf("conftest's reading is not JSON: %w", err)
 	}
-	found := map[string]bool{}
-	walk(docs, found)
-	named := []string{}
-	for ref := range found {
-		named = append(named, ref)
-	}
+	named := walk(docs, []string{})
 	sort.Strings(named)
-	return named, nil
+	return slices.Compact(named), nil
 }
 
-func walk(node any, found map[string]bool) {
+// walk appends to named every `uses:` under node.
+func walk(node any, named []string) []string {
 	switch v := node.(type) {
 	case map[string]any:
 		if ref, ok := v["uses"].(string); ok {
-			found[ref] = true
+			named = append(named, ref)
 		}
 		for _, child := range v {
-			walk(child, found)
+			named = walk(child, named)
 		}
 	case []any:
 		for _, child := range v {
-			walk(child, found)
+			named = walk(child, named)
 		}
 	}
+	return named
 }

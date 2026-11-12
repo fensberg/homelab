@@ -147,3 +147,13 @@ func TestAFailedFetchOrUnreadableMetadataStopsIt(t *testing.T) {
 		t.Errorf("metadata that is not YAML was taken as running nothing: %v", err)
 	}
 }
+
+// A source that does not answer is refused by name, the same as one that
+// answers without the action: neither is an action that runs nothing.
+func TestASourceThatDoesNotAnswerIsRefused(t *testing.T) {
+	ref := "owner/outer@" + outerSHA
+	_, err := metadata(client(), "unknown-scheme://nowhere", ref)
+	if err == nil || !strings.Contains(err.Error(), "no action.yml or action.yaml at "+ref) {
+		t.Errorf("a source that did not answer was not refused by name: %v", err)
+	}
+}
