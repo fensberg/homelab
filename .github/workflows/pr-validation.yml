@@ -864,50 +864,21 @@ jobs:
           # with the release it runs, read from that release's tag (#843).
           fetch-depth: 0
 
-      # Versions come from scripts/versions.env, which is the only place one
-      # is written. See .github/actions/versions for why this is a step
-      # rather than a setup job.
-      - name: Read pinned versions
-        uses: $/.github/actions/versions
-
-      - name: Setup Go
-        uses: $/.github/workflows/setup-go
-        with:
-          # tests/go is the only module here with dependencies to cache;
-          # scripts/contractor has none, so there is no go.sum of its own to key on.
-          cache-dependency-path: tests/go/go.sum
-
-      - name: Install OpenTofu, kustomize, Conftest, OPA and Semgrep
-        # The installer script from scripts/deliveries.lock by hash, run into
-        # directories the runner account owns - this job runs with sudo
-        # removed (#410). Until #416 the script was fetched and executed with
-        # nothing checking what arrived.
-        # Conftest and Semgrep run the configuration and code rules in
-        # policy/, which the guards here prove like any other
-        # (TestTheConfigurationRulesHold, TestTheCodeRulesHold), OPA reads
-        # the configuration rules themselves (TestOnlyTheSelectorsReadTheInput)
-        # and Regal lints them
-        # (TestTheConfigurationRulesAreWrittenAsTheirLinterWouldHaveThem).
-        run: scripts/take-delivery.sh opentofu kustomize conftest opa regal semgrep
-
-      # The plays are run here, not read: the machine roll against a cluster
-      # of Kubernetes' own store and API server, and the workstation's play
-      # against a stand-in hypervisor.
-      - name: Take delivery of what the plays are run with
-        run: scripts/take-delivery.sh kwokctl etcd kube-apiserver kubectl ansible-core ansible kubernetes
-
       # Every guard against a copy of the repository, and again against a copy
-      # without the application, which is why the plays' tools are taken above:
-      # the roll's guards run in those copies too.
+      # without the application, in the image the pull-request pools run and
+      # with no network: what the lockfiles name is fetched first, and the
+      # plays' tools are in the image (epoch 16, decision 16).
       - name: Removing an application breaks nothing outside it
-        working-directory: tests/go
+        uses: $/.github/workflows/offline
+        with:
+          # The copies are handed this -skip, so the tests of other lanes do
+          # not run in them. Without it they would run the coverage guard.
+          run: go test ./repo/ -run "$REMOVAL_TESTS" -skip "$META_TESTS|$OWN_LANE_TESTS"
+          # GOFLAGS: a ceiling for a stuck run, not the target. -v prints the
+          # guard's time, which is what says where the time went.
+          env: REMOVAL_TESTS META_TESTS OWN_LANE_TESTS GOFLAGS
         env:
-          # A ceiling for a stuck run, not the target. -v prints the guard's
-          # time, which is what says where the time went.
           GOFLAGS: -timeout=30m -v
-        # The copies are handed this -skip, so the tests of other lanes do not
-        # run in them. Without it they would run the coverage guard.
-        run: go test ./repo/ -run "$REMOVAL_TESTS" -skip "$META_TESTS|$OWN_LANE_TESTS"
 
   meta:
     # On a pull request, the proofs its change could alter; the whole ledger on
@@ -951,42 +922,17 @@ jobs:
           # with the release it runs, read from that release's tag (#843).
           fetch-depth: 0
 
-      # Versions come from scripts/versions.env, which is the only place one
-      # is written. See .github/actions/versions for why this is a step
-      # rather than a setup job.
-      - name: Read pinned versions
-        uses: $/.github/actions/versions
-
-      - name: Setup Go
-        uses: $/.github/workflows/setup-go
-        with:
-          # tests/go is the only module here with dependencies to cache;
-          # scripts/contractor has none, so there is no go.sum of its own to key on.
-          cache-dependency-path: tests/go/go.sum
-
-      - name: Install OpenTofu, kustomize, Conftest, OPA and Semgrep
-        # The installer script from scripts/deliveries.lock by hash, run into
-        # directories the runner account owns - this job runs with sudo
-        # removed (#410). Until #416 the script was fetched and executed with
-        # nothing checking what arrived.
-        # Conftest and Semgrep run the configuration and code rules in
-        # policy/, which the guards here prove like any other
-        # (TestTheConfigurationRulesHold, TestTheCodeRulesHold), OPA reads
-        # the configuration rules themselves (TestOnlyTheSelectorsReadTheInput)
-        # and Regal lints them
-        # (TestTheConfigurationRulesAreWrittenAsTheirLinterWouldHaveThem).
-        run: scripts/take-delivery.sh opentofu kustomize conftest opa regal semgrep
-
-      # A proof runs its guard, and the plays' guards run the plays.
-      - name: Take delivery of what the plays are run with
-        run: scripts/take-delivery.sh kwokctl etcd kube-apiserver kubectl ansible-core ansible kubernetes
-
       # The test that proves the other tests: the mutation ledger breaks each
       # guarded file and checks its guard fails. It re-runs a large part of
       # the tier, so it was about half its time, and here it runs beside it
-      # instead of after it.
+      # instead of after it. In the image the pull-request pools run and with
+      # no network: what the lockfiles name is fetched first, and the tools
+      # each proof's guard runs are in the image (epoch 16, decision 16).
       - name: Prove the guards fail when they should
-        working-directory: tests/go
+        uses: $/.github/workflows/offline
+        with:
+          run: go test ./repo/ -run "$META_TESTS"
+          env: META_TESTS GOFLAGS META_PART PROOFS_CHANGED_SINCE
         env:
           # Go's default of ten minutes is not a budget anybody set, and the
           # two tests together passed it on #779 while the ledger was being
@@ -998,7 +944,6 @@ jobs:
           META_PART: ${{ strategy.job-total > 1 && format('{0}/{1}', strategy.job-index, strategy.job-total) || '' }}
           # What this run compares itself with; empty for the whole ledger.
           PROOFS_CHANGED_SINCE: ${{ needs.main-failing.outputs.mutation != 'true' && (github.event.pull_request.base.sha || github.event.merge_group.base_sha) || '' }}
-        run: go test ./repo/ -run "$META_TESTS"
 
   test-js:
     # Skipped, which the queue reads as passed, when the queue would land

@@ -1,0 +1,149 @@
+# How a job runs a check with no network: epoch 16, decision 16 (#795).
+#
+#   - uses: $/.github/workflows/offline
+#     with:
+#       run: go test ./repo/ -run "$META_TESTS"
+#       env: META_TESTS GOFLAGS
+#
+# Two halves, and only the first has a network.
+#
+# FETCH. What the lockfiles name and nothing else: the Go modules
+# tests/go's go.sum names, and the OpenTofu providers each tracked
+# .terraform.lock.hcl names, at the versions and hashes it holds. Both are
+# fetched by the tools themselves - `go mod download`, `tofu providers
+# mirror` - and neither runs a line of the pull request's code: a module is
+# downloaded and checked against go.sum, not built, and a provider is
+# downloaded and checked against its lock, not run. The configuration the
+# providers are mirrored from is written here, out of each lock, rather than
+# read from the roots: a root names its modules by a value worked out when it
+# is planned, which a mirror cannot.
+#
+# CHECK. The command, in the same image, with `docker run --network none`:
+# no interface but loopback, so nothing the pull request's code does can
+# reach anything. It reads the checkout, the modules and the providers, and
+# writes only into the checkout and this run's own directories.
+#
+# THE IMAGE is the one the pull-request pools run, by the digest the builds
+# pool is pinned to: built by the fabricator from main, and named in git, so
+# what a check ran in is what a reviewer read. A pull request never builds
+# the environment it is judged in; one that changes the image is checked in
+# main's until #877. It is public, so pulling it needs no credential.
+#
+# WHAT IS HANDED IN. The checkout, at the path it has on the runner, so
+# what the tests print names the files where a reader finds them. The
+# variables `env` names, and the few every check needs, set here. Nothing
+# else from the runner's environment: the check sees what it is given.
+#
+# WHY IT LIVES UNDER .github/workflows. It decides what a pull request's code
+# may reach, so it sits behind the same `workflows` permission Mobilize does,
+# and the agent does not hold.
+name: "Offline"
+description: >-
+  Fetch what the lockfiles name, then run a check with no network, in the
+  image the pull-request pools run.
+
+inputs:
+  run:
+    description: The command to run with no network, in tests/go.
+    required: true
+  env:
+    description: >-
+      The variables of the job to hand to the command, by name, separated by
+      spaces. Only these reach it.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Find the image the pull-request pools run
+      id: image
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Every HelmRelease of the builds pool the Flux tree holds, by what
+        # it is, wherever it is; exactly one, and one image in it.
+        mapfile -t found < <(git ls-files -z -- 'clusters/*.yaml' | xargs -0 yq ea -N \
+          'select(.kind == "HelmRelease" and .metadata.name == "pull-requests-builds") | .spec.values.template.spec.containers[] | select(.name == "runner") | .image')
+        if [ "${#found[@]}" -ne 1 ] || [[ ! "${found[0]}" =~ ^ghcr\.io/[a-z0-9./-]+@sha256:[0-9a-f]{64}$ ]]; then
+          echo "::error::offline found ${#found[@]} runner image(s) for the builds pool where it needs exactly one, pinned by digest: ${found[*]:-none}"
+          exit 1
+        fi
+        echo "ref=${found[0]}" >> "$GITHUB_OUTPUT"
+
+    - name: Take delivery of the image
+      shell: bash
+      env:
+        IMAGE: ${{ steps.image.outputs.ref }}
+      run: docker pull --quiet "$IMAGE"
+
+    - name: Fetch what the lockfiles name
+      shell: bash
+      env:
+        IMAGE: ${{ steps.image.outputs.ref }}
+        OFFLINE: ${{ runner.temp }}/offline
+      run: |
+        set -euo pipefail
+        mkdir -p "$OFFLINE/go" "$OFFLINE/providers" "$OFFLINE/locks" "$OFFLINE/cache"
+        # A configuration per lock, requiring exactly what the lock holds: two
+        # roots may lock one provider at two versions, which one configuration
+        # cannot ask for.
+        n=0
+        while IFS= read -r -d '' lock; do
+          n=$((n + 1))
+          dir="$OFFLINE/locks/$n"
+          mkdir -p "$dir"
+          cp "$lock" "$dir/.terraform.lock.hcl"
+          awk '
+            BEGIN { print "terraform {\n  required_providers {" }
+            /^provider "/ { src = $2; gsub(/"/, "", src); k = split(src, part, "/"); name = part[k] }
+            /^  version *=/ { v = $3; gsub(/"/, "", v); printf "    %s = { source = \"%s\", version = \"= %s\" }\n", name, src, v }
+            END { print "  }\n}" }
+          ' "$lock" > "$dir/main.tf"
+        done < <(git ls-files -z -- '*.terraform.lock.hcl')
+        if [ "$n" -eq 0 ]; then
+          echo "::error::offline found no provider lock, so it fetched no provider and every plan would fail with no network to fetch one"
+          exit 1
+        fi
+        echo "providers: ${n} lock(s)"
+        docker run --rm \
+          -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE:ro" -v "$OFFLINE:$OFFLINE" \
+          -w "$GITHUB_WORKSPACE/tests/go" \
+          -e GOMODCACHE="$OFFLINE/go" -e GOCACHE="$OFFLINE/cache/go-build" -e GOTOOLCHAIN=local -e GOFLAGS=-mod=readonly \
+          -e OFFLINE="$OFFLINE" \
+          "$IMAGE" bash -euo pipefail -c '
+            go mod download
+            for dir in "$OFFLINE"/locks/*/; do
+              tofu -chdir="$dir" providers mirror -platform=linux_amd64 "$OFFLINE/providers" >/dev/null
+            done'
+        printf 'provider_installation {\n  filesystem_mirror {\n    path = "%s"\n  }\n}\n' "$OFFLINE/providers" > "$OFFLINE/tofurc"
+
+    - name: Run the check with no network
+      shell: bash
+      env:
+        IMAGE: ${{ steps.image.outputs.ref }}
+        OFFLINE: ${{ runner.temp }}/offline
+        COMMAND: ${{ inputs.run }}
+        NAMES: ${{ inputs.env }}
+      run: |
+        set -euo pipefail
+        handed=()
+        for name in $NAMES; do
+          if [[ ! "$name" =~ ^[A-Z][A-Z0-9_]*$ ]]; then
+            echo "::error::offline hands a variable in by its name, and '$name' is not one"
+            exit 1
+          fi
+          handed+=(-e "$name")
+        done
+        summary=()
+        if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+          summary=(-v "$GITHUB_STEP_SUMMARY:$GITHUB_STEP_SUMMARY" -e GITHUB_STEP_SUMMARY)
+        fi
+        docker run --rm --network none \
+          -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -v "$OFFLINE:$OFFLINE" "${summary[@]}" \
+          -w "$GITHUB_WORKSPACE/tests/go" \
+          -e GOMODCACHE="$OFFLINE/go" -e GOCACHE="$OFFLINE/cache/go-build" -e GOTOOLCHAIN=local \
+          -e GOPROXY=off -e GOFLAGS -e XDG_CACHE_HOME="$OFFLINE/cache" \
+          -e TF_CLI_CONFIG_FILE="$OFFLINE/tofurc" -e CI=true \
+          "${handed[@]}" \
+          "$IMAGE" bash -euo pipefail -c "$COMMAND"
