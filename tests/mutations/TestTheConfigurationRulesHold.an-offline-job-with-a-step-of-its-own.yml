@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: offline_jobs
+file: .github/workflows/pr-validation.yml
+find: "      - name: Prove the guards fail when they should\n        uses: $/.github/workflows/offline\n"
+replace: "      - name: Take delivery on the runner\n        run: go mod download\n\n      - name: Prove the guards fail when they should\n        uses: $/.github/workflows/offline\n"
+mentions: "pr-validation.yml/meta is offline, and its step 2 (Take delivery on the runner) runs on the runner"
+why: >
+  A step of an offline job's own runs on the runner, which has a network:
+  the pull request's code it runs could reach anything. The plausible way
+  there is a setup step put back beside the check.

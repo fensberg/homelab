@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+rule: offline_jobs
+file: scripts/approved-suppliers.yml
+find: "  - job: pr-validation.yml/meta\n    policy: offline\n"
+replace: "  - job: pr-validation.yml/ledger\n    policy: offline\n"
+mentions: "declares pr-validation.yml/ledger offline, and no workflow has that job"
+why: >
+  A job renamed in the workflow and not in the list is no longer held to
+  running offline: its entry names nothing and the job is under no entry.

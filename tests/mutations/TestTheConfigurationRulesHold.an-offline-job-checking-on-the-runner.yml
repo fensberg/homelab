@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+rule: offline_jobs
+file: .github/workflows/pr-validation.yml
+find: "      - name: Removing an application breaks nothing outside it\n        uses: $/.github/workflows/offline\n        with:\n"
+replace: "      - name: Removing an application breaks nothing outside it\n        uses: $/.github/workflows/checkout\n        with:\n"
+mentions: "pr-validation.yml/removal is offline, and no step of it runs $/.github/workflows/offline"
+why: >
+  An offline job whose check is handed to another action is not run with
+  no network at all, though the list says it is.

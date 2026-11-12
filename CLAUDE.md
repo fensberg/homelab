@@ -571,7 +571,12 @@ depends on it and uses them.
   (#725, #791) and left others GitHub never heard finish, and on the estate's
   runners it never held anything (#411). The gap is accepted and recorded
   (#795) until epoch 16, decision 16 closes it, by running a pull request's
-  code with no network at all.
+  code with no network at all. That has begun: a job the suppliers list
+  declares `offline` fetches what its lockfiles name, then runs its check
+  through `$/.github/workflows/offline`, in the image the pull-request pools
+  run, with `docker run --network none`. The ledger and the removal check are
+  the first; `policy/conftest/rules/offline_jobs` refuses a step of such a
+  job's own, which would run on the runner with a network.
 
   **Which job may reach what is declared once**, in
   `scripts/approved-suppliers.yml` under `egress:`: one entry per job, carrying
