@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+rule: supplier_actions
+file: .github/workflows/setup-go/action.yml
+find: "uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e"
+replace: "uses: actions/setup-go@0000000000000000000000000000000000000000"
+mentions: "actions/setup-go@0000000000000000000000000000000000000000 is pinned here and was not fetched"
+why: >
+  An action pinned to a commit nothing fetched runs whatever that commit
+  runs, unchecked. A bump the fetch did not see is the plausible way there.

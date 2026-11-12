@@ -223,6 +223,18 @@ rendered_layers contains [f.path, f.contents.layer, f.contents.documents] if {
 	is_array(f.contents.documents)
 }
 
+# pinned_actions is what each action this repository pins runs in turn, at
+# the commit it is pinned to, as .github/workflows/offline/pinned-actions.sh
+# fetched it before the check: {"owner/repo[/path]@sha": [what it runs]}.
+# The rule harness hands it in from PINNED_ACTIONS. Empty when nothing was.
+default pinned_actions := {}
+
+pinned_actions := f.contents.pinned_actions if {
+	some f in input
+	is_object(f.contents)
+	is_object(f.contents.pinned_actions)
+}
+
 # workflows is every workflow, by its path: a YAML file directly under
 # .github/workflows.
 workflows[f.path] := f.contents if {

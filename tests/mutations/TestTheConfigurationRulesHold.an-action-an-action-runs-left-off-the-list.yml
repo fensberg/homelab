@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: supplier_actions
+file: scripts/approved-suppliers.yml
+find: 'paths: [".", restore, save]'
+replace: 'paths: [".", save]'
+mentions: "aquasecurity/setup-trivy runs actions/cache/restore, which is not in the approved suppliers list"
+why: >
+  An action another action runs is refused by GitHub when the job is set
+  up, after the merge, on every pull request at once - as
+  actions/cache/restore was the day the list was first applied (#880).

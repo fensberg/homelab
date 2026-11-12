@@ -288,6 +288,11 @@ func madeFrom(p string) string {
 			return place("opentofu", "")
 		}
 	}
+	// What the pinned actions run is fetched for the actions the workflows
+	// and this repository's own actions name.
+	if p == place("pinned_actions", "") {
+		return place("runnable", "")
+	}
 	// What Flux applies is rendered from the manifests, the same way.
 	if p == place("rendered_layers", "") {
 		return place("objects", "")

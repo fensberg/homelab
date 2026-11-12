@@ -76,6 +76,7 @@ func TestHeavyGuardsRunOnEveryPullRequest(t *testing.T) {
 				Dir  string `yaml:"working-directory"`
 				With struct {
 					Run string `yaml:"run"`
+					Dir string `yaml:"working-directory"`
 				} `yaml:"with"`
 			} `yaml:"steps"`
 		} `yaml:"jobs"`
@@ -96,11 +97,11 @@ func TestHeavyGuardsRunOnEveryPullRequest(t *testing.T) {
 		for _, step := range job.Steps {
 			// The command a step runs: its own, or the one it hands an action
 			// to run - .github/workflows/offline runs it with no network.
-			run := strings.TrimSpace(step.Run)
+			run, dir := strings.TrimSpace(step.Run), step.Dir
 			if run == "" {
-				run = strings.TrimSpace(step.With.Run)
+				run, dir = strings.TrimSpace(step.With.Run), step.With.Dir
 			}
-			if m := fullRun.FindStringSubmatch(run); step.Dir == "tests/go" && m != nil {
+			if m := fullRun.FindStringSubmatch(run); dir == "tests/go" && m != nil {
 				full = true
 				for _, v := range strings.Split(m[1], "|") {
 					if v != "" {
