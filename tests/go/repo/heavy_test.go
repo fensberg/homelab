@@ -72,8 +72,11 @@ func TestHeavyGuardsRunOnEveryPullRequest(t *testing.T) {
 		Env  map[string]string `yaml:"env"`
 		Jobs map[string]struct {
 			Steps []struct {
-				Run string `yaml:"run"`
-				Dir string `yaml:"working-directory"`
+				Run  string `yaml:"run"`
+				Dir  string `yaml:"working-directory"`
+				With struct {
+					Run string `yaml:"run"`
+				} `yaml:"with"`
 			} `yaml:"steps"`
 		} `yaml:"jobs"`
 	}
@@ -91,7 +94,12 @@ func TestHeavyGuardsRunOnEveryPullRequest(t *testing.T) {
 	ranBy := map[string]bool{}
 	for _, job := range wf.Jobs {
 		for _, step := range job.Steps {
+			// The command a step runs: its own, or the one it hands an action
+			// to run - .github/workflows/offline runs it with no network.
 			run := strings.TrimSpace(step.Run)
+			if run == "" {
+				run = strings.TrimSpace(step.With.Run)
+			}
 			if m := fullRun.FindStringSubmatch(run); step.Dir == "tests/go" && m != nil {
 				full = true
 				for _, v := range strings.Split(m[1], "|") {
@@ -103,7 +111,7 @@ func TestHeavyGuardsRunOnEveryPullRequest(t *testing.T) {
 			if m := laneRun.FindStringSubmatch(run); m != nil {
 				ranBy[m[1]] = true
 			}
-			for _, line := range strings.Split(step.Run, "\n") {
+			for _, line := range strings.Split(run, "\n") {
 				if strings.Contains(line, "go test") && strings.Contains(line, "-short") {
 					t.Errorf("pr-validation.yml runs Go tests with -short: %s\n\n"+
 						"-short is the push budget, and the pull request is where the heavy guards "+

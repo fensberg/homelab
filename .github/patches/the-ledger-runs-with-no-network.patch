@@ -1,0 +1,310 @@
+diff --git a/.github/workflows/offline/action.yml b/.github/workflows/offline/action.yml
+new file mode 100644
+index 00000000..c1fb028f
+--- /dev/null
++++ b/.github/workflows/offline/action.yml
+@@ -0,0 +1,149 @@
++# How a job runs a check with no network: epoch 16, decision 16 (#795).
++#
++#   - uses: $/.github/workflows/offline
++#     with:
++#       run: go test ./repo/ -run "$META_TESTS"
++#       env: META_TESTS GOFLAGS
++#
++# Two halves, and only the first has a network.
++#
++# FETCH. What the lockfiles name and nothing else: the Go modules
++# tests/go's go.sum names, and the OpenTofu providers each tracked
++# .terraform.lock.hcl names, at the versions and hashes it holds. Both are
++# fetched by the tools themselves - `go mod download`, `tofu providers
++# mirror` - and neither runs a line of the pull request's code: a module is
++# downloaded and checked against go.sum, not built, and a provider is
++# downloaded and checked against its lock, not run. The configuration the
++# providers are mirrored from is written here, out of each lock, rather than
++# read from the roots: a root names its modules by a value worked out when it
++# is planned, which a mirror cannot.
++#
++# CHECK. The command, in the same image, with `docker run --network none`:
++# no interface but loopback, so nothing the pull request's code does can
++# reach anything. It reads the checkout, the modules and the providers, and
++# writes only into the checkout and this run's own directories.
++#
++# THE IMAGE is the one the pull-request pools run, by the digest the builds
++# pool is pinned to: built by the fabricator from main, and named in git, so
++# what a check ran in is what a reviewer read. A pull request never builds
++# the environment it is judged in; one that changes the image is checked in
++# main's until #877. It is public, so pulling it needs no credential.
++#
++# WHAT IS HANDED IN. The checkout, at the path it has on the runner, so
++# what the tests print names the files where a reader finds them. The
++# variables `env` names, and the few every check needs, set here. Nothing
++# else from the runner's environment: the check sees what it is given.
++#
++# WHY IT LIVES UNDER .github/workflows. It decides what a pull request's code
++# may reach, so it sits behind the same `workflows` permission Mobilize does,
++# and the agent does not hold.
++name: "Offline"
++description: >-
++  Fetch what the lockfiles name, then run a check with no network, in the
++  image the pull-request pools run.
++
++inputs:
++  run:
++    description: The command to run with no network, in tests/go.
++    required: true
++  env:
++    description: >-
++      The variables of the job to hand to the command, by name, separated by
++      spaces. Only these reach it.
++    required: false
++    default: ""
++
++runs:
++  using: composite
++  steps:
++    - name: Find the image the pull-request pools run
++      id: image
++      shell: bash
++      run: |
++        set -euo pipefail
++        # Every HelmRelease of the builds pool the Flux tree holds, by what
++        # it is, wherever it is; exactly one, and one image in it.
++        mapfile -t found < <(git ls-files -z -- 'clusters/*.yaml' | xargs -0 yq ea -N \
++          'select(.kind == "HelmRelease" and .metadata.name == "pull-requests-builds") | .spec.values.template.spec.containers[] | select(.name == "runner") | .image')
++        if [ "${#found[@]}" -ne 1 ] || [[ ! "${found[0]}" =~ ^ghcr\.io/[a-z0-9./-]+@sha256:[0-9a-f]{64}$ ]]; then
++          echo "::error::offline found ${#found[@]} runner image(s) for the builds pool where it needs exactly one, pinned by digest: ${found[*]:-none}"
++          exit 1
++        fi
++        echo "ref=${found[0]}" >> "$GITHUB_OUTPUT"
++
++    - name: Take delivery of the image
++      shell: bash
++      env:
++        IMAGE: ${{ steps.image.outputs.ref }}
++      run: docker pull --quiet "$IMAGE"
++
++    - name: Fetch what the lockfiles name
++      shell: bash
++      env:
++        IMAGE: ${{ steps.image.outputs.ref }}
++        OFFLINE: ${{ runner.temp }}/offline
++      run: |
++        set -euo pipefail
++        mkdir -p "$OFFLINE/go" "$OFFLINE/providers" "$OFFLINE/locks" "$OFFLINE/cache"
++        # A configuration per lock, requiring exactly what the lock holds: two
++        # roots may lock one provider at two versions, which one configuration
++        # cannot ask for.
++        n=0
++        while IFS= read -r -d '' lock; do
++          n=$((n + 1))
++          dir="$OFFLINE/locks/$n"
++          mkdir -p "$dir"
++          cp "$lock" "$dir/.terraform.lock.hcl"
++          awk '
++            BEGIN { print "terraform {\n  required_providers {" }
++            /^provider "/ { src = $2; gsub(/"/, "", src); k = split(src, part, "/"); name = part[k] }
++            /^  version *=/ { v = $3; gsub(/"/, "", v); printf "    %s = { source = \"%s\", version = \"= %s\" }\n", name, src, v }
++            END { print "  }\n}" }
++          ' "$lock" > "$dir/main.tf"
++        done < <(git ls-files -z -- '*.terraform.lock.hcl')
++        if [ "$n" -eq 0 ]; then
++          echo "::error::offline found no provider lock, so it fetched no provider and every plan would fail with no network to fetch one"
++          exit 1
++        fi
++        echo "providers: ${n} lock(s)"
++        docker run --rm \
++          -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE:ro" -v "$OFFLINE:$OFFLINE" \
++          -w "$GITHUB_WORKSPACE/tests/go" \
++          -e GOMODCACHE="$OFFLINE/go" -e GOCACHE="$OFFLINE/cache/go-build" -e GOTOOLCHAIN=local -e GOFLAGS=-mod=readonly \
++          -e OFFLINE="$OFFLINE" \
++          "$IMAGE" bash -euo pipefail -c '
++            go mod download
++            for dir in "$OFFLINE"/locks/*/; do
++              tofu -chdir="$dir" providers mirror -platform=linux_amd64 "$OFFLINE/providers" >/dev/null
++            done'
++        printf 'provider_installation {\n  filesystem_mirror {\n    path = "%s"\n  }\n}\n' "$OFFLINE/providers" > "$OFFLINE/tofurc"
++
++    - name: Run the check with no network
++      shell: bash
++      env:
++        IMAGE: ${{ steps.image.outputs.ref }}
++        OFFLINE: ${{ runner.temp }}/offline
++        COMMAND: ${{ inputs.run }}
++        NAMES: ${{ inputs.env }}
++      run: |
++        set -euo pipefail
++        handed=()
++        for name in $NAMES; do
++          if [[ ! "$name" =~ ^[A-Z][A-Z0-9_]*$ ]]; then
++            echo "::error::offline hands a variable in by its name, and '$name' is not one"
++            exit 1
++          fi
++          handed+=(-e "$name")
++        done
++        summary=()
++        if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
++          summary=(-v "$GITHUB_STEP_SUMMARY:$GITHUB_STEP_SUMMARY" -e GITHUB_STEP_SUMMARY)
++        fi
++        docker run --rm --network none \
++          -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -v "$OFFLINE:$OFFLINE" "${summary[@]}" \
++          -w "$GITHUB_WORKSPACE/tests/go" \
++          -e GOMODCACHE="$OFFLINE/go" -e GOCACHE="$OFFLINE/cache/go-build" -e GOTOOLCHAIN=local \
++          -e GOPROXY=off -e GOFLAGS -e XDG_CACHE_HOME="$OFFLINE/cache" \
++          -e TF_CLI_CONFIG_FILE="$OFFLINE/tofurc" -e CI=true \
++          "${handed[@]}" \
++          "$IMAGE" bash -euo pipefail -c "$COMMAND"
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index 8259b63b..3b79e0b7 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -864,50 +864,21 @@ jobs:
+           # with the release it runs, read from that release's tag (#843).
+           fetch-depth: 0
+ 
+-      # Versions come from scripts/versions.env, which is the only place one
+-      # is written. See .github/actions/versions for why this is a step
+-      # rather than a setup job.
+-      - name: Read pinned versions
+-        uses: $/.github/actions/versions
+-
+-      - name: Setup Go
+-        uses: $/.github/workflows/setup-go
+-        with:
+-          # tests/go is the only module here with dependencies to cache;
+-          # scripts/contractor has none, so there is no go.sum of its own to key on.
+-          cache-dependency-path: tests/go/go.sum
+-
+-      - name: Install OpenTofu, kustomize, Conftest, OPA and Semgrep
+-        # The installer script from scripts/deliveries.lock by hash, run into
+-        # directories the runner account owns - this job runs with sudo
+-        # removed (#410). Until #416 the script was fetched and executed with
+-        # nothing checking what arrived.
+-        # Conftest and Semgrep run the configuration and code rules in
+-        # policy/, which the guards here prove like any other
+-        # (TestTheConfigurationRulesHold, TestTheCodeRulesHold), OPA reads
+-        # the configuration rules themselves (TestOnlyTheSelectorsReadTheInput)
+-        # and Regal lints them
+-        # (TestTheConfigurationRulesAreWrittenAsTheirLinterWouldHaveThem).
+-        run: scripts/take-delivery.sh opentofu kustomize conftest opa regal semgrep
+-
+-      # The plays are run here, not read: the machine roll against a cluster
+-      # of Kubernetes' own store and API server, and the workstation's play
+-      # against a stand-in hypervisor.
+-      - name: Take delivery of what the plays are run with
+-        run: scripts/take-delivery.sh kwokctl etcd kube-apiserver kubectl ansible-core ansible kubernetes
+-
+       # Every guard against a copy of the repository, and again against a copy
+-      # without the application, which is why the plays' tools are taken above:
+-      # the roll's guards run in those copies too.
++      # without the application, in the image the pull-request pools run and
++      # with no network: what the lockfiles name is fetched first, and the
++      # plays' tools are in the image (epoch 16, decision 16).
+       - name: Removing an application breaks nothing outside it
+-        working-directory: tests/go
++        uses: $/.github/workflows/offline
++        with:
++          # The copies are handed this -skip, so the tests of other lanes do
++          # not run in them. Without it they would run the coverage guard.
++          run: go test ./repo/ -run "$REMOVAL_TESTS" -skip "$META_TESTS|$OWN_LANE_TESTS"
++          # GOFLAGS: a ceiling for a stuck run, not the target. -v prints the
++          # guard's time, which is what says where the time went.
++          env: REMOVAL_TESTS META_TESTS OWN_LANE_TESTS GOFLAGS
+         env:
+-          # A ceiling for a stuck run, not the target. -v prints the guard's
+-          # time, which is what says where the time went.
+           GOFLAGS: -timeout=30m -v
+-        # The copies are handed this -skip, so the tests of other lanes do not
+-        # run in them. Without it they would run the coverage guard.
+-        run: go test ./repo/ -run "$REMOVAL_TESTS" -skip "$META_TESTS|$OWN_LANE_TESTS"
+ 
+   meta:
+     # On a pull request, the proofs its change could alter; the whole ledger on
+@@ -951,42 +922,17 @@ jobs:
+           # with the release it runs, read from that release's tag (#843).
+           fetch-depth: 0
+ 
+-      # Versions come from scripts/versions.env, which is the only place one
+-      # is written. See .github/actions/versions for why this is a step
+-      # rather than a setup job.
+-      - name: Read pinned versions
+-        uses: $/.github/actions/versions
+-
+-      - name: Setup Go
+-        uses: $/.github/workflows/setup-go
+-        with:
+-          # tests/go is the only module here with dependencies to cache;
+-          # scripts/contractor has none, so there is no go.sum of its own to key on.
+-          cache-dependency-path: tests/go/go.sum
+-
+-      - name: Install OpenTofu, kustomize, Conftest, OPA and Semgrep
+-        # The installer script from scripts/deliveries.lock by hash, run into
+-        # directories the runner account owns - this job runs with sudo
+-        # removed (#410). Until #416 the script was fetched and executed with
+-        # nothing checking what arrived.
+-        # Conftest and Semgrep run the configuration and code rules in
+-        # policy/, which the guards here prove like any other
+-        # (TestTheConfigurationRulesHold, TestTheCodeRulesHold), OPA reads
+-        # the configuration rules themselves (TestOnlyTheSelectorsReadTheInput)
+-        # and Regal lints them
+-        # (TestTheConfigurationRulesAreWrittenAsTheirLinterWouldHaveThem).
+-        run: scripts/take-delivery.sh opentofu kustomize conftest opa regal semgrep
+-
+-      # A proof runs its guard, and the plays' guards run the plays.
+-      - name: Take delivery of what the plays are run with
+-        run: scripts/take-delivery.sh kwokctl etcd kube-apiserver kubectl ansible-core ansible kubernetes
+-
+       # The test that proves the other tests: the mutation ledger breaks each
+       # guarded file and checks its guard fails. It re-runs a large part of
+       # the tier, so it was about half its time, and here it runs beside it
+-      # instead of after it.
++      # instead of after it. In the image the pull-request pools run and with
++      # no network: what the lockfiles name is fetched first, and the tools
++      # each proof's guard runs are in the image (epoch 16, decision 16).
+       - name: Prove the guards fail when they should
+-        working-directory: tests/go
++        uses: $/.github/workflows/offline
++        with:
++          run: go test ./repo/ -run "$META_TESTS"
++          env: META_TESTS GOFLAGS META_PART PROOFS_CHANGED_SINCE
+         env:
+           # Go's default of ten minutes is not a budget anybody set, and the
+           # two tests together passed it on #779 while the ledger was being
+@@ -998,7 +944,6 @@ jobs:
+           META_PART: ${{ strategy.job-total > 1 && format('{0}/{1}', strategy.job-index, strategy.job-total) || '' }}
+           # What this run compares itself with; empty for the whole ledger.
+           PROOFS_CHANGED_SINCE: ${{ needs.main-failing.outputs.mutation != 'true' && (github.event.pull_request.base.sha || github.event.merge_group.base_sha) || '' }}
+-        run: go test ./repo/ -run "$META_TESTS"
+ 
+   test-js:
+     # Skipped, which the queue reads as passed, when the queue would land
+diff --git a/tests/mutations/TestTheConfigurationRulesHold.an-offline-job-checking-on-the-runner.yml b/tests/mutations/TestTheConfigurationRulesHold.an-offline-job-checking-on-the-runner.yml
+new file mode 100644
+index 00000000..83279001
+--- /dev/null
++++ b/tests/mutations/TestTheConfigurationRulesHold.an-offline-job-checking-on-the-runner.yml
+@@ -0,0 +1,9 @@
++guard: TestTheConfigurationRulesHold
++rule: offline_jobs
++file: .github/workflows/pr-validation.yml
++find: "      - name: Removing an application breaks nothing outside it\n        uses: $/.github/workflows/offline\n        with:\n"
++replace: "      - name: Removing an application breaks nothing outside it\n        uses: $/.github/workflows/checkout\n        with:\n"
++mentions: "pr-validation.yml/removal is offline, and no step of it runs $/.github/workflows/offline"
++why: >
++  An offline job whose check is handed to another action is not run with
++  no network at all, though the list says it is.
+diff --git a/tests/mutations/TestTheConfigurationRulesHold.an-offline-job-with-a-step-of-its-own.yml b/tests/mutations/TestTheConfigurationRulesHold.an-offline-job-with-a-step-of-its-own.yml
+new file mode 100644
+index 00000000..e30f1914
+--- /dev/null
++++ b/tests/mutations/TestTheConfigurationRulesHold.an-offline-job-with-a-step-of-its-own.yml
+@@ -0,0 +1,10 @@
++guard: TestTheConfigurationRulesHold
++rule: offline_jobs
++file: .github/workflows/pr-validation.yml
++find: "      - name: Prove the guards fail when they should\n        uses: $/.github/workflows/offline\n"
++replace: "      - name: Take delivery on the runner\n        run: go mod download\n\n      - name: Prove the guards fail when they should\n        uses: $/.github/workflows/offline\n"
++mentions: "pr-validation.yml/meta is offline, and its step 2 (Take delivery on the runner) runs on the runner"
++why: >
++  A step of an offline job's own runs on the runner, which has a network:
++  the pull request's code it runs could reach anything. The plausible way
++  there is a setup step put back beside the check.

@@ -623,6 +623,12 @@ endpoints:
 # job is meant to reach, and are not enforced there.
 #
 #   policy: block   the job is meant to reach exactly the hosts listed
+#   policy: offline the job runs its check with no network, through
+#                   .github/workflows/offline, and only fetching what the
+#                   lockfiles name reaches the hosts listed, before the check
+#                   starts. Held: the check is in a container with no network,
+#                   and policy/conftest/rules/offline_jobs refuses a step of
+#                   the job's own, which would run on the runner.
 #   policy: audit   the job reaches hosts no list can name, and the reason is
 #                   written here rather than in a comment somebody has to find
 
@@ -1090,38 +1096,30 @@ egress:
       - sum.golang.org:443
 
   - job: pr-validation.yml/removal
-    policy: block
+    policy: offline
     hosts:
       - api.github.com:443
-      - dl.k8s.io:443
-      - files.pythonhosted.org:443
-      - get.opentofu.org:443
       - github.com:443
-      - go.dev:443
+      - ghcr.io:443
       - objects.githubusercontent.com:443
+      - pkg-containers.githubusercontent.com:443
       - proxy.golang.org:443
-      - pypi.org:443
       - registry.opentofu.org:443
       - release-assets.githubusercontent.com:443
       - storage.googleapis.com:443
-      - sum.golang.org:443
 
   - job: pr-validation.yml/meta
-    policy: block
+    policy: offline
     hosts:
       - api.github.com:443
-      - dl.k8s.io:443
-      - files.pythonhosted.org:443
-      - get.opentofu.org:443
       - github.com:443
-      - go.dev:443
+      - ghcr.io:443
       - objects.githubusercontent.com:443
+      - pkg-containers.githubusercontent.com:443
       - proxy.golang.org:443
-      - pypi.org:443
       - registry.opentofu.org:443
       - release-assets.githubusercontent.com:443
       - storage.googleapis.com:443
-      - sum.golang.org:443
 
   - job: pr-validation.yml/test-js
     pool: packages

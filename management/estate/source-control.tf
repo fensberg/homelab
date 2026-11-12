@@ -18,7 +18,10 @@
 # It is in the estate vault, used by the lawyer, and never granted to a site.
 # Kept as the vault keeps a key of more than one line: encoded onto one.
 provider "github" {
-  owner = local.source_control_owner
+  # Not when planned offline either: the provider asks GitHub whether the
+  # owner is an organisation before it plans anything, and an offline plan
+  # asks nothing. Planned, every resource names its owner itself.
+  owner = var.offline ? null : local.source_control_owner
 
   # Not when planned offline: signing in asks GitHub for a token, and an
   # offline plan holds no credential and asks nothing.
