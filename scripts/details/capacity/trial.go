@@ -47,8 +47,12 @@ func StartTrial(programs ...string) (Trial, error) {
 	t.Env = []string{"KWOK_WORKDIR=" + filepath.Join(dir, "work"), "KUBECONFIG=" + t.Kubeconfig}
 
 	components := append([]string{TrialStore}, programs...)
+	// The API server is told the address it serves on. Left to choose, it
+	// takes the machine's default route's, and a check run with no network
+	// has none: it refuses to start, and the cluster is never served.
 	start := []string{"create", "cluster", "--name", name, "--runtime", "binary",
-		"--components", strings.Join(components, ","), "--kubeconfig", t.Kubeconfig}
+		"--components", strings.Join(components, ","), "--kubeconfig", t.Kubeconfig,
+		"--extra-args", "kube-apiserver=advertise-address=127.0.0.1"}
 	for _, program := range components {
 		if path, err := exec.LookPath(program); err == nil {
 			start = append(start, "--"+program+"-binary", path)

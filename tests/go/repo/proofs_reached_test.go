@@ -40,12 +40,13 @@ func proofMachinery(rel string) bool {
 	return strings.HasPrefix(rel, "tests/go/parsed/") || rel == "tests/go/repo/mutation_ledger_test.go"
 }
 
-// reachOf reads a change: the paths it touched, and the guards each declares.
-func reachOf(changed []string, guardsIn func(rel string) []string) reach {
+// reachOf reads a change: the paths it touched, the guards each declares,
+// and whether it touched what every check runs in.
+func reachOf(changed []string, guardsIn func(rel string) []string, environment func(rel string) bool) reach {
 	r := reach{files: map[string]bool{}, guards: map[string]bool{}, rules: map[string]bool{}, harnesses: map[string]bool{}}
 	for _, rel := range changed {
 		r.files[rel] = true
-		if proofMachinery(rel) {
+		if proofMachinery(rel) || environment(rel) {
 			r.whole = true
 		}
 		for _, g := range guardsIn(rel) {
@@ -103,7 +104,45 @@ func changeSince(t *testing.T, tree *parsed.Tree, since string) (reach, error) {
 	if err != nil {
 		return reach{}, fmt.Errorf("%s is %s, and what changed since it could not be read: %w\n%s", changedSinceEnv, since, err, errs)
 	}
-	return reachOf(strings.Fields(string(out)), func(rel string) []string { return guardsDeclaredIn(t, tree, rel) }), nil
+	return reachOf(strings.Fields(string(out)), func(rel string) []string { return guardsDeclaredIn(t, tree, rel) }, checkEnvironment(t)), nil
+}
+
+// offlineAction runs a job's check with no network, in the pull-request
+// runner image.
+const offlineAction = "$/.github/workflows/offline"
+
+// checkEnvironment is what every check that runs offline runs in, so what
+// every proof's guard runs in: the action that runs it, the image it runs
+// in - the build's context, what the build reads from outside it, and its
+// pins - and the pools' manifests, which pin that image by digest. A change
+// to any of it can alter any proof's answer, and the proofs it reaches are
+// not the ones whose files it touched: #879 moved the ledger into an image
+// three weeks behind its Dockerfile, its pull request proved a handful, and
+// main found the rest failing.
+func checkEnvironment(t *testing.T) func(rel string) bool {
+	t.Helper()
+	order := pullRequestRunnerOrder(t)
+	within := []string{strings.TrimPrefix(offlineAction, "$/"), order.Context}
+	within = append(within, order.Reads...)
+	exact := map[string]bool{}
+	if order.Pins != "" {
+		exact[order.Pins] = true
+	}
+	for _, release := range runnerSets(t) {
+		path, _ := fluxObject(t, kindHelmRelease, release)
+		exact[path] = true
+	}
+	return func(rel string) bool {
+		if exact[rel] {
+			return true
+		}
+		for _, dir := range within {
+			if rel == dir || strings.HasPrefix(rel, dir+"/") {
+				return true
+			}
+		}
+		return false
+	}
 }
 
 func TestAChangeReachesTheProofsItCouldAlter(t *testing.T) {
@@ -114,6 +153,7 @@ func TestAChangeReachesTheProofsItCouldAlter(t *testing.T) {
 		}
 		return nil
 	}
+	environment := func(rel string) bool { return rel == "images/checks/Dockerfile" }
 	proof := mutation{Guard: "TestX", File: "scripts/thing.sh", Source: "TestX.one.yml"}
 	rule := mutation{Guard: configurationRulesHarness, Rule: "some_rule", File: "scripts/other.yml", Source: "TestTheConfigurationRulesHold.a.yml"}
 	code := mutation{Guard: codeRulesHarness, Rule: "some-id", File: "scripts/other.yml", Source: "TestTheCodeRulesHold.a.yml"}
@@ -137,9 +177,10 @@ func TestAChangeReachesTheProofsItCouldAlter(t *testing.T) {
 		{"the ledger's own machinery", []string{"tests/go/repo/mutation_ledger_test.go"}, proof, true},
 		{"the parsers", []string{"tests/go/parsed/proofs.go"}, proof, true},
 		{"nothing of its own", []string{"docs/epochs/README.md"}, proof, false},
+		{"what every check runs in", []string{"images/checks/Dockerfile"}, proof, true},
 		{"nothing at all", nil, proof, false},
 	} {
-		if got := reachOf(c.changed, declares).holds(c.proof); got != c.want {
+		if got := reachOf(c.changed, declares, environment).holds(c.proof); got != c.want {
 			t.Errorf("%s: a change to %v reaching %s is %v, want %v", c.name, c.changed, c.proof.Source, got, c.want)
 		}
 	}
@@ -156,5 +197,29 @@ func TestARunProvesTheWholeLedgerOrTheChangeItCanRead(t *testing.T) {
 	}
 	if _, err := changeSince(t, tree, "a-commit-nobody-made"); err == nil {
 		t.Error("a commit that cannot be compared with was read as a change")
+	}
+}
+
+// What every check runs in is found where it is declared: the action the
+// offline jobs run, the runner image's build and its pins, and the manifests
+// that pin it. Each reaches the whole ledger, and nothing beside them does.
+func TestWhatEveryCheckRunsInReachesTheWholeLedger(t *testing.T) {
+	light(t)
+	in := checkEnvironment(t)
+	order := pullRequestRunnerOrder(t)
+	path, _ := fluxObject(t, kindHelmRelease, runnerSets(t)[0])
+	for _, rel := range []string{
+		strings.TrimPrefix(offlineAction, "$/") + "/action.yml",
+		order.Context + "/Dockerfile",
+		path,
+	} {
+		if !in(rel) {
+			t.Errorf("%s is part of what every check runs in, and a change to it would prove only the proofs that name it", rel)
+		}
+	}
+	for _, rel := range []string{"docs/epochs/README.md", strings.TrimPrefix(offlineAction, "$/") + "-elsewhere/action.yml"} {
+		if in(rel) {
+			t.Errorf("%s is not what any check runs in, and a change to it would run the whole ledger", rel)
+		}
 	}
 }

@@ -587,7 +587,7 @@ func TestATrialStartsLoadsAsksAndStopsInThatOrder(t *testing.T) {
 		t.Errorf("the trial did:\n  %s\nnot:\n  %s", strings.Join(steps, ", "), want)
 	}
 	first := strings.Split(string(raw), "\n")[0]
-	for _, held := range []string{"--components etcd,kube-apiserver,kube-scheduler", "--etcd-binary ", "--kube-apiserver-binary ", "--kube-scheduler-binary ", "--runtime binary"} {
+	for _, held := range []string{"--components etcd,kube-apiserver,kube-scheduler", "--etcd-binary ", "--kube-apiserver-binary ", "--kube-scheduler-binary ", "--runtime binary", "--extra-args kube-apiserver=advertise-address=127.0.0.1"} {
 		if !strings.Contains(first, held) {
 			t.Errorf("the cluster was started without %q: %s", held, first)
 		}
