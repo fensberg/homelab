@@ -1,0 +1,10 @@
+guard: TestEveryUncoveredFunctionIsDeclared
+file: tests/coverage-exemptions.yml
+find: "path: pinnedactions/main.go"
+replace: "path: pinnedactions/elsewhere.go"
+mentions: "pinnedactions/main.go has 1 untested function(s) and no entry"
+why: >
+  A program beside a shared action is measured where it is. This guard
+  rebuilt every module's directory as scripts/<name>, so it read nothing for
+  the program beside the offline action and failed on a path that does not
+  exist (#881).

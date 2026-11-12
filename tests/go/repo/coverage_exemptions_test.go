@@ -73,7 +73,7 @@ var knownTiers = map[string]bool{
 // alongside the code it describes is a second copy that drifts, and the whole
 // point here is to catch drift.
 // coverageProfilesEnv names the directory of coverage profiles a lane has
-// already written, one <module>.out per module under scripts/. The Go modules
+// already written, one <module>.out per program's module. The Go modules
 // lane runs every module's tests once, with coverage, and this judges what that
 // run measured rather than running them again (#815). Unset, as on a
 // workstation, the profiles are made here in the same way.
@@ -111,8 +111,8 @@ func uncoveredByFile(t *testing.T) map[string][]string {
 	// Paths are prefixed with the module, so two modules with an internal/run
 	// cannot collide and the file says which program each entry is about.
 	given := os.Getenv(coverageProfilesEnv)
-	for _, module := range goModules(t) {
-		dir := "scripts/" + module
+	for _, program := range goModules(t) {
+		module, dir := program.name, program.dir
 
 		profile, err := coverageProfile(given, module)
 		if err != nil {

@@ -189,6 +189,12 @@ files:
   - path: details/facts/generate/main.go
     uncovered: 1
     covered_by: not-worth-testing
+  # The pinned-actions fetch's door: one argument in, an exit status out.
+  # What it fetches, refuses and writes is write and fetchAll, covered beside
+  # it against a file:// source; every offline job runs the door itself.
+  - path: pinnedactions/main.go
+    uncovered: 1
+    covered_by: not-worth-testing
 
   # --- the other six programs ------------------------------------------
   #
