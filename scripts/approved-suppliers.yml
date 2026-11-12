@@ -1845,11 +1845,6 @@ work:
     kind: cannot-wait
     takes: 1m
 
-  - job: pr-validation.yml/invariants
-    kind: cannot-wait
-    # What it took on #848's run (2026-10-31), rounded up.
-    takes: 8m
-
   - job: pr-validation.yml/test-js
     kind: cannot-wait
     takes: 1m

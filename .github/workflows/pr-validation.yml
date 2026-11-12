@@ -655,7 +655,7 @@ jobs:
           GO_COVERAGE_PROFILES: ${{ runner.temp }}/go-coverage
         run: |
           mkdir -p "$GO_COVERAGE_PROFILES"
-          for dir in scripts/*/; do
+          for dir in scripts/*/ .github/workflows/*/*/; do
             [ -f "$dir/go.mod" ] || continue
             echo "::group::$dir"
             go test -C "$dir" -covermode=atomic -coverprofile="$GO_COVERAGE_PROFILES/$(basename "$dir").out" ./...
@@ -673,7 +673,7 @@ jobs:
         env:
           GO_COVERAGE_PROFILES: ${{ runner.temp }}/go-coverage
         run: |
-          for dir in scripts/*/; do
+          for dir in scripts/*/ .github/workflows/*/*/; do
             [ -f "$dir/go.mod" ] || continue
             module="$(basename "$dir")"
             pct="$(go -C "$dir" tool cover -func="$GO_COVERAGE_PROFILES/$module.out" \
@@ -769,7 +769,9 @@ jobs:
     needs: already-tested
     if: ${{ !cancelled() && github.event_name != 'push' && needs.already-tested.outputs.identical != 'true' }}
     name: "test / repo policy"
-    runs-on: pr-builds-${{ vars.pull_request_runners_site }}
+    # GitHub's runner: the check runs with no network, in the image the
+    # pull-request pools run (offline, below; epoch 16, decision 16).
+    runs-on: ubuntu-24.04
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows; above Go's own bound
     # on the tests below, so a slow run fails as a timeout that names the
@@ -785,59 +787,31 @@ jobs:
           # with the release it runs, read from that release's tag (#843).
           fetch-depth: 0
 
-      # Versions come from scripts/versions.env, which is the only place one
-      # is written. See .github/actions/versions for why this is a step
-      # rather than a setup job.
-      - name: Read pinned versions
-        uses: $/.github/actions/versions
-
-      - name: Setup Go
-        uses: $/.github/workflows/setup-go
-        with:
-          # tests/go is the only module here with dependencies to cache;
-          # scripts/contractor has none, so there is no go.sum of its own to key on.
-          cache-dependency-path: tests/go/go.sum
-
-      - name: Install OpenTofu, kustomize, Conftest, OPA and Semgrep
-        # The installer script from scripts/deliveries.lock by hash, run into
-        # directories the runner account owns - this job runs with sudo
-        # removed (#410). Until #416 the script was fetched and executed with
-        # nothing checking what arrived.
-        # Conftest and Semgrep run the configuration and code rules in
-        # policy/, which the guards here prove like any other
-        # (TestTheConfigurationRulesHold, TestTheCodeRulesHold), OPA reads
-        # the configuration rules themselves (TestOnlyTheSelectorsReadTheInput)
-        # and Regal lints them
-        # (TestTheConfigurationRulesAreWrittenAsTheirLinterWouldHaveThem).
-        run: scripts/take-delivery.sh opentofu kustomize conftest opa regal semgrep
-
-      # The plays are run here, not read: the machine roll against a cluster
-      # of Kubernetes' own store and API server, and the workstation's play
-      # against a stand-in hypervisor.
-      - name: Take delivery of what the plays are run with
-        run: scripts/take-delivery.sh kwokctl etcd kube-apiserver kubectl ansible-core ansible kubernetes
-
       # Untagged, so this compiles and runs only the hermetic tests in
       # tests/go: the repository-invariant checks and the state-encryption
       # cutover rehearsal. The integration, api and e2e tiers all carry a
-      # build tag and are not reachable here.
+      # build tag and are not reachable here. With no network, in the image
+      # the pull-request pools run, which holds every tool the guards and the
+      # plays they run take: what the lockfiles name is fetched first, and
+      # what each pinned action runs (#881).
       #
-      # After the OpenTofu install above, not before - the cutover rehearsal
-      # drives a real `tofu` against a scratch workspace.
+      # The meta-tests and the removal guard run in the lanes below, in
+      # parallel with this one, and the coverage guard in the Go modules lane.
+      # Each set is skipped by the same variable that selects it there, so one
+      # declaration decides both and no test can fall between the two.
       - name: Repository invariants and the encryption rehearsal
-        working-directory: tests/go
-        # The meta-tests and the removal guard run in the lanes below, in
-        # parallel with this one, and the coverage guard in the Go modules lane.
-        # Each set is skipped
-        # by the same variable that selects it there, so one declaration
-        # decides both and no test can fall between the two.
+        uses: $/.github/workflows/offline
+        with:
+          run: go test ./... -skip "$META_TESTS|$OWN_LANE_TESTS|$REMOVAL_TESTS"
+          working-directory: tests/go
+          tools: opentofu kustomize conftest opa regal semgrep kwokctl etcd kube-apiserver kubectl ansible-core ansible kubernetes
+          env: META_TESTS OWN_LANE_TESTS REMOVAL_TESTS GOFLAGS
         env:
           # Go's default of ten minutes is not a budget anybody set, and the
           # guards passed it on #790 while they moved onto tests/parsed.
           # This is a ceiling for a stuck run, not the target. -v prints each
           # guard's time, which is what says where the time went.
           GOFLAGS: -timeout=30m -v
-        run: go test ./... -skip "$META_TESTS|$OWN_LANE_TESTS|$REMOVAL_TESTS"
 
   removal:
     # On main after a merge, and on a pull request only when main is failing
@@ -874,6 +848,8 @@ jobs:
           # The copies are handed this -skip, so the tests of other lanes do
           # not run in them. Without it they would run the coverage guard.
           run: go test ./repo/ -run "$REMOVAL_TESTS" -skip "$META_TESTS|$OWN_LANE_TESTS"
+          working-directory: tests/go
+          tools: opentofu kustomize conftest opa regal semgrep kwokctl etcd kube-apiserver kubectl ansible-core ansible kubernetes
           # GOFLAGS: a ceiling for a stuck run, not the target. -v prints the
           # guard's time, which is what says where the time went.
           env: REMOVAL_TESTS META_TESTS OWN_LANE_TESTS GOFLAGS
@@ -932,6 +908,8 @@ jobs:
         uses: $/.github/workflows/offline
         with:
           run: go test ./repo/ -run "$META_TESTS"
+          working-directory: tests/go
+          tools: opentofu kustomize conftest opa regal semgrep kwokctl etcd kube-apiserver kubectl ansible-core ansible kubernetes
           env: META_TESTS GOFLAGS META_PART PROOFS_CHANGED_SINCE
         env:
           # Go's default of ten minutes is not a budget anybody set, and the

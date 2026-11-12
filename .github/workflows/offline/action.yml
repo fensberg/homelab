@@ -8,12 +8,15 @@
 # Two halves, and only the first has a network.
 #
 # FETCH. What the lockfiles name and nothing else: the Go modules
-# tests/go's go.sum names, and the OpenTofu providers each tracked
-# .terraform.lock.hcl names, at the versions and hashes it holds. Both are
+# tests/go's go.sum names, the OpenTofu providers each tracked
+# .terraform.lock.hcl names, at the versions and hashes it holds, and what
+# each action pinned here runs, at the commit it is pinned to
+# (pinnedactions, a Go program beside this file; #881). The modules and providers are
 # fetched by the tools themselves - `go mod download`, `tofu providers
-# mirror` - and neither runs a line of the pull request's code: a module is
-# downloaded and checked against go.sum, not built, and a provider is
-# downloaded and checked against its lock, not run. The configuration the
+# mirror` - and none of the three runs a line of the pull request's code: a
+# module is downloaded and checked against go.sum, not built; a provider is
+# downloaded and checked against its lock, not run; and an action's metadata
+# is read, not run. The configuration the
 # providers are mirrored from is written here, out of each lock, rather than
 # read from the roots: a root names its modules by a value worked out when it
 # is planned, which a mirror cannot.
@@ -44,7 +47,19 @@ description: >-
 
 inputs:
   run:
-    description: The command to run with no network, in tests/go.
+    description: The command to run with no network.
+    required: true
+  working-directory:
+    description: >-
+      Where in the checkout the command runs. Said by the job, so what reads
+      the workflow sees where its tests run.
+    required: true
+  tools:
+    description: >-
+      What the command runs, by the names scripts/take-delivery.sh delivers
+      them under, separated by spaces. The image holds them already; this
+      says which a check needs, and tests/go/repo holds the image to
+      carrying exactly what its jobs say they take.
     required: true
   env:
     description: >-
@@ -110,12 +125,19 @@ runs:
           -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE:ro" -v "$OFFLINE:$OFFLINE" \
           -w "$GITHUB_WORKSPACE/tests/go" \
           -e GOMODCACHE="$OFFLINE/go" -e GOCACHE="$OFFLINE/cache/go-build" -e GOTOOLCHAIN=local -e GOFLAGS=-mod=readonly \
-          -e OFFLINE="$OFFLINE" \
+          -e OFFLINE="$OFFLINE" -e GITHUB_WORKSPACE \
           "$IMAGE" bash -euo pipefail -c '
             go mod download
             for dir in "$OFFLINE"/locks/*/; do
               tofu -chdir="$dir" providers mirror -platform=linux_amd64 "$OFFLINE/providers" >/dev/null
-            done'
+            done
+            # What each pinned action runs, for the rule that holds them to
+            # the suppliers list: their metadata, and nothing of them run. The
+            # program is beside this file, behind the same permission, and
+            # runs from the top of the checkout it reads.
+            go -C "$GITHUB_WORKSPACE/.github/workflows/offline/pinnedactions" build -o "$OFFLINE/pinnedactions" .
+            cd "$GITHUB_WORKSPACE"
+            "$OFFLINE/pinnedactions" "$OFFLINE/pinned-actions.json"'
         printf 'provider_installation {\n  filesystem_mirror {\n    path = "%s"\n  }\n}\n' "$OFFLINE/providers" > "$OFFLINE/tofurc"
 
     - name: Run the check with no network
@@ -125,6 +147,7 @@ runs:
         OFFLINE: ${{ runner.temp }}/offline
         COMMAND: ${{ inputs.run }}
         NAMES: ${{ inputs.env }}
+        WORKING_DIRECTORY: ${{ inputs.working-directory }}
       run: |
         set -euo pipefail
         handed=()
@@ -141,8 +164,9 @@ runs:
         fi
         docker run --rm --network none \
           -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -v "$OFFLINE:$OFFLINE" "${summary[@]}" \
-          -w "$GITHUB_WORKSPACE/tests/go" \
+          -w "$GITHUB_WORKSPACE/$WORKING_DIRECTORY" \
           -e GOMODCACHE="$OFFLINE/go" -e GOCACHE="$OFFLINE/cache/go-build" -e GOTOOLCHAIN=local \
+          -e PINNED_ACTIONS="$OFFLINE/pinned-actions.json" \
           -e GOPROXY=off -e GOFLAGS -e XDG_CACHE_HOME="$OFFLINE/cache" \
           -e TF_CLI_CONFIG_FILE="$OFFLINE/tofurc" -e CI=true \
           "${handed[@]}" \
