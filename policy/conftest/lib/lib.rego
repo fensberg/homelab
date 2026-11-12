@@ -288,12 +288,13 @@ uses contains [file, where, ref] if {
 }
 
 # outside_actions is every action from another repository a runnable file
-# names, by that repository: owner/repository, whatever path in it.
+# names, by that repository: owner/repository, whatever path in it. This
+# repository's own actions are named `$/`, and are not from another. Any
+# other form - `./`, `docker://` - is named here as it is written, so a rule
+# that holds these to a list refuses it rather than passing it by.
 outside_actions contains action if {
 	some [_, _, ref] in uses
-	not startswith(ref, "./")
 	not startswith(ref, "$/")
-	not startswith(ref, "docker://")
 	parts := split(split(ref, "@")[0], "/")
 	count(parts) >= 2
 	action := concat("/", [parts[0], parts[1]])

@@ -20,7 +20,7 @@ with_config(over) := object.union(wall, {"allowed_actions_config": [object.union
 
 tf(setting) := {"path": "estate.plan.json", "contents": {"planned_values": {"root_module": {"child_modules": [{"resources": [{"address": "module.repository[\"r\"].github_actions_repository_permissions.this", "type": "github_actions_repository_permissions", "values": setting}, {"address": "something_else.ignored", "type": "something_else", "values": {"allowed_actions": "all"}}]}]}}}}
 
-uses := [$"actions/fetch@{sha}", $"github/scan/start@{sha}", $"someone/builds@{sha}", $"actions/two@{sha}", $"github/three@{sha}", "./.github/workflows/local", "$/.github/workflows/shared", "docker://example.test/image:1"]
+uses := [$"actions/fetch@{sha}", $"github/scan/start@{sha}", $"someone/builds@{sha}", $"actions/two@{sha}", $"github/three@{sha}", "$/.github/workflows/shared"]
 
 workflow(refs) := {"path": ".github/workflows/w.yml", "contents": {"jobs": {"a": {"steps": [{"uses": r} | some r in refs]}}}}
 

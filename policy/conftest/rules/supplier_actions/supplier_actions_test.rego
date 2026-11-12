@@ -9,7 +9,7 @@ list(actions) := {"path": "scripts/approved-suppliers.yml", "contents": {"action
 
 workflow(refs) := {"path": ".github/workflows/w.yml", "contents": {"jobs": {"a": {"steps": [{"uses": r} | some r in refs]}}}}
 
-used := workflow([$"actions/fetch@{sha}", $"someone/scans@{sha}", "./.github/workflows/local"])
+used := workflow([$"actions/fetch@{sha}", $"someone/scans@{sha}", "$/.github/workflows/shared"])
 
 listed := [
 	{"action": "actions/fetch", "reason": "fetches"},
