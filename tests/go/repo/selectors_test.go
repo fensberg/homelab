@@ -290,7 +290,7 @@ func madeFrom(p string) string {
 	}
 	// What the pinned actions run is fetched for the actions the workflows
 	// and this repository's own actions name.
-	if p == place("pinned_actions", "") {
+	if p == place("what_pinned_actions_run", "") {
 		return place("runnable", "")
 	}
 	// What Flux applies is rendered from the manifests, the same way.

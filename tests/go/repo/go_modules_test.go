@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"homelab/details/applications"
 	"path"
 	"sort"
 	"strings"
@@ -42,7 +43,7 @@ func goModules(t *testing.T) []string {
 	t.Helper()
 	var modules []string
 	for _, dir := range goModuleDirs(t) {
-		if name, ok := strings.CutPrefix(dir, "scripts/"); ok && !strings.Contains(name, "/") {
+		if name, ok := programModule(dir); ok {
 			modules = append(modules, name)
 		}
 	}
@@ -50,6 +51,63 @@ func goModules(t *testing.T) []string {
 		t.Fatal("no Go module found under scripts/, so this asserts nothing")
 	}
 	return modules
+}
+
+// programModule is the name a module of a program goes by, when the
+// directory is one: scripts/<name>, or <name> beside a shared action in
+// .github/workflows/<action>/ - a program that runs with a network, which a
+// pull request may not change unseen (#881). The lanes and the taskfile
+// sweep both places, and nothing else.
+func programModule(dir string) (string, bool) {
+	if name, ok := strings.CutPrefix(dir, "scripts/"); ok && !strings.Contains(name, "/") {
+		return name, true
+	}
+	if rest, ok := strings.CutPrefix(dir, ".github/workflows/"); ok && strings.Count(rest, "/") == 1 {
+		return rest[strings.Index(rest, "/")+1:], true
+	}
+	return "", false
+}
+
+// A Go module is a program's, the guards' helpers', or an application's
+// tests, and none is anywhere else. The lanes find programs where
+// programModule says they are; one placed anywhere else would be compiled,
+// tested and held to a floor by nothing, with nothing turning red - which is
+// how the clerk's module went untested for its whole life.
+func TestEveryGoModuleIsWhereTheLanesLook(t *testing.T) {
+	light(t)
+	for _, dir := range goModuleDirs(t) {
+		if _, ok := programModule(dir); ok || dir == "tests/go" || isApplicationTests(dir) {
+			continue
+		}
+		t.Errorf("%s holds a go.mod, and no lane looks there: a program goes in scripts/<name>, or beside a shared action in .github/workflows/<action>/<name>, so it is built, tested and held to a coverage floor", dir)
+	}
+}
+
+// isApplicationTests is an application's own tests module.
+func isApplicationTests(dir string) bool {
+	rest, ok := strings.CutPrefix(dir, applications.Dir+"/")
+	name, tests, found := strings.Cut(rest, "/")
+	return ok && found && name != "" && tests == "tests"
+}
+
+// Where a module is looked for, on paths made up here.
+func TestAProgramModuleIsFoundInEitherPlace(t *testing.T) {
+	light(t)
+	for dir, want := range map[string]string{
+		"scripts/contractor":                      "contractor",
+		".github/workflows/offline/pinnedactions": "pinnedactions",
+		"scripts/contractor/internal":             "",
+		".github/workflows/offline":               "",
+		"tools/elsewhere":                         "",
+	} {
+		got, ok := programModule(dir)
+		if got != want || ok != (want != "") {
+			t.Errorf("%s was read as %q, %v; want %q", dir, got, ok, want)
+		}
+	}
+	if !isApplicationTests("modules/applications/valheim/tests") || isApplicationTests("modules/applications/valheim") {
+		t.Error("an application's tests module was not told apart from the application")
+	}
 }
 
 // Every module has a floor somebody chose.

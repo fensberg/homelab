@@ -1,0 +1,11 @@
+guard: TestEveryGoModuleIsWhereTheLanesLook
+file: tools/planted/go.mod
+create: |
+  module homelab/planted
+
+  go 1.26
+mentions: "holds a go.mod, and no lane looks there"
+why: >
+  A module the lanes do not sweep is compiled, tested and held to a coverage
+  floor by nothing, with nothing turning red - how the clerk's module went
+  untested for its whole life.

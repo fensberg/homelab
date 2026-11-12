@@ -1,5 +1,17 @@
+diff --git a/.github/dependabot.yml b/.github/dependabot.yml
+index 2019bc81..f0e0c62d 100644
+--- a/.github/dependabot.yml
++++ b/.github/dependabot.yml
+@@ -145,6 +145,7 @@ updates:
+   - package-ecosystem: gomod
+     directories:
+       - /modules/applications/*/tests
++      - /.github/workflows/offline/pinnedactions
+       - /scripts/attestation
+       - /scripts/details
+       - /scripts/drafter
 diff --git a/.github/workflows/offline/action.yml b/.github/workflows/offline/action.yml
-index c1fb028f..017d3239 100644
+index c1fb028f..8794aa18 100644
 --- a/.github/workflows/offline/action.yml
 +++ b/.github/workflows/offline/action.yml
 @@ -8,12 +8,15 @@
@@ -11,7 +23,7 @@ index c1fb028f..017d3239 100644
 +# tests/go's go.sum names, the OpenTofu providers each tracked
 +# .terraform.lock.hcl names, at the versions and hashes it holds, and what
 +# each action pinned here runs, at the commit it is pinned to
-+# (pinned-actions.sh, beside this file; #881). The modules and providers are
++# (pinnedactions, a Go program beside this file; #881). The modules and providers are
  # fetched by the tools themselves - `go mod download`, `tofu providers
 -# mirror` - and neither runs a line of the pull request's code: a module is
 -# downloaded and checked against go.sum, not built, and a provider is
@@ -44,7 +56,7 @@ index c1fb028f..017d3239 100644
      required: true
    env:
      description: >-
-@@ -110,12 +125,16 @@ runs:
+@@ -110,12 +125,19 @@ runs:
            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE:ro" -v "$OFFLINE:$OFFLINE" \
            -w "$GITHUB_WORKSPACE/tests/go" \
            -e GOMODCACHE="$OFFLINE/go" -e GOCACHE="$OFFLINE/cache/go-build" -e GOTOOLCHAIN=local -e GOFLAGS=-mod=readonly \
@@ -57,13 +69,16 @@ index c1fb028f..017d3239 100644
 -            done'
 +            done
 +            # What each pinned action runs, for the rule that holds them to
-+            # the suppliers list: their metadata, and nothing of them run.
++            # the suppliers list: their metadata, and nothing of them run. The
++            # program is beside this file, behind the same permission, and
++            # runs from the top of the checkout it reads.
++            go -C "$GITHUB_WORKSPACE/.github/workflows/offline/pinnedactions" build -o "$OFFLINE/pinnedactions" .
 +            cd "$GITHUB_WORKSPACE"
-+            bash .github/workflows/offline/pinned-actions.sh "$OFFLINE/pinned-actions.json"'
++            "$OFFLINE/pinnedactions" "$OFFLINE/pinned-actions.json"'
          printf 'provider_installation {\n  filesystem_mirror {\n    path = "%s"\n  }\n}\n' "$OFFLINE/providers" > "$OFFLINE/tofurc"
  
      - name: Run the check with no network
-@@ -125,6 +144,7 @@ runs:
+@@ -125,6 +147,7 @@ runs:
          OFFLINE: ${{ runner.temp }}/offline
          COMMAND: ${{ inputs.run }}
          NAMES: ${{ inputs.env }}
@@ -71,7 +86,7 @@ index c1fb028f..017d3239 100644
        run: |
          set -euo pipefail
          handed=()
-@@ -141,8 +161,9 @@ runs:
+@@ -141,8 +164,9 @@ runs:
          fi
          docker run --rm --network none \
            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -v "$OFFLINE:$OFFLINE" "${summary[@]}" \
@@ -82,96 +97,420 @@ index c1fb028f..017d3239 100644
            -e GOPROXY=off -e GOFLAGS -e XDG_CACHE_HOME="$OFFLINE/cache" \
            -e TF_CLI_CONFIG_FILE="$OFFLINE/tofurc" -e CI=true \
            "${handed[@]}" \
-diff --git a/.github/workflows/offline/pinned-actions.sh b/.github/workflows/offline/pinned-actions.sh
-new file mode 100755
-index 00000000..b9bc13af
+diff --git a/.github/workflows/offline/pinnedactions/go.mod b/.github/workflows/offline/pinnedactions/go.mod
+new file mode 100644
+index 00000000..2b4e86f3
 --- /dev/null
-+++ b/.github/workflows/offline/pinned-actions.sh
-@@ -0,0 +1,80 @@
-+#!/usr/bin/env bash
-+# What each action this repository pins runs in turn, at the commit it is
-+# pinned to, written as JSON for the configuration rules to judge with no
-+# network (#881):
-+#
-+#   {"pinned_actions": {"owner/repo[/path]@sha": ["what it runs", ...], ...}}
-+#
-+# Every action a workflow or a composite action here names by owner and
-+# commit is fetched, and every action one of those runs, all the way down:
-+# GitHub follows them the same way when a job is set up, and refuses the job
-+# if any one is not allowed. Each is read from its metadata (action.yml or
-+# action.yaml) at its own commit, and nothing of it is run.
-+#
-+# What an action runs is written as it names it. One pinned by commit is
-+# fetched in turn; anything else - a tag, `./`, `docker://` - is kept as it
-+# is written, and the rule refuses what the suppliers list does not name.
-+#
-+#   pinned-actions.sh <out.json>
-+#
-+# Run by .github/workflows/offline before a check, in the image the check
-+# runs in, and by hand before running the configuration rules at a terminal:
-+# point PINNED_ACTIONS at what it writes. It reads YAML with conftest and
-+# walks it with jq, both of which the image holds.
-+set -euo pipefail
++++ b/.github/workflows/offline/pinnedactions/go.mod
+@@ -0,0 +1,3 @@
++module homelab/pinnedactions
 +
-+out=${1:?usage: pinned-actions.sh <out.json>}
-+pinned='^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(/[^@]+)?@[0-9a-f]{40}$'
++go 1.26
+diff --git a/.github/workflows/offline/pinnedactions/main.go b/.github/workflows/offline/pinnedactions/main.go
+new file mode 100644
+index 00000000..e34c8517
+--- /dev/null
++++ b/.github/workflows/offline/pinnedactions/main.go
+@@ -0,0 +1,222 @@
++// Command pinnedactions writes what each action this repository pins runs in
++// turn, at the commit it is pinned to, as JSON for the configuration rules to
++// judge with no network (#881):
++//
++//	{"pinned_actions": {"owner/repo[/path]@sha": ["what it runs", ...], ...}}
++//
++// Every action a workflow or a composite action here names by owner and
++// commit is fetched, and every action one of those runs, all the way down:
++// GitHub follows them the same way when a job is set up, and refuses the job
++// if any one is not allowed. Each is read from its metadata (action.yml or
++// action.yaml) at its own commit, and nothing of it is run.
++//
++// What an action runs is written as it names it. One pinned by commit is
++// fetched in turn; anything else - a tag, `./`, `docker://` - is kept as it is
++// written, and the rule refuses what the suppliers list does not name.
++//
++//	pinnedactions <out.json>
++//
++// Run from the top of a checkout by .github/workflows/offline before a check,
++// in the image the check runs in, with the network on: it lives beside that
++// action, behind the same workflows permission, because what runs with a
++// network is not the pull request's to change. YAML is read by Conftest's own
++// parser, the one the rules read it with, which the image holds, so this
++// needs nothing beyond the standard library.
++package main
 +
-+work=$(mktemp -d)
-+trap 'rm -rf "$work"' EXIT
++import (
++	"encoding/json"
++	"errors"
++	"fmt"
++	"io"
++	"net/http"
++	"os"
++	"os/exec"
++	"path"
++	"regexp"
++	"sort"
++	"strings"
++	"time"
++)
 +
-+# Where an action's metadata is read from, by repository and commit. Only a
-+# test points it anywhere else, at a tree of its own.
-+source=${PINNED_ACTIONS_SOURCE:-https://raw.githubusercontent.com}
++// pinned is an action named by owner, repository, path in it, and commit.
++var pinned = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(/[^@]+)?@[0-9a-f]{40}$`)
 +
-+# What the files name in a `uses:` of any step, wherever it is in them: read
-+# as YAML by Conftest's own parser, the one the rules read them with.
-+named() {
-+	conftest parse --combine --parser yaml "$@" | jq -r '.. | objects | select(has("uses")) | .uses | strings'
++// sourceEnv points the fetch somewhere other than GitHub; only a test does.
++const sourceEnv = "PINNED_ACTIONS_SOURCE"
++
++const defaultSource = "https://raw.githubusercontent.com"
++
++func main() {
++	if len(os.Args) != 2 {
++		fmt.Fprintln(os.Stderr, "usage: pinnedactions <out.json>")
++		os.Exit(2)
++	}
++	source := os.Getenv(sourceEnv)
++	if source == "" {
++		source = defaultSource
++	}
++	n, err := write(os.Args[1], source, client())
++	if err != nil {
++		fmt.Fprintln(os.Stderr, "pinnedactions:", err)
++		os.Exit(1)
++	}
++	fmt.Printf("pinnedactions: %d action(s) at their commits, written to %s\n", n, os.Args[1])
 +}
 +
-+mapfile -d '' -t files < <(git ls-files -z -- '.github/*.yml' '.github/*.yaml')
-+mapfile -t queue < <(named "${files[@]}" | grep -E "$pinned" | sort -u)
-+if [ "${#queue[@]}" -eq 0 ]; then
-+	echo "pinned-actions: no action here is pinned by commit, so there was nothing to fetch, which cannot be right" >&2
-+	exit 1
-+fi
++// client fetches over https, and reads file:// as a test's source.
++func client() *http.Client {
++	transport := http.DefaultTransport.(*http.Transport).Clone()
++	transport.RegisterProtocol("file", http.NewFileTransport(http.Dir("/")))
++	return &http.Client{Transport: transport, Timeout: 30 * time.Second}
++}
 +
-+declare -A seen=()
-+echo '{}' >"$work/graph.json"
-+while [ "${#queue[@]}" -gt 0 ]; do
-+	ref=${queue[0]}
-+	queue=("${queue[@]:1}")
-+	if [ -n "${seen[$ref]:-}" ]; then
-+		continue
-+	fi
-+	seen[$ref]=1
-+	name=${ref%@*}
-+	sha=${ref##*@}
-+	repo=$(cut -d/ -f1-2 <<<"$name")
-+	path=$(cut -d/ -f3- -s <<<"$name")
-+	base="${source}/${repo}/${sha}${path:+/$path}"
-+	if ! curl -fsSL --retry 2 "$base/action.yml" -o "$work/metadata" 2>/dev/null &&
-+		! curl -fsSL --retry 2 "$base/action.yaml" -o "$work/metadata" 2>/dev/null; then
-+		echo "pinned-actions: no action.yml or action.yaml at ${ref}, so what it runs is unknown" >&2
-+		exit 1
-+	fi
-+	mapfile -t runs < <(named "$work/metadata" | sort -u)
-+	for r in "${runs[@]}"; do
-+		if [[ $r =~ $pinned ]]; then
-+			queue+=("$r")
-+		fi
-+	done
-+	printf '%s\n' "${runs[@]}" | jq -R . | jq -s --arg ref "$ref" --slurpfile graph "$work/graph.json" \
-+		'map(select(length > 0)) as $runs | $graph[0] + {($ref): $runs}' >"$work/next.json"
-+	mv "$work/next.json" "$work/graph.json"
-+done
++// write fetches what every pinned action runs and writes it to out.
++func write(out, source string, c *http.Client) (int, error) {
++	files, err := tracked()
++	if err != nil {
++		return 0, err
++	}
++	named, err := uses(files...)
++	if err != nil {
++		return 0, err
++	}
++	graph, err := fetchAll(named, func(ref string) ([]byte, error) { return metadata(c, source, ref) })
++	if err != nil {
++		return 0, err
++	}
++	body, err := json.MarshalIndent(map[string]map[string][]string{"pinned_actions": graph}, "", "  ")
++	if err != nil {
++		return 0, err
++	}
++	return len(graph), os.WriteFile(out, append(body, '\n'), 0o644)
++}
 +
-+jq '{pinned_actions: .}' "$work/graph.json" >"$out"
-+echo "pinned-actions: ${#seen[@]} action(s) at their commits, written to ${out}"
++// tracked is every YAML file under .github the checkout tracks.
++func tracked() ([]string, error) {
++	out, err := exec.Command("git", "ls-files", "-z", "--", ".github/*.yml", ".github/*.yaml").Output()
++	if err != nil {
++		return nil, fmt.Errorf("listing the workflows and actions: %w", err)
++	}
++	var files []string
++	for _, f := range strings.Split(strings.TrimRight(string(out), "\x00"), "\x00") {
++		if f != "" {
++			files = append(files, f)
++		}
++	}
++	return files, nil
++}
++
++// fetchAll follows every pinned action from the ones named here, all the way
++// down, and says what each runs.
++func fetchAll(named []string, fetch func(ref string) ([]byte, error)) (map[string][]string, error) {
++	var queue []string
++	for _, ref := range named {
++		if pinned.MatchString(ref) {
++			queue = append(queue, ref)
++		}
++	}
++	if len(queue) == 0 {
++		return nil, errors.New("no action here is pinned by commit, so there was nothing to fetch, which cannot be right")
++	}
++	graph := map[string][]string{}
++	for len(queue) > 0 {
++		ref := queue[0]
++		queue = queue[1:]
++		if _, seen := graph[ref]; seen {
++			continue
++		}
++		body, err := fetch(ref)
++		if err != nil {
++			return nil, err
++		}
++		runs, err := usesIn(body)
++		if err != nil {
++			return nil, fmt.Errorf("reading what %s runs: %w", ref, err)
++		}
++		graph[ref] = runs
++		for _, r := range runs {
++			if pinned.MatchString(r) {
++				queue = append(queue, r)
++			}
++		}
++	}
++	return graph, nil
++}
++
++// metadata is an action's action.yml, or action.yaml, at its commit.
++func metadata(c *http.Client, source, ref string) ([]byte, error) {
++	name, sha, _ := strings.Cut(ref, "@")
++	parts := strings.SplitN(name, "/", 3)
++	at := strings.TrimSuffix(source, "/") + "/" + path.Join(parts[0], parts[1], sha)
++	if len(parts) == 3 {
++		at += "/" + parts[2]
++	}
++	for _, file := range []string{"action.yml", "action.yaml"} {
++		resp, err := c.Get(at + "/" + file)
++		if err != nil {
++			continue
++		}
++		body, readErr := io.ReadAll(resp.Body)
++		_ = resp.Body.Close()
++		if readErr == nil && resp.StatusCode == http.StatusOK {
++			return body, nil
++		}
++	}
++	return nil, fmt.Errorf("no action.yml or action.yaml at %s, so what it runs is unknown", ref)
++}
++
++// usesIn is what one action's metadata runs.
++func usesIn(body []byte) ([]string, error) {
++	f, err := os.CreateTemp("", "metadata-*.yml")
++	if err != nil {
++		return nil, err
++	}
++	defer func() { _ = os.Remove(f.Name()) }()
++	if _, err := f.Write(body); err != nil {
++		_ = f.Close()
++		return nil, err
++	}
++	if err := f.Close(); err != nil {
++		return nil, err
++	}
++	return uses(f.Name())
++}
++
++// uses is every `uses:` the files name in any step, wherever it is in them,
++// read as YAML by Conftest's own parser: each once, in order.
++func uses(files ...string) ([]string, error) {
++	args := append([]string{"parse", "--combine", "--parser", "yaml"}, files...)
++	out, err := exec.Command("conftest", args...).Output()
++	if err != nil {
++		return nil, fmt.Errorf("reading %d file(s) as YAML with conftest: %w", len(files), err)
++	}
++	var docs any
++	if err := json.Unmarshal(out, &docs); err != nil {
++		return nil, fmt.Errorf("conftest's reading is not JSON: %w", err)
++	}
++	found := map[string]bool{}
++	walk(docs, found)
++	named := []string{}
++	for ref := range found {
++		named = append(named, ref)
++	}
++	sort.Strings(named)
++	return named, nil
++}
++
++func walk(node any, found map[string]bool) {
++	switch v := node.(type) {
++	case map[string]any:
++		if ref, ok := v["uses"].(string); ok {
++			found[ref] = true
++		}
++		for _, child := range v {
++			walk(child, found)
++		}
++	case []any:
++		for _, child := range v {
++			walk(child, found)
++		}
++	}
++}
+diff --git a/.github/workflows/offline/pinnedactions/main_test.go b/.github/workflows/offline/pinnedactions/main_test.go
+new file mode 100644
+index 00000000..51b54745
+--- /dev/null
++++ b/.github/workflows/offline/pinnedactions/main_test.go
+@@ -0,0 +1,149 @@
++package main
++
++import (
++	"encoding/json"
++	"errors"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"reflect"
++	"strings"
++	"testing"
++)
++
++const (
++	outerSHA = "1111111111111111111111111111111111111111"
++	innerSHA = "2222222222222222222222222222222222222222"
++)
++
++func TestMain(m *testing.M) {
++	// A fixture repository's git must not read the machine's configuration.
++	_ = os.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
++	_ = os.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
++	os.Exit(m.Run())
++}
++
++// fixture is a repository naming actions, and a source holding their
++// metadata at their commits, read over file:// the way GitHub's is over https.
++func fixture(t *testing.T, workflow string) (repo, source string) {
++	t.Helper()
++	dir := t.TempDir()
++	repo, source = filepath.Join(dir, "repo"), filepath.Join(dir, "source")
++	write := func(p, body string) {
++		t.Helper()
++		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
++			t.Fatal(err)
++		}
++		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
++			t.Fatal(err)
++		}
++	}
++	write(filepath.Join(repo, ".github", "workflows", "w.yml"), workflow)
++	// The outer action runs another by its path in its repository, and an
++	// image, and is read from action.yml.
++	write(filepath.Join(source, "owner", "outer", outerSHA, "action.yml"),
++		"runs:\n  using: composite\n  steps:\n"+
++			"    - uses: owner/inner/sub@"+innerSHA+"\n"+
++			"    - uses: docker://example.test/image:1\n"+
++			"    - run: echo not an action\n      shell: bash\n")
++	// The inner one is read from action.yaml, the other name GitHub takes.
++	write(filepath.Join(source, "owner", "inner", innerSHA, "sub", "action.yaml"),
++		"runs:\n  using: node24\n  main: index.js\n")
++	for _, args := range [][]string{{"init", "-q", repo}, {"-C", repo, "add", "-A"}} {
++		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
++			t.Fatalf("git %v: %v\n%s", args, err, out)
++		}
++	}
++	return repo, "file://" + source
++}
++
++// run writes the fetch from the fixture repository, as the action runs it.
++func run(t *testing.T, repo, source string) (map[string][]string, error) {
++	t.Helper()
++	t.Chdir(repo)
++	out := filepath.Join(t.TempDir(), "pinned-actions.json")
++	if _, err := write(out, source, client()); err != nil {
++		return nil, err
++	}
++	body, err := os.ReadFile(out)
++	if err != nil {
++		t.Fatalf("it succeeded and wrote nothing: %v", err)
++	}
++	var got struct {
++		PinnedActions map[string][]string `json:"pinned_actions"`
++	}
++	if err := json.Unmarshal(body, &got); err != nil {
++		t.Fatalf("it wrote what is not JSON of the shape the rules read: %v\n%s", err, body)
++	}
++	return got.PinnedActions, nil
++}
++
++// Every action pinned here is fetched, and every action one of those runs,
++// all the way down: by its path in its repository, from either name of its
++// metadata, with what is not pinned by commit kept as written.
++func TestWhatEachPinnedActionRunsIsFetchedAllTheWayDown(t *testing.T) {
++	repo, source := fixture(t, "jobs:\n  a:\n    steps:\n"+
++		"      - uses: owner/outer@"+outerSHA+"\n"+
++		"      - uses: $/.github/workflows/local\n")
++	got, err := run(t, repo, source)
++	if err != nil {
++		t.Fatalf("the fetch failed: %v", err)
++	}
++	want := map[string][]string{
++		"owner/outer@" + outerSHA:     {"docker://example.test/image:1", "owner/inner/sub@" + innerSHA},
++		"owner/inner/sub@" + innerSHA: {},
++	}
++	if !reflect.DeepEqual(got, want) {
++		t.Errorf("what the pinned actions run was\n  %v\nwant\n  %v", got, want)
++	}
++}
++
++// An action whose metadata is not where its pin says is refused by name,
++// rather than written down as running nothing.
++func TestAnActionThatCannotBeFetchedIsRefused(t *testing.T) {
++	repo, source := fixture(t, "jobs:\n  a:\n    steps:\n      - uses: owner/gone@"+outerSHA+"\n")
++	_, err := run(t, repo, source)
++	if err == nil || !strings.Contains(err.Error(), "no action.yml or action.yaml at owner/gone@"+outerSHA) {
++		t.Errorf("an action with no metadata was not refused by name: %v", err)
++	}
++}
++
++// A repository that pins nothing by commit is refused: the rules would
++// otherwise judge an empty fetch and pass.
++func TestNothingPinnedIsRefused(t *testing.T) {
++	repo, source := fixture(t, "jobs:\n  a:\n    steps:\n      - uses: owner/outer@v1\n")
++	_, err := run(t, repo, source)
++	if err == nil || !strings.Contains(err.Error(), "no action here is pinned by commit") {
++		t.Errorf("a repository pinning nothing was not refused: %v", err)
++	}
++}
++
++// Each action is fetched once, however many name it, and a cycle ends.
++func TestAnActionNamedTwiceIsFetchedOnce(t *testing.T) {
++	a, b := "o/a@"+outerSHA, "o/b@"+innerSHA
++	calls := map[string]int{}
++	graph, err := fetchAll([]string{a, a, "o/c@v1"}, func(ref string) ([]byte, error) {
++		calls[ref]++
++		if ref == a {
++			return []byte("runs:\n  steps:\n    - uses: " + b + "\n"), nil
++		}
++		return []byte("runs:\n  steps:\n    - uses: " + a + "\n"), nil
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if calls[a] != 1 || calls[b] != 1 || len(graph) != 2 {
++		t.Errorf("fetched %v into %v; want each of the two once", calls, graph)
++	}
++}
++
++// A fetch that fails, or metadata that is not YAML, stops the whole fetch.
++func TestAFailedFetchOrUnreadableMetadataStopsIt(t *testing.T) {
++	ref := "o/a@" + outerSHA
++	if _, err := fetchAll([]string{ref}, func(string) ([]byte, error) { return nil, errors.New("down") }); err == nil {
++		t.Error("a failed fetch was taken as running nothing")
++	}
++	if _, err := fetchAll([]string{ref}, func(string) ([]byte, error) { return []byte("runs: [not closed"), nil }); err == nil || !strings.Contains(err.Error(), "reading what "+ref+" runs") {
++		t.Errorf("metadata that is not YAML was taken as running nothing: %v", err)
++	}
++}
 diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
-index 3b79e0b7..b6b70aa7 100644
+index 3b79e0b7..e278bb2e 100644
 --- a/.github/workflows/pr-validation.yml
 +++ b/.github/workflows/pr-validation.yml
+@@ -655,7 +655,7 @@ jobs:
+           GO_COVERAGE_PROFILES: ${{ runner.temp }}/go-coverage
+         run: |
+           mkdir -p "$GO_COVERAGE_PROFILES"
+-          for dir in scripts/*/; do
++          for dir in scripts/*/ .github/workflows/*/*/; do
+             [ -f "$dir/go.mod" ] || continue
+             echo "::group::$dir"
+             go test -C "$dir" -covermode=atomic -coverprofile="$GO_COVERAGE_PROFILES/$(basename "$dir").out" ./...
+@@ -673,7 +673,7 @@ jobs:
+         env:
+           GO_COVERAGE_PROFILES: ${{ runner.temp }}/go-coverage
+         run: |
+-          for dir in scripts/*/; do
++          for dir in scripts/*/ .github/workflows/*/*/; do
+             [ -f "$dir/go.mod" ] || continue
+             module="$(basename "$dir")"
+             pct="$(go -C "$dir" tool cover -func="$GO_COVERAGE_PROFILES/$module.out" \
 @@ -769,7 +769,9 @@ jobs:
      needs: already-tested
      if: ${{ !cancelled() && github.event_name != 'push' && needs.already-tested.outputs.identical != 'true' }}
@@ -275,6 +614,19 @@ index 3b79e0b7..b6b70aa7 100644
            env: META_TESTS GOFLAGS META_PART PROOFS_CHANGED_SINCE
          env:
            # Go's default of ten minutes is not a budget anybody set, and the
+diff --git a/.github/workflows/warm-caches.yml b/.github/workflows/warm-caches.yml
+index 122fe9fc..8fcb9720 100644
+--- a/.github/workflows/warm-caches.yml
++++ b/.github/workflows/warm-caches.yml
+@@ -71,7 +71,7 @@ jobs:
+       # the Vet lane pays for. setup-go saves the result when the job ends.
+       - name: Compile what the test lanes compile
+         run: |
+-          for dir in scripts/*/; do
++          for dir in scripts/*/ .github/workflows/*/*/; do
+             [ -f "$dir/go.mod" ] || continue
+             go test -C "$dir" -run '^$' ./...
+           done
 diff --git a/scripts/approved-suppliers.yml b/scripts/approved-suppliers.yml
 index 89bd0143..1e16fb75 100644
 --- a/scripts/approved-suppliers.yml
@@ -291,196 +643,17 @@ index 89bd0143..1e16fb75 100644
    - job: pr-validation.yml/test-js
      kind: cannot-wait
      takes: 1m
-diff --git a/tests/go/repo/pinned_actions_test.go b/tests/go/repo/pinned_actions_test.go
-new file mode 100644
-index 00000000..46d2a185
---- /dev/null
-+++ b/tests/go/repo/pinned_actions_test.go
-@@ -0,0 +1,142 @@
-+package repo
-+
-+import (
-+	"encoding/json"
-+	"os"
-+	"os/exec"
-+	"path/filepath"
-+	"reflect"
-+	"strings"
-+	"testing"
-+
-+	"homelab/tests/parsed"
-+)
-+
-+// What each pinned action runs, fetched for real from a tree of the test's
-+// own (#881).
-+//
-+// The configuration rules judge what the pinned actions run with no network,
-+// so the fetch is all that sees it: one that misses an action an action
-+// runs, or that writes nothing and succeeds, passes every rule while GitHub
-+// refuses the job after the merge. So it is run here against a repository
-+// and a source the test writes, read over file:// the way it reads
-+// raw.githubusercontent.com.
-+//
-+// covers: shell:.github/workflows/offline/pinned-actions.sh
-+
-+const (
-+	outerSHA = "1111111111111111111111111111111111111111"
-+	innerSHA = "2222222222222222222222222222222222222222"
-+)
-+
-+// pinnedActionsFixture is a repository naming actions, and a source holding
-+// their metadata at their commits.
-+type pinnedActionsFixture struct {
-+	repo, source string
-+	env          []string
-+}
-+
-+func newPinnedActionsFixture(t *testing.T, workflow string) *pinnedActionsFixture {
-+	t.Helper()
-+	dir := t.TempDir()
-+	f := &pinnedActionsFixture{repo: filepath.Join(dir, "repo"), source: filepath.Join(dir, "source")}
-+	f.env = []string{
-+		"PATH=" + os.Getenv("PATH"),
-+		"HOME=" + dir,
-+		"GIT_CONFIG_GLOBAL=/dev/null",
-+		"GIT_CONFIG_SYSTEM=/dev/null",
-+		"PINNED_ACTIONS_SOURCE=file://" + f.source,
-+	}
-+	write := func(path, body string) {
-+		t.Helper()
-+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-+			t.Fatal(err)
-+		}
-+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-+			t.Fatal(err)
-+		}
-+	}
-+	write(filepath.Join(f.repo, ".github", "workflows", "w.yml"), workflow)
-+	// The outer action runs another by its path in its repository, and an
-+	// image, and is read from action.yml.
-+	write(filepath.Join(f.source, "owner", "outer", outerSHA, "action.yml"),
-+		"runs:\n  using: composite\n  steps:\n"+
-+			"    - uses: owner/inner/sub@"+innerSHA+"\n"+
-+			"    - uses: docker://example.test/image:1\n"+
-+			"    - run: echo not an action\n      shell: bash\n")
-+	// The inner one is read from action.yaml, the other name GitHub takes.
-+	write(filepath.Join(f.source, "owner", "inner", innerSHA, "sub", "action.yaml"),
-+		"runs:\n  using: node24\n  main: index.js\n")
-+	for _, args := range [][]string{{"init", "-q", f.repo}, {"-C", f.repo, "add", "-A"}} {
-+		cmd := exec.Command("git", args...)
-+		cmd.Env = f.env
-+		if out, err := cmd.CombinedOutput(); err != nil {
-+			t.Fatalf("git %v: %v\n%s", args, err, out)
-+		}
-+	}
-+	return f
-+}
-+
-+func (f *pinnedActionsFixture) run(t *testing.T) (map[string][]string, string, error) {
-+	t.Helper()
-+	out := filepath.Join(t.TempDir(), "pinned-actions.json")
-+	stdout, stderr, err := repository(t).Invoke(parsed.Run{In: f.repo, Env: f.env, Bare: true}, "bash", parsed.Here(".github/workflows/offline/pinned-actions.sh"), out)
-+	said := string(stdout) + string(stderr)
-+	if err != nil {
-+		return nil, said, err
-+	}
-+	body, readErr := os.ReadFile(out)
-+	if readErr != nil {
-+		t.Fatalf("it succeeded and wrote nothing: %v\n%s", readErr, said)
-+	}
-+	var got struct {
-+		PinnedActions map[string][]string `json:"pinned_actions"`
-+	}
-+	if err := json.Unmarshal(body, &got); err != nil {
-+		t.Fatalf("it wrote what is not JSON of the shape the rules read: %v\n%s", err, body)
-+	}
-+	return got.PinnedActions, said, nil
-+}
-+
-+// Every action pinned here is fetched, and every action one of those runs,
-+// all the way down: by its path in its repository, from either name of its
-+// metadata, with what is not pinned by commit kept as written.
-+func TestWhatEachPinnedActionRunsIsFetchedAllTheWayDown(t *testing.T) {
-+	light(t)
-+	f := newPinnedActionsFixture(t, "jobs:\n  a:\n    steps:\n"+
-+		"      - uses: owner/outer@"+outerSHA+"\n"+
-+		"      - uses: $/.github/workflows/local\n")
-+	got, said, err := f.run(t)
-+	if err != nil {
-+		t.Fatalf("the fetch failed: %v\n%s", err, said)
-+	}
-+	want := map[string][]string{
-+		"owner/outer@" + outerSHA:     {"docker://example.test/image:1", "owner/inner/sub@" + innerSHA},
-+		"owner/inner/sub@" + innerSHA: {},
-+	}
-+	if !reflect.DeepEqual(got, want) {
-+		t.Errorf("what the pinned actions run was\n  %v\nwant\n  %v", got, want)
-+	}
-+}
-+
-+// An action whose metadata is not where its pin says is refused by name,
-+// rather than written down as running nothing.
-+func TestAnActionThatCannotBeFetchedIsRefused(t *testing.T) {
-+	light(t)
-+	f := newPinnedActionsFixture(t, "jobs:\n  a:\n    steps:\n      - uses: owner/gone@"+outerSHA+"\n")
-+	_, said, err := f.run(t)
-+	if err == nil || !strings.Contains(said, "no action.yml or action.yaml at owner/gone@"+outerSHA) {
-+		t.Errorf("an action with no metadata was not refused by name (err %v):\n%s", err, said)
-+	}
-+}
-+
-+// A repository that pins nothing by commit is refused: the rules would
-+// otherwise judge an empty fetch and pass.
-+func TestNothingPinnedIsRefused(t *testing.T) {
-+	light(t)
-+	f := newPinnedActionsFixture(t, "jobs:\n  a:\n    steps:\n      - uses: owner/outer@v1\n")
-+	_, said, err := f.run(t)
-+	if err == nil || !strings.Contains(said, "no action here is pinned by commit") {
-+		t.Errorf("a repository pinning nothing was not refused (err %v):\n%s", err, said)
-+	}
-+}
-diff --git a/tests/mutations/TestAnActionThatCannotBeFetchedIsRefused.taken-as-running-nothing.yml b/tests/mutations/TestAnActionThatCannotBeFetchedIsRefused.taken-as-running-nothing.yml
-new file mode 100644
-index 00000000..593fb33b
---- /dev/null
-+++ b/tests/mutations/TestAnActionThatCannotBeFetchedIsRefused.taken-as-running-nothing.yml
-@@ -0,0 +1,9 @@
-+guard: TestAnActionThatCannotBeFetchedIsRefused
-+file: .github/workflows/offline/pinned-actions.sh
-+find: "so what it runs is unknown\" >&2\n\t\texit 1\n"
-+replace: "so what it runs is unknown\" >&2\n\t\tcontinue\n"
-+mentions: "was not refused by name"
-+why: >
-+  An action the fetch cannot read, written down as running nothing, passes
-+  every rule over what it runs. The plausible way there is a missing
-+  metadata file treated as a skip.
-diff --git a/tests/mutations/TestNothingPinnedIsRefused.an-empty-fetch-passes.yml b/tests/mutations/TestNothingPinnedIsRefused.an-empty-fetch-passes.yml
-new file mode 100644
-index 00000000..7c10a1e2
---- /dev/null
-+++ b/tests/mutations/TestNothingPinnedIsRefused.an-empty-fetch-passes.yml
-@@ -0,0 +1,9 @@
-+guard: TestNothingPinnedIsRefused
-+file: .github/workflows/offline/pinned-actions.sh
-+find: "if [ \"${#queue[@]}\" -eq 0 ]; then\n"
-+replace: "if false; then\n"
-+mentions: "a repository pinning nothing was not refused"
-+why: >
-+  A fetch that finds nothing pinned writes an empty file, and every rule
-+  over it passes. Pinning nothing by commit is not a state this repository
-+  is ever in, so it is refused rather than taken.
-diff --git a/tests/mutations/TestWhatEachPinnedActionRunsIsFetchedAllTheWayDown.stops-at-the-top.yml b/tests/mutations/TestWhatEachPinnedActionRunsIsFetchedAllTheWayDown.stops-at-the-top.yml
-new file mode 100644
-index 00000000..9bdc497b
---- /dev/null
-+++ b/tests/mutations/TestWhatEachPinnedActionRunsIsFetchedAllTheWayDown.stops-at-the-top.yml
-@@ -0,0 +1,9 @@
-+guard: TestWhatEachPinnedActionRunsIsFetchedAllTheWayDown
-+file: .github/workflows/offline/pinned-actions.sh
-+find: "\t\t\tqueue+=(\"$r\")\n"
-+replace: "\t\t\t: \"$r\"\n"
-+mentions: "what the pinned actions run was"
-+why: >
-+  GitHub follows every action an action runs, all the way down, when a job
-+  is set up. A fetch that stops at the actions named here never sees
-+  actions/cache/restore, which is where #878's setting broke every job.
+diff --git a/tests/coverage-baseline.json b/tests/coverage-baseline.json
+index d61526e5..b7de2c13 100644
+--- a/tests/coverage-baseline.json
++++ b/tests/coverage-baseline.json
+@@ -89,7 +89,8 @@
+     "go/lawyer": 60.8,
+     "go/safety-officer": 92.9,
+     "go/engineer": 91.8,
+-    "go/drafter": 90.5
++    "go/drafter": 90.5,
++    "go/pinnedactions": 79.5
+   },
+   "tiers": {
+     "unit": 915,

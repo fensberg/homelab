@@ -14,7 +14,7 @@
 # An action that only another action runs is in that action's code, not in
 # a workflow here, so its entry says which listed actions run it. That is
 # checked against what they run, at the commits they are pinned to, as
-# .github/workflows/offline fetched it before the check (lib.pinned_actions,
+# .github/workflows/offline fetched it before the check (lib.what_pinned_actions_run,
 # #881): every action a pinned action runs must be on the list, and an
 # entry's called_by must be true of the commits pinned.
 package rules.supplier_actions
@@ -49,7 +49,7 @@ repositories contains entry.action if {
 called_by(entry) := object.get(entry, "called_by", [])
 
 # What each pinned action runs, as fetched: {ref: [what it runs]}.
-fetched := lib.pinned_actions
+fetched := lib.what_pinned_actions_run
 
 # pinned is every action named here by owner and commit: the ones fetched.
 pinned contains ref if {
@@ -107,14 +107,14 @@ deny contains msg if {
 
 deny contains msg if {
 	count(fetched) == 0
-	msg := "nothing says what the pinned actions run: PINNED_ACTIONS names no file .github/workflows/offline/pinned-actions.sh wrote, so no action an action runs was checked"
+	msg := "nothing says what the pinned actions run: PINNED_ACTIONS names no file .github/workflows/offline/pinnedactions wrote, so no action an action runs was checked"
 }
 
 deny contains msg if {
 	count(fetched) > 0
 	some ref in pinned
 	not fetched[ref]
-	msg := $"{ref} is pinned here and was not fetched, so what it runs is unknown. Fetch them again with .github/workflows/offline/pinned-actions.sh."
+	msg := $"{ref} is pinned here and was not fetched, so what it runs is unknown. Fetch them again with .github/workflows/offline/pinnedactions."
 }
 
 deny contains msg if {

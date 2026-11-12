@@ -32,7 +32,7 @@ import (
 // conftestProgram is the policy engine, delivered by scripts/take-delivery.sh.
 const conftestProgram = "conftest"
 
-// pinnedActionsEnv names the file .github/workflows/offline/pinned-actions.sh
+// pinnedActionsEnv names the file .github/workflows/offline/pinnedactions
 // wrote: what each action this repository pins runs, at its commit (#881).
 const pinnedActionsEnv = "PINNED_ACTIONS"
 
