@@ -1,0 +1,80 @@
+diff --git a/.github/workflows/offline/pinnedactions/main.go b/.github/workflows/offline/pinnedactions/main.go
+index e34c8517..4befc8cd 100644
+--- a/.github/workflows/offline/pinnedactions/main.go
++++ b/.github/workflows/offline/pinnedactions/main.go
+@@ -34,6 +34,7 @@ import (
+ 	"os/exec"
+ 	"path"
+ 	"regexp"
++	"slices"
+ 	"sort"
+ 	"strings"
+ 	"time"
+@@ -195,28 +196,25 @@ func uses(files ...string) ([]string, error) {
+ 	if err := json.Unmarshal(out, &docs); err != nil {
+ 		return nil, fmt.Errorf("conftest's reading is not JSON: %w", err)
+ 	}
+-	found := map[string]bool{}
+-	walk(docs, found)
+-	named := []string{}
+-	for ref := range found {
+-		named = append(named, ref)
+-	}
++	named := walk(docs, []string{})
+ 	sort.Strings(named)
+-	return named, nil
++	return slices.Compact(named), nil
+ }
+ 
+-func walk(node any, found map[string]bool) {
++// walk appends to named every `uses:` under node.
++func walk(node any, named []string) []string {
+ 	switch v := node.(type) {
+ 	case map[string]any:
+ 		if ref, ok := v["uses"].(string); ok {
+-			found[ref] = true
++			named = append(named, ref)
+ 		}
+ 		for _, child := range v {
+-			walk(child, found)
++			named = walk(child, named)
+ 		}
+ 	case []any:
+ 		for _, child := range v {
+-			walk(child, found)
++			named = walk(child, named)
+ 		}
+ 	}
++	return named
+ }
+diff --git a/.github/workflows/offline/pinnedactions/main_test.go b/.github/workflows/offline/pinnedactions/main_test.go
+index 51b54745..d36a75e5 100644
+--- a/.github/workflows/offline/pinnedactions/main_test.go
++++ b/.github/workflows/offline/pinnedactions/main_test.go
+@@ -147,3 +147,13 @@ func TestAFailedFetchOrUnreadableMetadataStopsIt(t *testing.T) {
+ 		t.Errorf("metadata that is not YAML was taken as running nothing: %v", err)
+ 	}
+ }
++
++// A source that does not answer is refused by name, the same as one that
++// answers without the action: neither is an action that runs nothing.
++func TestASourceThatDoesNotAnswerIsRefused(t *testing.T) {
++	ref := "owner/outer@" + outerSHA
++	_, err := metadata(client(), "unknown-scheme://nowhere", ref)
++	if err == nil || !strings.Contains(err.Error(), "no action.yml or action.yaml at "+ref) {
++		t.Errorf("a source that did not answer was not refused by name: %v", err)
++	}
++}
+diff --git a/tests/coverage-baseline.json b/tests/coverage-baseline.json
+index b7de2c13..cff981f9 100644
+--- a/tests/coverage-baseline.json
++++ b/tests/coverage-baseline.json
+@@ -90,7 +90,7 @@
+     "go/safety-officer": 92.9,
+     "go/engineer": 91.8,
+     "go/drafter": 90.5,
+-    "go/pinnedactions": 79.5
++    "go/pinnedactions": 80.4
+   },
+   "tiers": {
+     "unit": 915,
