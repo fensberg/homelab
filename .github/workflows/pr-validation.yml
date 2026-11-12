@@ -140,6 +140,9 @@ jobs:
       actions: read
     outputs:
       identical: ${{ steps.compare.outputs.identical }}
+      # Whether the whole ledger has already passed on the tree the queue
+      # would land, in any run: the queue then does not prove it again (#885).
+      whole-ledger: ${{ steps.compare.outputs.whole-ledger }}
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
@@ -154,6 +157,16 @@ jobs:
           MAIN_REMOVAL: ${{ needs.main-failing.outputs.removal }}
         run: |
           identical=false
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          proved="$(curl --proto '=https' -fsS -H "Authorization: Bearer ${GITHUB_TOKEN}" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/${REPO}/actions/artifacts?name=whole-ledger-${tree}&per_page=100" |
+            jq '[.artifacts[] | select(.expired | not)] | length')"
+          if [ "${proved}" -ge 1 ]; then
+            echo "whole-ledger=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::the whole ledger has already passed on this tree, so the queue does not prove it again"
+          else
+            echo "whole-ledger=false" >> "$GITHUB_OUTPUT"
+          fi
           # The queue names its branch for the pull request at its head:
           # gh-readonly-queue/<base>/pr-<number>-<the commit it sits on>.
           number="$(sed -n 's#^refs/heads/gh-readonly-queue/.*/pr-\([0-9][0-9]*\)-[0-9a-f]*$#\1#p' <<<"${QUEUED}")"
@@ -881,11 +894,15 @@ jobs:
           GOFLAGS: -timeout=30m -v
 
   meta:
-    # On a pull request, the proofs its change could alter; the whole ledger on
-    # main after a merge, or anywhere main is failing it (main-failing). Skipped, which the queue reads as passed, when the queue
-    # would land exactly what the pull request already tested (already-tested).
+    # On a pull request, the proofs its change could alter, and the whole
+    # ledger where main is failing it (main-failing). In the queue, the whole
+    # ledger, always - even when the queue would land exactly what the pull
+    # request tested, which proved only part of it - unless the whole ledger
+    # has already passed on that tree (already-tested). And on main after a
+    # merge. A change whose reach the pull request could not see is proved
+    # before it lands, not after: #879 passed its part and broke main (#885).
     needs: [main-failing, already-tested]
-    if: ${{ !cancelled() && needs.main-failing.result == 'success' && needs.already-tested.outputs.identical != 'true' }}
+    if: ${{ !cancelled() && needs.main-failing.result == 'success' && (github.event_name == 'merge_group' && needs.already-tested.outputs.whole-ledger != 'true' || github.event_name != 'merge_group') }}
     name: "test / mutation (${{ matrix.part }} of ${{ strategy.job-total }})"
     # GitHub's runner, a machine for each part: the job holds no credential,
     # and on the untrusted worker the four parts and the removal check
@@ -942,8 +959,9 @@ jobs:
           # Which part this job is, as <index>/<total>; empty for one job,
           # which is then the whole of both tests.
           META_PART: ${{ strategy.job-total > 1 && format('{0}/{1}', strategy.job-index, strategy.job-total) || '' }}
-          # What this run compares itself with; empty for the whole ledger.
-          PROOFS_CHANGED_SINCE: ${{ needs.main-failing.outputs.mutation != 'true' && (github.event.pull_request.base.sha || github.event.merge_group.base_sha) || '' }}
+          # What this run compares itself with: a pull request's base. Empty -
+          # the whole ledger - in the queue, on main, and where main is failing it.
+          PROOFS_CHANGED_SINCE: ${{ needs.main-failing.outputs.mutation != 'true' && github.event.pull_request.base.sha || '' }}
 
   test-js:
     # Skipped, which the queue reads as passed, when the queue would land
@@ -1041,6 +1059,8 @@ jobs:
         env:
           NEEDS: ${{ toJSON(needs) }}
           IDENTICAL: ${{ needs.already-tested.outputs.identical }}
+          WHOLE: ${{ needs.already-tested.outputs.whole-ledger }}
+          LEDGER: ${{ needs.meta.result }}
           GATE: ${{ needs.already-tested.result }}
           EVENT: ${{ github.event_name }}
           REMOVAL: ${{ needs.main-failing.outputs.removal }}
@@ -1066,12 +1086,23 @@ jobs:
           # the lanes were skipped for it: said by the comparison itself, and
           # only when the comparison succeeded.
           if [ "${GATE}" = "success" ] && [ "${IDENTICAL}" = "true" ]; then
-            echo "already tested: nothing was run again"
-            exit 0
+            # The pull request proved part of the ledger; the queue proves the
+            # whole of it, unless it already passed on this tree.
+            if [ "${LEDGER}" = "success" ] || { [ "${LEDGER}" = "skipped" ] && [ "${WHOLE}" = "true" ]; }; then
+              echo "already tested: nothing was run again but the whole ledger"
+              exit 0
+            fi
+            echo "::error::the whole ledger finished as ${LEDGER} on what the queue would land"
+            exit 1
           fi
           # Every need this run owes, and not the comparison, which does not
           # run on a pull request. Main owes only what runs after a merge, and
           # the removal check is owed elsewhere only while main is failing it.
+          # The ledger is skipped, and passes, where the whole of it has
+          # already passed on this tree.
+          if [ "${LEDGER}" = "skipped" ] && [ "${WHOLE}" = "true" ]; then
+            NEEDS="$(jq 'del(.meta)' <<<"${NEEDS}")"
+          fi
           failed="$(jq -r --arg event "${EVENT}" --arg removal "${REMOVAL}" '
             del(."already-tested")
             | if $event == "push" then with_entries(select(.key | IN("main-failing", "removal", "meta"))) else . end
@@ -1098,6 +1129,25 @@ jobs:
         with:
           name: tested-tree-${{ env.TESTED_TREE }}
           path: tested/tree
+          if-no-files-found: error
+          retention-days: 30
+
+      # When this run proved the whole ledger - every part, compared with
+      # nothing - the tree is kept by that name too, so a queue landing it
+      # does not prove the ledger again (#885).
+      - name: Record the tree the whole ledger passed on
+        if: needs.meta.result == 'success' && (github.event_name != 'pull_request' || needs.main-failing.outputs.mutation == 'true')
+        run: |
+          mkdir -p whole
+          git rev-parse 'HEAD^{tree}' | tee whole/tree
+          echo "WHOLE_TREE=$(cat whole/tree)" >> "$GITHUB_ENV"
+
+      - name: Keep the tree the whole ledger passed on
+        if: needs.meta.result == 'success' && (github.event_name != 'pull_request' || needs.main-failing.outputs.mutation == 'true')
+        uses: $/.github/workflows/upload-artifact
+        with:
+          name: whole-ledger-${{ env.WHOLE_TREE }}
+          path: whole/tree
           if-no-files-found: error
           retention-days: 30
 
