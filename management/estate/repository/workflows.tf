@@ -20,7 +20,11 @@ resource "github_actions_repository_permissions" "this" {
   allowed_actions_config {
     github_owned_allowed = false
     verified_allowed     = false
-    patterns_allowed     = sort([for a in local.actions : "${a.action}@*"])
+    patterns_allowed = sort(flatten([
+      for a in local.actions : [
+        for p in try(a.paths, ["."]) : p == "." ? "${a.action}@*" : "${a.action}/${p}@*"
+      ]
+    ]))
   }
 }
 

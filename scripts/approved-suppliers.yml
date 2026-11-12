@@ -1654,6 +1654,12 @@ hooks:
 # workflow. Each is also pinned to a full commit where it is used, which the
 # same setting requires.
 #
+# paths names the actions in the repository the jobs run, when one is not at
+# its root ("." is the root): GitHub allows an action by its whole path, so
+# owner/repository alone lets in only the one at the top. A path not named
+# is refused by GitHub, as codeql-action's were the day this list was first
+# applied.
+#
 # called_by names the actions that run this one themselves, from their own
 # code, rather than a workflow here: GitHub holds those to this list too.
 # policy/conftest/rules/supplier_actions refuses an action a workflow uses
@@ -1666,6 +1672,7 @@ actions:
       Checks out the commit a job is for. Every job's first step, through
       Mobilize.
   - action: actions/cache
+    paths: [".", restore, save]
     called_by: [aquasecurity/trivy-action, aquasecurity/setup-trivy]
     reason: >-
       Keeps Trivy and its vulnerability database between runs. Run by the
@@ -1699,6 +1706,7 @@ actions:
       Scans the repository for vulnerable dependencies and wrong
       configuration, by the people who make Trivy.
   - action: github/codeql-action
+    paths: [init, analyze, upload-sarif]
     reason: >-
       CodeQL's analysis, and the upload that puts every scanner's findings in
       the repository's code scanning.

@@ -45,3 +45,16 @@ test_an_entry_whose_callers_are_all_unused_is_refused if {
 test_no_actions_listed_is_refused if {
 	says(supplier_actions.deny, "names no action") with input as [list([]), used]
 }
+
+test_an_action_by_its_path_is_named_by_it if {
+	paths := array.concat(listed, [{"action": "github/scans", "paths": [".", "start"], "reason": "scans"}])
+	count(supplier_actions.deny) == 0 with input as [list(paths), workflow([$"actions/fetch@{sha}", $"someone/scans@{sha}", $"github/scans@{sha}", $"github/scans/start@{sha}"])]
+}
+
+test_a_path_the_entry_does_not_name_is_refused if {
+	says(supplier_actions.deny, "a workflow uses github/scans/finish, which is not in the approved suppliers list") with input as [list(array.concat(listed, [{"action": "github/scans", "paths": ["start"], "reason": "scans"}])), workflow([$"actions/fetch@{sha}", $"someone/scans@{sha}", $"github/scans/start@{sha}", $"github/scans/finish@{sha}"])]
+}
+
+test_a_path_nothing_uses_is_refused if {
+	says(supplier_actions.deny, "names github/scans/finish, which no workflow uses") with input as [list(array.concat(listed, [{"action": "github/scans", "paths": ["start", "finish"], "reason": "scans"}])), workflow([$"actions/fetch@{sha}", $"someone/scans@{sha}", $"github/scans/start@{sha}"])]
+}
