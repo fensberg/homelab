@@ -1,0 +1,486 @@
+diff --git a/.github/workflows/offline/action.yml b/.github/workflows/offline/action.yml
+index c1fb028f..017d3239 100644
+--- a/.github/workflows/offline/action.yml
++++ b/.github/workflows/offline/action.yml
+@@ -8,12 +8,15 @@
+ # Two halves, and only the first has a network.
+ #
+ # FETCH. What the lockfiles name and nothing else: the Go modules
+-# tests/go's go.sum names, and the OpenTofu providers each tracked
+-# .terraform.lock.hcl names, at the versions and hashes it holds. Both are
++# tests/go's go.sum names, the OpenTofu providers each tracked
++# .terraform.lock.hcl names, at the versions and hashes it holds, and what
++# each action pinned here runs, at the commit it is pinned to
++# (pinned-actions.sh, beside this file; #881). The modules and providers are
+ # fetched by the tools themselves - `go mod download`, `tofu providers
+-# mirror` - and neither runs a line of the pull request's code: a module is
+-# downloaded and checked against go.sum, not built, and a provider is
+-# downloaded and checked against its lock, not run. The configuration the
++# mirror` - and none of the three runs a line of the pull request's code: a
++# module is downloaded and checked against go.sum, not built; a provider is
++# downloaded and checked against its lock, not run; and an action's metadata
++# is read, not run. The configuration the
+ # providers are mirrored from is written here, out of each lock, rather than
+ # read from the roots: a root names its modules by a value worked out when it
+ # is planned, which a mirror cannot.
+@@ -44,7 +47,19 @@ description: >-
+ 
+ inputs:
+   run:
+-    description: The command to run with no network, in tests/go.
++    description: The command to run with no network.
++    required: true
++  working-directory:
++    description: >-
++      Where in the checkout the command runs. Said by the job, so what reads
++      the workflow sees where its tests run.
++    required: true
++  tools:
++    description: >-
++      What the command runs, by the names scripts/take-delivery.sh delivers
++      them under, separated by spaces. The image holds them already; this
++      says which a check needs, and tests/go/repo holds the image to
++      carrying exactly what its jobs say they take.
+     required: true
+   env:
+     description: >-
+@@ -110,12 +125,16 @@ runs:
+           -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE:ro" -v "$OFFLINE:$OFFLINE" \
+           -w "$GITHUB_WORKSPACE/tests/go" \
+           -e GOMODCACHE="$OFFLINE/go" -e GOCACHE="$OFFLINE/cache/go-build" -e GOTOOLCHAIN=local -e GOFLAGS=-mod=readonly \
+-          -e OFFLINE="$OFFLINE" \
++          -e OFFLINE="$OFFLINE" -e GITHUB_WORKSPACE \
+           "$IMAGE" bash -euo pipefail -c '
+             go mod download
+             for dir in "$OFFLINE"/locks/*/; do
+               tofu -chdir="$dir" providers mirror -platform=linux_amd64 "$OFFLINE/providers" >/dev/null
+-            done'
++            done
++            # What each pinned action runs, for the rule that holds them to
++            # the suppliers list: their metadata, and nothing of them run.
++            cd "$GITHUB_WORKSPACE"
++            bash .github/workflows/offline/pinned-actions.sh "$OFFLINE/pinned-actions.json"'
+         printf 'provider_installation {\n  filesystem_mirror {\n    path = "%s"\n  }\n}\n' "$OFFLINE/providers" > "$OFFLINE/tofurc"
+ 
+     - name: Run the check with no network
+@@ -125,6 +144,7 @@ runs:
+         OFFLINE: ${{ runner.temp }}/offline
+         COMMAND: ${{ inputs.run }}
+         NAMES: ${{ inputs.env }}
++        WORKING_DIRECTORY: ${{ inputs.working-directory }}
+       run: |
+         set -euo pipefail
+         handed=()
+@@ -141,8 +161,9 @@ runs:
+         fi
+         docker run --rm --network none \
+           -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -v "$OFFLINE:$OFFLINE" "${summary[@]}" \
+-          -w "$GITHUB_WORKSPACE/tests/go" \
++          -w "$GITHUB_WORKSPACE/$WORKING_DIRECTORY" \
+           -e GOMODCACHE="$OFFLINE/go" -e GOCACHE="$OFFLINE/cache/go-build" -e GOTOOLCHAIN=local \
++          -e PINNED_ACTIONS="$OFFLINE/pinned-actions.json" \
+           -e GOPROXY=off -e GOFLAGS -e XDG_CACHE_HOME="$OFFLINE/cache" \
+           -e TF_CLI_CONFIG_FILE="$OFFLINE/tofurc" -e CI=true \
+           "${handed[@]}" \
+diff --git a/.github/workflows/offline/pinned-actions.sh b/.github/workflows/offline/pinned-actions.sh
+new file mode 100755
+index 00000000..b9bc13af
+--- /dev/null
++++ b/.github/workflows/offline/pinned-actions.sh
+@@ -0,0 +1,80 @@
++#!/usr/bin/env bash
++# What each action this repository pins runs in turn, at the commit it is
++# pinned to, written as JSON for the configuration rules to judge with no
++# network (#881):
++#
++#   {"pinned_actions": {"owner/repo[/path]@sha": ["what it runs", ...], ...}}
++#
++# Every action a workflow or a composite action here names by owner and
++# commit is fetched, and every action one of those runs, all the way down:
++# GitHub follows them the same way when a job is set up, and refuses the job
++# if any one is not allowed. Each is read from its metadata (action.yml or
++# action.yaml) at its own commit, and nothing of it is run.
++#
++# What an action runs is written as it names it. One pinned by commit is
++# fetched in turn; anything else - a tag, `./`, `docker://` - is kept as it
++# is written, and the rule refuses what the suppliers list does not name.
++#
++#   pinned-actions.sh <out.json>
++#
++# Run by .github/workflows/offline before a check, in the image the check
++# runs in, and by hand before running the configuration rules at a terminal:
++# point PINNED_ACTIONS at what it writes. It reads YAML with conftest and
++# walks it with jq, both of which the image holds.
++set -euo pipefail
++
++out=${1:?usage: pinned-actions.sh <out.json>}
++pinned='^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(/[^@]+)?@[0-9a-f]{40}$'
++
++work=$(mktemp -d)
++trap 'rm -rf "$work"' EXIT
++
++# Where an action's metadata is read from, by repository and commit. Only a
++# test points it anywhere else, at a tree of its own.
++source=${PINNED_ACTIONS_SOURCE:-https://raw.githubusercontent.com}
++
++# What the files name in a `uses:` of any step, wherever it is in them: read
++# as YAML by Conftest's own parser, the one the rules read them with.
++named() {
++	conftest parse --combine --parser yaml "$@" | jq -r '.. | objects | select(has("uses")) | .uses | strings'
++}
++
++mapfile -d '' -t files < <(git ls-files -z -- '.github/*.yml' '.github/*.yaml')
++mapfile -t queue < <(named "${files[@]}" | grep -E "$pinned" | sort -u)
++if [ "${#queue[@]}" -eq 0 ]; then
++	echo "pinned-actions: no action here is pinned by commit, so there was nothing to fetch, which cannot be right" >&2
++	exit 1
++fi
++
++declare -A seen=()
++echo '{}' >"$work/graph.json"
++while [ "${#queue[@]}" -gt 0 ]; do
++	ref=${queue[0]}
++	queue=("${queue[@]:1}")
++	if [ -n "${seen[$ref]:-}" ]; then
++		continue
++	fi
++	seen[$ref]=1
++	name=${ref%@*}
++	sha=${ref##*@}
++	repo=$(cut -d/ -f1-2 <<<"$name")
++	path=$(cut -d/ -f3- -s <<<"$name")
++	base="${source}/${repo}/${sha}${path:+/$path}"
++	if ! curl -fsSL --retry 2 "$base/action.yml" -o "$work/metadata" 2>/dev/null &&
++		! curl -fsSL --retry 2 "$base/action.yaml" -o "$work/metadata" 2>/dev/null; then
++		echo "pinned-actions: no action.yml or action.yaml at ${ref}, so what it runs is unknown" >&2
++		exit 1
++	fi
++	mapfile -t runs < <(named "$work/metadata" | sort -u)
++	for r in "${runs[@]}"; do
++		if [[ $r =~ $pinned ]]; then
++			queue+=("$r")
++		fi
++	done
++	printf '%s\n' "${runs[@]}" | jq -R . | jq -s --arg ref "$ref" --slurpfile graph "$work/graph.json" \
++		'map(select(length > 0)) as $runs | $graph[0] + {($ref): $runs}' >"$work/next.json"
++	mv "$work/next.json" "$work/graph.json"
++done
++
++jq '{pinned_actions: .}' "$work/graph.json" >"$out"
++echo "pinned-actions: ${#seen[@]} action(s) at their commits, written to ${out}"
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index 3b79e0b7..b6b70aa7 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -769,7 +769,9 @@ jobs:
+     needs: already-tested
+     if: ${{ !cancelled() && github.event_name != 'push' && needs.already-tested.outputs.identical != 'true' }}
+     name: "test / repo policy"
+-    runs-on: pr-builds-${{ vars.pull_request_runners_site }}
++    # GitHub's runner: the check runs with no network, in the image the
++    # pull-request pools run (offline, below; epoch 16, decision 16).
++    runs-on: ubuntu-24.04
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows; above Go's own bound
+     # on the tests below, so a slow run fails as a timeout that names the
+@@ -785,59 +787,31 @@ jobs:
+           # with the release it runs, read from that release's tag (#843).
+           fetch-depth: 0
+ 
+-      # Versions come from scripts/versions.env, which is the only place one
+-      # is written. See .github/actions/versions for why this is a step
+-      # rather than a setup job.
+-      - name: Read pinned versions
+-        uses: $/.github/actions/versions
+-
+-      - name: Setup Go
+-        uses: $/.github/workflows/setup-go
+-        with:
+-          # tests/go is the only module here with dependencies to cache;
+-          # scripts/contractor has none, so there is no go.sum of its own to key on.
+-          cache-dependency-path: tests/go/go.sum
+-
+-      - name: Install OpenTofu, kustomize, Conftest, OPA and Semgrep
+-        # The installer script from scripts/deliveries.lock by hash, run into
+-        # directories the runner account owns - this job runs with sudo
+-        # removed (#410). Until #416 the script was fetched and executed with
+-        # nothing checking what arrived.
+-        # Conftest and Semgrep run the configuration and code rules in
+-        # policy/, which the guards here prove like any other
+-        # (TestTheConfigurationRulesHold, TestTheCodeRulesHold), OPA reads
+-        # the configuration rules themselves (TestOnlyTheSelectorsReadTheInput)
+-        # and Regal lints them
+-        # (TestTheConfigurationRulesAreWrittenAsTheirLinterWouldHaveThem).
+-        run: scripts/take-delivery.sh opentofu kustomize conftest opa regal semgrep
+-
+-      # The plays are run here, not read: the machine roll against a cluster
+-      # of Kubernetes' own store and API server, and the workstation's play
+-      # against a stand-in hypervisor.
+-      - name: Take delivery of what the plays are run with
+-        run: scripts/take-delivery.sh kwokctl etcd kube-apiserver kubectl ansible-core ansible kubernetes
+-
+       # Untagged, so this compiles and runs only the hermetic tests in
+       # tests/go: the repository-invariant checks and the state-encryption
+       # cutover rehearsal. The integration, api and e2e tiers all carry a
+-      # build tag and are not reachable here.
++      # build tag and are not reachable here. With no network, in the image
++      # the pull-request pools run, which holds every tool the guards and the
++      # plays they run take: what the lockfiles name is fetched first, and
++      # what each pinned action runs (#881).
+       #
+-      # After the OpenTofu install above, not before - the cutover rehearsal
+-      # drives a real `tofu` against a scratch workspace.
++      # The meta-tests and the removal guard run in the lanes below, in
++      # parallel with this one, and the coverage guard in the Go modules lane.
++      # Each set is skipped by the same variable that selects it there, so one
++      # declaration decides both and no test can fall between the two.
+       - name: Repository invariants and the encryption rehearsal
+-        working-directory: tests/go
+-        # The meta-tests and the removal guard run in the lanes below, in
+-        # parallel with this one, and the coverage guard in the Go modules lane.
+-        # Each set is skipped
+-        # by the same variable that selects it there, so one declaration
+-        # decides both and no test can fall between the two.
++        uses: $/.github/workflows/offline
++        with:
++          run: go test ./... -skip "$META_TESTS|$OWN_LANE_TESTS|$REMOVAL_TESTS"
++          working-directory: tests/go
++          tools: opentofu kustomize conftest opa regal semgrep kwokctl etcd kube-apiserver kubectl ansible-core ansible kubernetes
++          env: META_TESTS OWN_LANE_TESTS REMOVAL_TESTS GOFLAGS
+         env:
+           # Go's default of ten minutes is not a budget anybody set, and the
+           # guards passed it on #790 while they moved onto tests/parsed.
+           # This is a ceiling for a stuck run, not the target. -v prints each
+           # guard's time, which is what says where the time went.
+           GOFLAGS: -timeout=30m -v
+-        run: go test ./... -skip "$META_TESTS|$OWN_LANE_TESTS|$REMOVAL_TESTS"
+ 
+   removal:
+     # On main after a merge, and on a pull request only when main is failing
+@@ -874,6 +848,8 @@ jobs:
+           # The copies are handed this -skip, so the tests of other lanes do
+           # not run in them. Without it they would run the coverage guard.
+           run: go test ./repo/ -run "$REMOVAL_TESTS" -skip "$META_TESTS|$OWN_LANE_TESTS"
++          working-directory: tests/go
++          tools: opentofu kustomize conftest opa regal semgrep kwokctl etcd kube-apiserver kubectl ansible-core ansible kubernetes
+           # GOFLAGS: a ceiling for a stuck run, not the target. -v prints the
+           # guard's time, which is what says where the time went.
+           env: REMOVAL_TESTS META_TESTS OWN_LANE_TESTS GOFLAGS
+@@ -932,6 +908,8 @@ jobs:
+         uses: $/.github/workflows/offline
+         with:
+           run: go test ./repo/ -run "$META_TESTS"
++          working-directory: tests/go
++          tools: opentofu kustomize conftest opa regal semgrep kwokctl etcd kube-apiserver kubectl ansible-core ansible kubernetes
+           env: META_TESTS GOFLAGS META_PART PROOFS_CHANGED_SINCE
+         env:
+           # Go's default of ten minutes is not a budget anybody set, and the
+diff --git a/scripts/approved-suppliers.yml b/scripts/approved-suppliers.yml
+index 89bd0143..1e16fb75 100644
+--- a/scripts/approved-suppliers.yml
++++ b/scripts/approved-suppliers.yml
+@@ -1845,11 +1845,6 @@ work:
+     kind: cannot-wait
+     takes: 1m
+ 
+-  - job: pr-validation.yml/invariants
+-    kind: cannot-wait
+-    # What it took on #848's run (2026-10-31), rounded up.
+-    takes: 8m
+-
+   - job: pr-validation.yml/test-js
+     kind: cannot-wait
+     takes: 1m
+diff --git a/tests/go/repo/pinned_actions_test.go b/tests/go/repo/pinned_actions_test.go
+new file mode 100644
+index 00000000..46d2a185
+--- /dev/null
++++ b/tests/go/repo/pinned_actions_test.go
+@@ -0,0 +1,142 @@
++package repo
++
++import (
++	"encoding/json"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"reflect"
++	"strings"
++	"testing"
++
++	"homelab/tests/parsed"
++)
++
++// What each pinned action runs, fetched for real from a tree of the test's
++// own (#881).
++//
++// The configuration rules judge what the pinned actions run with no network,
++// so the fetch is all that sees it: one that misses an action an action
++// runs, or that writes nothing and succeeds, passes every rule while GitHub
++// refuses the job after the merge. So it is run here against a repository
++// and a source the test writes, read over file:// the way it reads
++// raw.githubusercontent.com.
++//
++// covers: shell:.github/workflows/offline/pinned-actions.sh
++
++const (
++	outerSHA = "1111111111111111111111111111111111111111"
++	innerSHA = "2222222222222222222222222222222222222222"
++)
++
++// pinnedActionsFixture is a repository naming actions, and a source holding
++// their metadata at their commits.
++type pinnedActionsFixture struct {
++	repo, source string
++	env          []string
++}
++
++func newPinnedActionsFixture(t *testing.T, workflow string) *pinnedActionsFixture {
++	t.Helper()
++	dir := t.TempDir()
++	f := &pinnedActionsFixture{repo: filepath.Join(dir, "repo"), source: filepath.Join(dir, "source")}
++	f.env = []string{
++		"PATH=" + os.Getenv("PATH"),
++		"HOME=" + dir,
++		"GIT_CONFIG_GLOBAL=/dev/null",
++		"GIT_CONFIG_SYSTEM=/dev/null",
++		"PINNED_ACTIONS_SOURCE=file://" + f.source,
++	}
++	write := func(path, body string) {
++		t.Helper()
++		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
++			t.Fatal(err)
++		}
++		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
++			t.Fatal(err)
++		}
++	}
++	write(filepath.Join(f.repo, ".github", "workflows", "w.yml"), workflow)
++	// The outer action runs another by its path in its repository, and an
++	// image, and is read from action.yml.
++	write(filepath.Join(f.source, "owner", "outer", outerSHA, "action.yml"),
++		"runs:\n  using: composite\n  steps:\n"+
++			"    - uses: owner/inner/sub@"+innerSHA+"\n"+
++			"    - uses: docker://example.test/image:1\n"+
++			"    - run: echo not an action\n      shell: bash\n")
++	// The inner one is read from action.yaml, the other name GitHub takes.
++	write(filepath.Join(f.source, "owner", "inner", innerSHA, "sub", "action.yaml"),
++		"runs:\n  using: node24\n  main: index.js\n")
++	for _, args := range [][]string{{"init", "-q", f.repo}, {"-C", f.repo, "add", "-A"}} {
++		cmd := exec.Command("git", args...)
++		cmd.Env = f.env
++		if out, err := cmd.CombinedOutput(); err != nil {
++			t.Fatalf("git %v: %v\n%s", args, err, out)
++		}
++	}
++	return f
++}
++
++func (f *pinnedActionsFixture) run(t *testing.T) (map[string][]string, string, error) {
++	t.Helper()
++	out := filepath.Join(t.TempDir(), "pinned-actions.json")
++	stdout, stderr, err := repository(t).Invoke(parsed.Run{In: f.repo, Env: f.env, Bare: true}, "bash", parsed.Here(".github/workflows/offline/pinned-actions.sh"), out)
++	said := string(stdout) + string(stderr)
++	if err != nil {
++		return nil, said, err
++	}
++	body, readErr := os.ReadFile(out)
++	if readErr != nil {
++		t.Fatalf("it succeeded and wrote nothing: %v\n%s", readErr, said)
++	}
++	var got struct {
++		PinnedActions map[string][]string `json:"pinned_actions"`
++	}
++	if err := json.Unmarshal(body, &got); err != nil {
++		t.Fatalf("it wrote what is not JSON of the shape the rules read: %v\n%s", err, body)
++	}
++	return got.PinnedActions, said, nil
++}
++
++// Every action pinned here is fetched, and every action one of those runs,
++// all the way down: by its path in its repository, from either name of its
++// metadata, with what is not pinned by commit kept as written.
++func TestWhatEachPinnedActionRunsIsFetchedAllTheWayDown(t *testing.T) {
++	light(t)
++	f := newPinnedActionsFixture(t, "jobs:\n  a:\n    steps:\n"+
++		"      - uses: owner/outer@"+outerSHA+"\n"+
++		"      - uses: $/.github/workflows/local\n")
++	got, said, err := f.run(t)
++	if err != nil {
++		t.Fatalf("the fetch failed: %v\n%s", err, said)
++	}
++	want := map[string][]string{
++		"owner/outer@" + outerSHA:     {"docker://example.test/image:1", "owner/inner/sub@" + innerSHA},
++		"owner/inner/sub@" + innerSHA: {},
++	}
++	if !reflect.DeepEqual(got, want) {
++		t.Errorf("what the pinned actions run was\n  %v\nwant\n  %v", got, want)
++	}
++}
++
++// An action whose metadata is not where its pin says is refused by name,
++// rather than written down as running nothing.
++func TestAnActionThatCannotBeFetchedIsRefused(t *testing.T) {
++	light(t)
++	f := newPinnedActionsFixture(t, "jobs:\n  a:\n    steps:\n      - uses: owner/gone@"+outerSHA+"\n")
++	_, said, err := f.run(t)
++	if err == nil || !strings.Contains(said, "no action.yml or action.yaml at owner/gone@"+outerSHA) {
++		t.Errorf("an action with no metadata was not refused by name (err %v):\n%s", err, said)
++	}
++}
++
++// A repository that pins nothing by commit is refused: the rules would
++// otherwise judge an empty fetch and pass.
++func TestNothingPinnedIsRefused(t *testing.T) {
++	light(t)
++	f := newPinnedActionsFixture(t, "jobs:\n  a:\n    steps:\n      - uses: owner/outer@v1\n")
++	_, said, err := f.run(t)
++	if err == nil || !strings.Contains(said, "no action here is pinned by commit") {
++		t.Errorf("a repository pinning nothing was not refused (err %v):\n%s", err, said)
++	}
++}
+diff --git a/tests/mutations/TestAnActionThatCannotBeFetchedIsRefused.taken-as-running-nothing.yml b/tests/mutations/TestAnActionThatCannotBeFetchedIsRefused.taken-as-running-nothing.yml
+new file mode 100644
+index 00000000..593fb33b
+--- /dev/null
++++ b/tests/mutations/TestAnActionThatCannotBeFetchedIsRefused.taken-as-running-nothing.yml
+@@ -0,0 +1,9 @@
++guard: TestAnActionThatCannotBeFetchedIsRefused
++file: .github/workflows/offline/pinned-actions.sh
++find: "so what it runs is unknown\" >&2\n\t\texit 1\n"
++replace: "so what it runs is unknown\" >&2\n\t\tcontinue\n"
++mentions: "was not refused by name"
++why: >
++  An action the fetch cannot read, written down as running nothing, passes
++  every rule over what it runs. The plausible way there is a missing
++  metadata file treated as a skip.
+diff --git a/tests/mutations/TestNothingPinnedIsRefused.an-empty-fetch-passes.yml b/tests/mutations/TestNothingPinnedIsRefused.an-empty-fetch-passes.yml
+new file mode 100644
+index 00000000..7c10a1e2
+--- /dev/null
++++ b/tests/mutations/TestNothingPinnedIsRefused.an-empty-fetch-passes.yml
+@@ -0,0 +1,9 @@
++guard: TestNothingPinnedIsRefused
++file: .github/workflows/offline/pinned-actions.sh
++find: "if [ \"${#queue[@]}\" -eq 0 ]; then\n"
++replace: "if false; then\n"
++mentions: "a repository pinning nothing was not refused"
++why: >
++  A fetch that finds nothing pinned writes an empty file, and every rule
++  over it passes. Pinning nothing by commit is not a state this repository
++  is ever in, so it is refused rather than taken.
+diff --git a/tests/mutations/TestWhatEachPinnedActionRunsIsFetchedAllTheWayDown.stops-at-the-top.yml b/tests/mutations/TestWhatEachPinnedActionRunsIsFetchedAllTheWayDown.stops-at-the-top.yml
+new file mode 100644
+index 00000000..9bdc497b
+--- /dev/null
++++ b/tests/mutations/TestWhatEachPinnedActionRunsIsFetchedAllTheWayDown.stops-at-the-top.yml
+@@ -0,0 +1,9 @@
++guard: TestWhatEachPinnedActionRunsIsFetchedAllTheWayDown
++file: .github/workflows/offline/pinned-actions.sh
++find: "\t\t\tqueue+=(\"$r\")\n"
++replace: "\t\t\t: \"$r\"\n"
++mentions: "what the pinned actions run was"
++why: >
++  GitHub follows every action an action runs, all the way down, when a job
++  is set up. A fetch that stops at the actions named here never sees
++  actions/cache/restore, which is where #878's setting broke every job.
