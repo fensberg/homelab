@@ -5,7 +5,7 @@ import rego.v1
 
 sha := "0123456789012345678901234567890123456789"
 
-listed := ["actions/fetch@*", "actions/two@*", "github/scan@*", "github/three@*", "someone/builds@*"]
+listed := ["actions/fetch@*", "actions/two@*", "github/scan/start@*", "github/three@*", "someone/builds@*"]
 
 config := {"github_owned_allowed": false, "verified_allowed": false, "patterns_allowed": listed}
 
@@ -64,7 +64,7 @@ test_a_whole_organisation_is_refused if {
 test_an_action_it_would_refuse_is_named if says(plan_allowed_actions.deny, "uses another/thing, which it would refuse") with input as [tf(wall), workflow(array.concat(uses, [$"another/thing@{sha}"]))]
 
 test_the_platforms_own_unlisted_is_refused if {
-	says(plan_allowed_actions.deny, "uses actions/fetch, which it would refuse") with input as [tf(with_config({"patterns_allowed": ["actions/two@*", "github/scan@*", "github/three@*", "someone/builds@*"]})), workflow(uses)]
+	says(plan_allowed_actions.deny, "uses actions/fetch, which it would refuse") with input as [tf(with_config({"patterns_allowed": ["actions/two@*", "github/scan/start@*", "github/three@*", "someone/builds@*"]})), workflow(uses)]
 }
 
 test_no_setting_at_all_is_refused if {
@@ -73,3 +73,7 @@ test_no_setting_at_all_is_refused if {
 }
 
 test_too_few_actions_read_is_refused if says(plan_allowed_actions.deny, "only 1 action(s) were found") with input as [tf(wall), workflow([$"actions/fetch@{sha}"])]
+
+test_an_action_allowed_only_at_its_root_is_refused_by_its_path if {
+	says(plan_allowed_actions.deny, "uses github/scan/start, which it would refuse") with input as [tf(with_config({"patterns_allowed": ["actions/fetch@*", "actions/two@*", "github/scan@*", "github/three@*", "someone/builds@*"]})), workflow(uses)]
+}

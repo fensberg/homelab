@@ -1,0 +1,11 @@
+guard: TestTheConfigurationRulesHold
+rule: plan_allowed_actions
+file: scripts/approved-suppliers.yml
+find: "paths: [init, analyze, upload-sarif]"
+replace: "paths: [init, analyze]"
+mentions: "uses github/codeql-action/upload-sarif, which it would refuse"
+why: >
+  GitHub allows an action by its whole path, and owner/repository alone lets
+  in only the one at its top. A path left off the list is refused when the
+  job starts, after the merge - which is how every CodeQL and Trivy run
+  failed the day the list was first applied.

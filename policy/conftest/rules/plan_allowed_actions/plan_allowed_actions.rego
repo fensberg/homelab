@@ -23,10 +23,12 @@ patterns(s) := object.get(config(s), "patterns_allowed", [])
 
 allows(s, action) if $"{action}@*" in patterns(s)
 
+# one_action is a pattern naming one action, at its root or by its path:
+# owner/repository@* or owner/repository/path@*.
 one_action(p) if {
-	[repo, "*"] = split(p, "@")
-	count(split(repo, "/")) == 2
-	not contains(repo, "*")
+	[name, "*"] = split(p, "@")
+	count(split(name, "/")) >= 2
+	not contains(name, "*")
 }
 
 deny contains msg if {
@@ -67,7 +69,7 @@ deny contains msg if {
 	some [where, s] in settings
 	some p in patterns(s)
 	not one_action(p)
-	msg := $"{where}: it allows {p}, which is wider than one action: write owner/repository@*"
+	msg := $"{where}: it allows {p}, which is wider than one action: write owner/repository@*, or owner/repository/path@* for one not at the root"
 }
 
 deny contains msg if {

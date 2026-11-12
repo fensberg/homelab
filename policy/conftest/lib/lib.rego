@@ -288,16 +288,16 @@ uses contains [file, where, ref] if {
 }
 
 # outside_actions is every action from another repository a runnable file
-# names, by that repository: owner/repository, whatever path in it. This
+# names, by its whole name without the commit: owner/repository, and the
+# path in it when the action is not at its root - as GitHub allows it. This
 # repository's own actions are named `$/`, and are not from another. Any
 # other form - `./`, `docker://` - is named here as it is written, so a rule
 # that holds these to a list refuses it rather than passing it by.
 outside_actions contains action if {
 	some [_, _, ref] in uses
 	not startswith(ref, "$/")
-	parts := split(split(ref, "@")[0], "/")
-	count(parts) >= 2
-	action := concat("/", [parts[0], parts[1]])
+	action := split(ref, "@")[0]
+	count(split(action, "/")) >= 2
 }
 
 # triggers is the events a workflow runs on. YAML 1.1 reads the bare key `on`
