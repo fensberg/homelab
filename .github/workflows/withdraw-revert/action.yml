@@ -1,0 +1,73 @@
+# Withdraws the revert $/.github/workflows/offer-revert offered for a commit,
+# once what failed after it passes when run again: it was not broken, and an
+# offer left open is one somebody could merge by mistake.
+#
+#   - uses: $/.github/workflows/withdraw-revert
+#     with:
+#       failed: estate
+#       what: the estate's converge
+#       client-id: ${{ secrets.PROCUREMENT_BOT_CLIENT_ID }}
+#       private-key: ${{ secrets.PROCUREMENT_BOT_PRIVATE_KEY }}
+#
+# Only the offer for the same kind of failure: the branch is
+# revert/<failed>-failed-<commit>, so main's checks passing again never
+# withdraws the offer a failed converge still needs.
+name: "Withdraw the revert"
+description: Close the revert offered for this commit once what failed after it passes when run again.
+
+inputs:
+  failed:
+    description: What failed, as the one word offer-revert was given.
+    required: true
+  what:
+    description: What failed, as the withdrawal says it.
+    required: true
+  client-id:
+    description: The pull-request App's client ID.
+    required: true
+  private-key:
+    description: The pull-request App's private key.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Find the offer
+      id: find
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        SHA: ${{ github.sha }}
+        FAILED: ${{ inputs.failed }}
+      run: |
+        branch="revert/${FAILED}-failed-${SHA::8}"
+        number="$(gh pr list --repo "$REPO" --head "$branch" --state open --json number --jq '.[0].number // empty')"
+        echo "number=${number}" >> "$GITHUB_OUTPUT"
+
+    - name: Mint the pull-request token
+      id: token
+      if: steps.find.outputs.number != ''
+      uses: $/.github/workflows/app-token
+      with:
+        client-id: ${{ inputs.client-id }}
+        private-key: ${{ inputs.private-key }}
+        # Contents to delete the branch; pull requests to close it.
+        permission-contents: write
+        permission-pull-requests: write
+        owner: ${{ github.repository_owner }}
+        repositories: ${{ github.event.repository.name }}
+
+    - name: Withdraw it
+      if: steps.find.outputs.number != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ steps.token.outputs.token }}
+        REPO: ${{ github.repository }}
+        NUMBER: ${{ steps.find.outputs.number }}
+        WHAT: ${{ inputs.what }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        gh pr close "$NUMBER" --repo "$REPO" --delete-branch \
+          --comment "${WHAT} passed when run again (${RUN_URL}), so main was not broken and nothing needs taking back."
+        echo "${WHAT} passed when run again; the revert offered as #${NUMBER} is withdrawn" >> "$GITHUB_STEP_SUMMARY"
