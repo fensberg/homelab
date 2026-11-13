@@ -76,6 +76,11 @@ estate_types := {
 	"github_repository_environment_deployment_policy",
 }
 
+# What makes nothing outside OpenTofu's own state, so belongs to no scope: a
+# value kept between runs so a change to it can be acted on. Either scope may
+# hold one, and it is not the estate's - which would refuse it in a site.
+state_only := {"terraform_data"}
+
 # The providers of the account and of source control: whoever is initialised
 # with one can declare the estate's objects.
 account_wide := {
@@ -104,6 +109,7 @@ sites_locks contains path if {
 deny contains msg if {
 	some ["estate", r] in made
 	not r.type in estate_types
+	not r.type in state_only
 	msg := $"the estate's plan would make {r.address}, a {r.type}, which is not listed as the estate's. Everything in the estate's scope belongs to every site in the account. If this object does, add its type to estate_types in this rule; if it belongs to one site, it goes in that site's roots."
 }
 
