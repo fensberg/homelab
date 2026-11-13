@@ -54,9 +54,20 @@ resource "cloudflare_zero_trust_access_application" "enrollment" {
 # One list for the whole account, which is why it is here: two sites each
 # writing it from their own builds would overwrite each other's routes. Every
 # site's addresses are its own, so the list carries each route once per site.
+#
+# THE ORDER IS CLOUDFLARE'S, NOT OURS. The API does not keep the order it is
+# sent: given the sites' routes and then the workstation, it holds the
+# workstation first. The provider compares the list in order, so declaring it
+# any other way is a change on every converge that every apply undoes. So the
+# workstation comes first here, as Cloudflare holds it.
 resource "cloudflare_zero_trust_device_default_profile" "estate" {
   account_id = local.access.account_id
   include = concat(
+    # The workstation, through its own tunnel (workstation.tf).
+    [for m in module.workstation : {
+      address     = m.route
+      description = local.workstation_name
+    }],
     flatten([
       for site in sort(keys(local.site_routes)) : [
         for name in sort(keys(local.site_routes[site])) : {
@@ -65,10 +76,5 @@ resource "cloudflare_zero_trust_device_default_profile" "estate" {
         }
       ]
     ]),
-    # And the workstation, through its own tunnel (workstation.tf).
-    [for m in module.workstation : {
-      address     = m.route
-      description = local.workstation_name
-    }],
   )
 }
