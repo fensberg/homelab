@@ -116,9 +116,12 @@ func (c ResourceChange) ChangedAttributes() []string {
 		}
 	}
 	// after_unknown carries false, or null, for an attribute that is known,
-	// as well as true for one that is not: its presence alone proves nothing.
+	// and for a list or an object the same shape as its value, with true only
+	// where something in it is not known: [{}, {}] is a list of two entries
+	// all known. So an attribute is unknown when true is somewhere in it, and
+	// its presence alone proves nothing.
 	for name, unknown := range c.Change.AfterUnknown {
-		if !sameJSON(unknown, json.RawMessage("false")) && !sameJSON(unknown, json.RawMessage("null")) {
+		if holdsTrue(unknown) {
 			names[name] = true
 		}
 	}
@@ -128,6 +131,40 @@ func (c ResourceChange) ChangedAttributes() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// holdsTrue reports whether true is anywhere in an encoding: the value
+// itself, or any element or member at any depth. One that cannot be read
+// holds whatever it might, so it is taken as holding true.
+func holdsTrue(raw json.RawMessage) bool {
+	var v any
+	if len(raw) == 0 {
+		return false
+	}
+	if json.Unmarshal(raw, &v) != nil {
+		return true
+	}
+	var walk func(any) bool
+	walk = func(v any) bool {
+		switch x := v.(type) {
+		case bool:
+			return x
+		case []any:
+			for _, e := range x {
+				if walk(e) {
+					return true
+				}
+			}
+		case map[string]any:
+			for _, e := range x {
+				if walk(e) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return walk(v)
 }
 
 // sameJSON reports whether two encodings say the same thing, however they

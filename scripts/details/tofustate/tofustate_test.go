@@ -57,14 +57,18 @@ func TestAChangeIsSaidByTheAttributesItAlters(t *testing.T) {
 		"actions": ["update"],
 		"before": {"same": {"x": 1}, "spaced": [1,2], "moved": "old-secret", "gone": "v", "nulled": null},
 		"after": {"same": {"x":1}, "spaced": [ 1, 2 ], "moved": "new-secret", "added": "w"},
-		"after_unknown": {"computed": true, "settled": false, "known": null}
+		"after_unknown": {"computed": true, "settled": false, "known": null,
+			"listed": [{}, {"x": false}], "shaped": {"a": [], "b": {}},
+			"deep": [{"x": false}, {"y": [false, true]}]}
 	}}]}`)
 	p, err := ParsePlan(plan)
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := p.ResourceChanges[0].ChangedAttributes()
-	want := []string{"added", "computed", "gone", "moved"}
+	// A list or an object is unknown only where true is in it: "listed" and
+	// "shaped" are all known, "deep" has one entry that is not.
+	want := []string{"added", "computed", "deep", "gone", "moved"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("altered %v, want %v", got, want)
 	}
@@ -72,6 +76,17 @@ func TestAChangeIsSaidByTheAttributesItAlters(t *testing.T) {
 		if strings.Contains(name, "secret") {
 			t.Errorf("a value was said: %v", got)
 		}
+	}
+}
+
+// An unknown that cannot be read is taken as unknown, and an absent one as
+// known: neither is passed off as a change that settled.
+func TestAnUnknownThatCannotBeReadIsTakenAsUnknown(t *testing.T) {
+	if !holdsTrue(json.RawMessage("{not")) {
+		t.Error("an encoding that cannot be read was taken as holding nothing unknown")
+	}
+	if holdsTrue(nil) {
+		t.Error("an absent encoding was taken as unknown")
 	}
 }
 
