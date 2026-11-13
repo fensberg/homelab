@@ -579,3 +579,51 @@ run "an_offline_plan_reads_nothing_of_the_vendors" {
     error_message = "an offline plan read something of a vendor's, so it needs a credential and the rule harness cannot make it"
   }
 }
+
+# Cloudflare does not keep the split tunnel in the order it is sent, so the
+# order it holds is not a difference: the same routes the other way round
+# plan cleanly. The assert is that the override took, so the order did differ.
+run "a_split_tunnel_held_in_another_order_is_the_same_split_tunnel" {
+  command = plan
+
+  variables {
+    applications_path = "../../modules/infrastructure/applications/tests/fixtures/declared"
+    core_routes_path  = "../../modules/infrastructure/applications/tests/fixtures/core/named.json"
+  }
+
+  override_resource {
+    target = terraform_data.split_tunnel
+    values = {
+      output = [
+        { address = "10.196.40.5/32", description = "North Street Office the yard" },
+        { address = "10.196.40.8/32", description = "North Street Office side door" },
+        { address = "10.196.40.7/32", description = "North Street Office front door" },
+        { address = "10.196.40.9/32", description = "North Street Office back door" },
+        { address = "192.0.2.50/32", description = "workstation" },
+      ]
+    }
+  }
+
+  assert {
+    condition     = terraform_data.split_tunnel.output[0].address != cloudflare_zero_trust_device_default_profile.estate.include[0].address
+    error_message = "the routes were not given in another order, so this proves nothing about order"
+  }
+}
+
+# The account's split tunnel is held to the routes the estate sent it, in any
+# order Cloudflare keeps them. One that holds other routes - put there by hand,
+# or by another tool - fails the converge: it is neither undone quietly nor
+# left in place. The routes last sent are made to differ from what the account
+# holds, which is what such a change looks like to the next converge.
+run "a_split_tunnel_changed_outside_the_estate_is_refused" {
+  command = plan
+
+  override_resource {
+    target = terraform_data.split_tunnel
+    values = {
+      output = [{ address = "192.0.2.99/32", description = "put there by hand" }]
+    }
+  }
+
+  expect_failures = [cloudflare_zero_trust_device_default_profile.estate]
+}

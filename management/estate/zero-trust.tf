@@ -61,15 +61,17 @@ resource "cloudflare_zero_trust_access_application" "enrollment" {
 # ignores how Cloudflare happens to hold the list, and is held to WHAT is in
 # it instead:
 #
-#   - The entries live in terraform_data below. A change to what they are is a
-#     change there, and that replaces the profile - which for this resource is
-#     sending the whole profile again, as the provider's create is the same
-#     PATCH as its update and its destroy changes nothing in the account.
-#   - The postcondition holds the account to the same entries, in any order. An
-#     entry added or removed anywhere else - the dashboard, another tool -
+#   - A change to the routes is a change to terraform_data below, and that
+#     replaces the profile - which for this resource is sending the whole
+#     profile again, as the provider's create is the same PATCH as its update
+#     and its destroy changes nothing in the account.
+#   - The postcondition holds the account to the routes last sent to it -
+#     terraform_data's output, which once applied is what is declared - in
+#     any order. A
+#     route added or removed anywhere else - the dashboard, another tool -
 #     fails the converge rather than being undone quietly or left in place.
-resource "terraform_data" "split_tunnel" {
-  input = concat(
+locals {
+  split_tunnel = concat(
     # The workstation, through its own tunnel (workstation.tf).
     [for m in module.workstation : {
       address     = m.route
@@ -86,9 +88,13 @@ resource "terraform_data" "split_tunnel" {
   )
 }
 
+resource "terraform_data" "split_tunnel" {
+  input = local.split_tunnel
+}
+
 resource "cloudflare_zero_trust_device_default_profile" "estate" {
   account_id = local.access.account_id
-  include    = terraform_data.split_tunnel.output
+  include    = local.split_tunnel
 
   lifecycle {
     ignore_changes       = [include]
