@@ -924,6 +924,12 @@ egress:
       - api.github.com:443
       - github.com:443
 
+  - job: converge-estate.yml/probe-allowed-actions
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+
   - job: converge-estate.yml/converge
     policy: audit
     reason: >-
@@ -1712,6 +1718,12 @@ actions:
       practices, from the foundation that publishes the measure.
   - action: pnpm/action-setup
     reason: Installs the pinned pnpm for the jobs that install the Node packages.
+
+# The job that proves the repository's allowed-actions setting straight after
+# the estate converge applies it (#882), as <workflow file>/<job>. What it
+# names is a witness that the setting lets an action through, not a use of
+# it, so the rules asking what the workflows use leave it out.
+actions_probe: converge-estate.yml/probe-allowed-actions
 
 exemptions: []
 
