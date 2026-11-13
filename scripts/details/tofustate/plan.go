@@ -1,6 +1,11 @@
 package tofustate
 
-import "encoding/json"
+import (
+	"bytes"
+	"encoding/json"
+	"reflect"
+	"sort"
+)
 
 // Plan is the part of `tofu show -json <plan>` the programs here read: the
 // contractor to summarise a plan without printing a value, the lawyer to see
@@ -75,4 +80,69 @@ func (c ResourceChange) AfterString(attr string) (string, bool) {
 		return "", false
 	}
 	return s, true
+}
+
+// ChangedAttributes is the name of every top-level attribute a change would
+// alter: one whose value differs before and after, or one known only after
+// the apply. Names only, sorted, and never a value. The contractor's plan
+// comment and the lawyer's log both say an update by these.
+//
+// WHY NAMES ARE SAFE AND VALUES ARE NOT. A top-level key in a plan's before or
+// after object is a provider schema attribute - `memory`, `cpu`, `disk`. Those
+// are public API surface, identical in every estate that uses the provider,
+// and they carry nothing about THIS estate. The values under them are the
+// hostnames, addresses and credentials this repository keeps out of git, and
+// what these feed is world-readable.
+//
+// SO THE DEPTH LIMIT IS THE SAFETY PROPERTY, not a simplification. One level
+// down, map-typed attributes have operator-supplied keys - a label, an
+// annotation, a tag - and those can be a real hostname. So this never
+// descends, and must not be "improved" to.
+//
+// after_unknown marks an attribute whose value is not computable until apply.
+// It counts as changing: unknown-at-plan is how a change that depends on
+// something being created shows up. An attribute absent on one side and null
+// on the other holds no value either way, and is not a change.
+func (c ResourceChange) ChangedAttributes() []string {
+	names := map[string]bool{}
+	for name, after := range c.Change.After {
+		if !sameJSON(c.Change.Before[name], after) {
+			names[name] = true
+		}
+	}
+	for name, before := range c.Change.Before {
+		if !sameJSON(before, c.Change.After[name]) {
+			names[name] = true
+		}
+	}
+	// after_unknown carries false, or null, for an attribute that is known,
+	// as well as true for one that is not: its presence alone proves nothing.
+	for name, unknown := range c.Change.AfterUnknown {
+		if !sameJSON(unknown, json.RawMessage("false")) && !sameJSON(unknown, json.RawMessage("null")) {
+			names[name] = true
+		}
+	}
+	out := make([]string, 0, len(names))
+	for name := range names {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// sameJSON reports whether two encodings say the same thing, however they
+// are spaced. An attribute absent on one side and null on the other is the
+// same: neither holds a value.
+func sameJSON(a, b json.RawMessage) bool {
+	var x, y any
+	if len(a) == 0 {
+		a = json.RawMessage("null")
+	}
+	if len(b) == 0 {
+		b = json.RawMessage("null")
+	}
+	if json.Unmarshal(a, &x) != nil || json.Unmarshal(b, &y) != nil {
+		return bytes.Equal(a, b)
+	}
+	return reflect.DeepEqual(x, y)
 }

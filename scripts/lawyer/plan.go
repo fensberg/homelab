@@ -44,7 +44,8 @@ func (e *estate) plan() error {
 }
 
 // plannedChanges is every resource a plan would change, as its address and
-// what would be done to it, sorted. One the plan leaves as it is, or only
+// what would be done to it - for an update, with the names of the attributes
+// it alters - sorted. One the plan leaves as it is, or only
 // reads, is not one.
 func plannedChanges(showJSON []byte) ([]string, error) {
 	p, err := tofustate.ParsePlan(showJSON)
@@ -59,6 +60,14 @@ func plannedChanges(showJSON []byte) ([]string, error) {
 		done := strings.Join(rc.Change.Actions, " then ")
 		if done == "" || done == "no-op" || done == "read" {
 			continue
+		}
+		// An update is said with what it alters, by name: an attribute that
+		// changes on every converge is a difference that never settles, and
+		// the name is what finds it (#885). Never a value.
+		if done == "update" {
+			if names := rc.ChangedAttributes(); len(names) > 0 {
+				done += " (" + strings.Join(names, ", ") + ")"
+			}
 		}
 		out = append(out, rc.Address+": "+done)
 	}

@@ -1,6 +1,7 @@
 package tofustate
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -45,5 +46,42 @@ func TestAPlanSaysWhatItCreatesAndItsPlannedNames(t *testing.T) {
 	}
 	if !p.OutputChanges["o"].Sensitive() {
 		t.Error("an output marked sensitive after the change was not reported sensitive")
+	}
+}
+
+// What a change would alter is said by attribute name, and only where the
+// value differs: spacing is not a change, absent and null are the same, and
+// what is known only after the apply is one.
+func TestAChangeIsSaidByTheAttributesItAlters(t *testing.T) {
+	plan := []byte(`{"resource_changes": [{"address": "a.b", "mode": "managed", "change": {
+		"actions": ["update"],
+		"before": {"same": {"x": 1}, "spaced": [1,2], "moved": "old-secret", "gone": "v", "nulled": null},
+		"after": {"same": {"x":1}, "spaced": [ 1, 2 ], "moved": "new-secret", "added": "w"},
+		"after_unknown": {"computed": true, "settled": false, "known": null}
+	}}]}`)
+	p, err := ParsePlan(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := p.ResourceChanges[0].ChangedAttributes()
+	want := []string{"added", "computed", "gone", "moved"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("altered %v, want %v", got, want)
+	}
+	for _, name := range got {
+		if strings.Contains(name, "secret") {
+			t.Errorf("a value was said: %v", got)
+		}
+	}
+}
+
+// An encoding that is not JSON is compared as it is written, so two
+// different ones are never read as the same value.
+func TestEncodingsThatAreNotJSONAreComparedAsWritten(t *testing.T) {
+	if sameJSON(json.RawMessage("{not"), json.RawMessage("{nope")) {
+		t.Error("two different encodings that are not JSON were read as the same")
+	}
+	if !sameJSON(json.RawMessage("{not"), json.RawMessage("{not")) {
+		t.Error("the same encoding was read as a change")
 	}
 }
