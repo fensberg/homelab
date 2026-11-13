@@ -4,7 +4,7 @@
 mock_provider "cloudflare" {
   mock_data "cloudflare_account_api_token_permission_groups_list" {
     defaults = {
-      result = [{ id = "fixture-r2-bucket-write", name = "Workers R2 Storage Bucket Item Write", scopes = ["com.cloudflare.edge.r2.bucket"] }]
+      result = [{ id = "fixture-r2-bucket-write", name = "Workers R2 Storage Bucket Item Write", category = "Workers R2 Storage", is_selectable = true, scopes = ["com.cloudflare.edge.r2.bucket"] }]
     }
   }
 }
