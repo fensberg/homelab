@@ -1,0 +1,11 @@
+guard: TestTheConfigurationRulesHold
+rule: action_commits
+file: policy/conftest/lib/lib.rego
+find: "\tnot in_actions_probe(file, where)\n"
+replace: "\tcount(where) > 1\n"
+mentions: "actions/checkout is written in 2 places"
+why: >
+  The allowed-actions probe names every allowed action as a witness, at a
+  commit of its own. Taken for uses, each would be a second place an
+  action's commit is written, and the rules asking what the workflows use
+  would be answered by a job that runs nothing.

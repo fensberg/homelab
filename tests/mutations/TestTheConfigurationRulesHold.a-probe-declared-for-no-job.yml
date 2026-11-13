@@ -1,0 +1,11 @@
+guard: TestTheConfigurationRulesHold
+rule: allowed_actions_probe
+file: scripts/approved-suppliers.yml
+find: "actions_probe: converge-estate.yml/probe-allowed-actions\n"
+replace: "actions_probe: converge-estate.yml/probe-the-allowed-actions\n"
+mentions: "no job proves the allowed-actions setting"
+why: >
+  The suppliers list names the job that proves the allowed-actions setting
+  after the estate converges. Named for a job that is not there, nothing
+  proves the setting, and a converge that refuses an action every job needs
+  would pass unseen.

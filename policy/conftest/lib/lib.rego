@@ -307,6 +307,8 @@ uses contains [file, where, ref] if {
 # setting straight after the estate converge applies it (#882), as [file,
 # name]: the one the suppliers list declares under actions_probe, written as
 # its egress entries name a job, <workflow file>/<job>.
+default actions_probe := []
+
 actions_probe := [$".github/workflows/{parts[0]}", parts[1]] if {
 	some f in at("scripts/approved-suppliers.yml")
 	is_string(f.contents.actions_probe)

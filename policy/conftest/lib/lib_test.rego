@@ -122,8 +122,9 @@ test_what_the_allowed_actions_probe_names_is_not_a_use if {
 }
 
 test_a_probe_written_in_another_form_is_no_probe if {
-	not lib.actions_probe with input as [{"path": "scripts/approved-suppliers.yml", "contents": {"actions_probe": "w.yml"}}]
-	not lib.actions_probe with input as [{"path": "scripts/approved-suppliers.yml", "contents": {"actions_probe": ["w.yml/probe"]}}]
+	lib.actions_probe == [] with input as [{"path": "scripts/approved-suppliers.yml", "contents": {"actions_probe": "w.yml"}}]
+	lib.actions_probe == [] with input as [{"path": "scripts/approved-suppliers.yml", "contents": {"actions_probe": ["w.yml/probe"]}}]
+	lib.actions_probe == [] with input as []
 }
 
 test_an_action_written_in_another_form_is_named_as_written if {

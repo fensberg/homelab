@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: allowed_actions_probe
+file: .github/workflows/converge-estate.yml
+find: "        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413\n"
+replace: "        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1\n"
+mentions: "does not reference pnpm/action-setup"
+why: >
+  The probe is refused exactly when the setting refuses an action it
+  references. An allowed action it leaves out is one a setting could refuse
+  with the probe still passing.
