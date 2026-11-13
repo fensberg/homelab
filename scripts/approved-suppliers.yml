@@ -1137,6 +1137,25 @@ egress:
       - api.github.com:443
       - github.com:443
 
+  # After a failed merge, on main only: the revert is made with git, built
+  # into a signed pull request by signedpush, which has no dependency to
+  # fetch beyond Go itself (#885).
+  - job: pr-validation.yml/offer-revert
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+      - go.dev:443
+      - objects.githubusercontent.com:443
+      - release-assets.githubusercontent.com:443
+      - storage.googleapis.com:443
+
+  - job: pr-validation.yml/withdraw-revert
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+
   - job: pr-validation.yml/dockerfiles
     pool: source
     policy: block
