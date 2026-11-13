@@ -26,6 +26,7 @@ package main
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"flag"
 	"fmt"
@@ -40,6 +41,10 @@ const (
 	defaultAppID  = "4753166"
 	defaultKeyEnv = "GITHUB_APP_KEY"
 	defaultKey    = "/home/claude/.config/gh-app/homelab-agent.pem"
+	// tokenEnv is an installation token a job hands in, minted by the
+	// app-token action, in place of the App key a workstation holds. A name
+	// no other tool reads, so no token is ever taken up by accident.
+	tokenEnv = "SIGNEDPUSH_TOKEN"
 )
 
 func main() {
@@ -49,10 +54,19 @@ func main() {
 		branch   = flag.String("branch", "", "Branch to publish. Defaults to the current one.")
 		tokenOut = flag.Bool("token", false, "Print an installation access token and exit, for `gh auth login --with-token`.")
 		dryRun   = flag.Bool("dry-run", false, "Say what would be published, contact GitHub only to read.")
+		openPR   = flag.Bool("open-pr", false, "Once published, open the branch as a pull request into main, or name the one already open.")
+		title    = flag.String("title", "", "The pull request's title, with -open-pr.")
+		bodyFile = flag.String("body-file", "", "A file holding the pull request's description, with -open-pr.")
+		draft    = flag.Bool("draft", false, "Open the pull request as a draft, with -open-pr.")
 	)
 	flag.Parse()
 
-	if err := run(*appID, *keyPath, *branch, *tokenOut, *dryRun); err != nil {
+	p, err := proposalFrom(*openPR, *title, *bodyFile, *draft)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(2)
+	}
+	if err := run(*appID, *keyPath, *branch, *tokenOut, *dryRun, p); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
@@ -65,19 +79,80 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
-func run(appID, keyPath, branch string, tokenOnly, dryRun bool) error {
-	key, err := loadKey(keyPath)
-	if err != nil {
-		return err
+// proposalFrom reads the pull request asked for, before anything is
+// published: a missing title or description found after the branch is out
+// would leave a branch nobody opened.
+func proposalFrom(openPR bool, title, bodyFile string, draft bool) (*proposal, error) {
+	if !openPR {
+		if title != "" || bodyFile != "" || draft {
+			return nil, fmt.Errorf("-title, -body-file and -draft describe the pull request -open-pr opens, and there is none without it")
+		}
+		return nil, nil
 	}
-	jwt, err := appJWT(key, appID, time.Now())
-	if err != nil {
-		return err
+	if strings.TrimSpace(title) == "" || bodyFile == "" {
+		return nil, fmt.Errorf("-open-pr needs -title and -body-file: a pull request says what it is and what its reader has to do")
 	}
+	body, err := os.ReadFile(bodyFile)
+	if err != nil {
+		return nil, fmt.Errorf("reading the pull request's description: %w", err)
+	}
+	if strings.TrimSpace(string(body)) == "" {
+		return nil, fmt.Errorf("%s is empty, and a pull request says what it is and what its reader has to do", bodyFile)
+	}
+	return &proposal{title: title, body: string(body), draft: draft}, nil
+}
+
+// handedToken is the installation token a job handed in, if it did.
+func handedToken() string { return os.Getenv(tokenEnv) }
+
+// gitAuth is the environment that lets git push with a handed-in token, in
+// this process and what it runs and nowhere else: not on the command line,
+// which other processes can read, and not in .git/config, which outlives the
+// step (zizmor's artipacked). It adds to whatever configuration the
+// environment already carries rather than replacing it.
+func gitAuth(environ []string, token string) []string {
+	count := 0
+	for _, kv := range environ {
+		if v, ok := strings.CutPrefix(kv, "GIT_CONFIG_COUNT="); ok {
+			if _, err := fmt.Sscanf(v, "%d", &count); err != nil {
+				count = 0
+			}
+		}
+	}
+	header := "AUTHORIZATION: basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:"+token))
+	return []string{
+		fmt.Sprintf("GIT_CONFIG_COUNT=%d", count+1),
+		fmt.Sprintf("GIT_CONFIG_KEY_%d=http.https://github.com/.extraheader", count),
+		fmt.Sprintf("GIT_CONFIG_VALUE_%d=%s", count, header),
+	}
+}
+
+func run(appID, keyPath, branch string, tokenOnly, dryRun bool, p *proposal) error {
 	httpc := &http.Client{Timeout: 30 * time.Second}
-	token, err := installationToken(jwt, httpc)
-	if err != nil {
-		return err
+	token := handedToken()
+	if token != "" {
+		// Printing a token somebody handed in would only echo a secret.
+		if tokenOnly {
+			return fmt.Errorf("-token prints a token minted from the App key, and %s already holds one", tokenEnv)
+		}
+		for _, kv := range gitAuth(os.Environ(), token) {
+			name, value, _ := strings.Cut(kv, "=")
+			if err := os.Setenv(name, value); err != nil {
+				return err
+			}
+		}
+	} else {
+		key, err := loadKey(keyPath)
+		if err != nil {
+			return err
+		}
+		jwt, err := appJWT(key, appID, time.Now())
+		if err != nil {
+			return err
+		}
+		if token, err = installationToken(jwt, httpc); err != nil {
+			return err
+		}
 	}
 
 	// The token is written to stdout only when explicitly asked for, so it can
@@ -187,6 +262,12 @@ recreated with it. See docs/epochs/01-ignition.md.`, branch, baseSHA[:8], branch
 		return err
 	}
 	if len(commits) == 0 {
+		if p != nil {
+			if !branchExists {
+				return fmt.Errorf("%s holds nothing main does not, so there is nothing to open a pull request for", branch)
+			}
+			return propose(a, owner, repo, branch, p)
+		}
 		fmt.Println("nothing to publish: the branch matches its remote")
 		return nil
 	}
@@ -234,6 +315,11 @@ recreated with it. See docs/epochs/01-ignition.md.`, branch, baseSHA[:8], branch
 	if err := a.setRef(owner, repo, headRef, parent, branchExists); err != nil {
 		return err
 	}
+	if p != nil {
+		if err := propose(a, owner, repo, branch, p); err != nil {
+			return err
+		}
+	}
 
 	// Move local onto the published history. Without this, local keeps the
 	// unsigned originals while the remote has the signed replicas, the two
@@ -250,6 +336,20 @@ recreated with it. See docs/epochs/01-ignition.md.`, branch, baseSHA[:8], branch
 		return nil
 	}
 	fmt.Printf("%s is at %s, verified\n", branch, parent[:8])
+	return nil
+}
+
+// propose opens the published branch as a pull request and says which.
+func propose(a *api, owner, repo, branch string, p *proposal) error {
+	url, opened, err := a.openPullRequest(owner, repo, branch, *p)
+	if err != nil {
+		return fmt.Errorf("%s is published, and opening it as a pull request failed: %w", branch, err)
+	}
+	if opened {
+		fmt.Printf("opened %s\n", url)
+	} else {
+		fmt.Printf("already open: %s\n", url)
+	}
 	return nil
 }
 

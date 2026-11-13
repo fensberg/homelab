@@ -177,3 +177,33 @@ func (a *api) setRef(owner, repo, ref, sha string, exists bool) error {
 func (a *api) deleteRef(owner, repo, ref string) error {
 	return a.do(http.MethodDelete, fmt.Sprintf("/repos/%s/%s/git/refs/%s", owner, repo, ref), nil, nil)
 }
+
+// proposal is the pull request a published branch is opened as.
+type proposal struct {
+	title, body string
+	draft       bool
+}
+
+// openPullRequest opens branch as a pull request into main, or gives the one
+// already open from it. A job run again after it published and before it
+// opened finds its own pull request, rather than failing on GitHub's refusal
+// of a second one.
+func (a *api) openPullRequest(owner, repo, branch string, p proposal) (url string, opened bool, err error) {
+	var open []struct {
+		URL string `json:"html_url"`
+	}
+	if err := a.do(http.MethodGet, fmt.Sprintf("/repos/%s/%s/pulls?state=open&head=%s:%s", owner, repo, owner, branch), nil, &open); err != nil {
+		return "", false, err
+	}
+	if len(open) > 0 {
+		return open[0].URL, false, nil
+	}
+	var made struct {
+		URL string `json:"html_url"`
+	}
+	body := map[string]any{"title": p.title, "body": p.body, "head": branch, "base": "main", "draft": p.draft}
+	if err := a.do(http.MethodPost, fmt.Sprintf("/repos/%s/%s/pulls", owner, repo), body, &made); err != nil {
+		return "", false, err
+	}
+	return made.URL, true, nil
+}

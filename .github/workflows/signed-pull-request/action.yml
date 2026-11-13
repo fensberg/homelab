@@ -1,0 +1,82 @@
+# The one way a job here opens a pull request of its own making.
+#
+#   - uses: $/.github/workflows/signed-pull-request
+#     with:
+#       token: ${{ steps.token.outputs.token }}
+#       branch: revert/main-failed-1a2b3c4d
+#       title: "revert: ..."
+#       body: ${{ steps.say.outputs.body }}
+#
+# The job makes its change with plain git - a branch, an edit, a commit - in
+# its own checkout. This publishes that branch through scripts/signedpush, the
+# program the operator publishes with: every commit on every branch here must
+# be signed, an App cannot hold a signing key, and GitHub signs a commit it
+# creates through the API with an installation token. Then it opens the
+# branch as a pull request into main, or names the one already open, so a job
+# run again finishes rather than failing.
+#
+# The token is handed to signedpush in its environment, and to git through
+# signedpush's own: never on a command line, never in .git/config (zizmor's
+# artipacked), so it lasts as long as this step.
+name: "Signed pull request"
+description: Publish the checked-out branch as GitHub-signed commits and open it as a pull request into main.
+
+inputs:
+  token:
+    description: >-
+      An App installation token with contents and pull-requests write, from
+      $/.github/workflows/app-token. Only an installation token gets a commit
+      signed; signedpush refuses one that comes back unverified.
+    required: true
+  branch:
+    description: The local branch the job committed to, published under the same name.
+    required: true
+  title:
+    description: The pull request's title.
+    required: true
+  body:
+    description: >-
+      The pull request's description: what it is, and what its reader has to
+      do.
+    required: true
+  draft:
+    description: Open it as a draft.
+    required: false
+    default: "false"
+
+outputs:
+  url:
+    description: The pull request, opened or already open.
+    value: ${{ steps.open.outputs.url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Read pinned versions
+      uses: $/.github/actions/versions
+
+    - name: Setup Go
+      uses: $/.github/workflows/setup-go
+
+    - name: Publish and open
+      id: open
+      shell: bash
+      env:
+        SIGNEDPUSH_TOKEN: ${{ inputs.token }}
+        BRANCH: ${{ inputs.branch }}
+        TITLE: ${{ inputs.title }}
+        BODY: ${{ inputs.body }}
+        DRAFT: ${{ inputs.draft }}
+      run: |
+        case "$DRAFT" in true | false) ;; *) echo "::error::draft is true or false, not ${DRAFT}"; exit 1 ;; esac
+        tool="$RUNNER_TEMP/signedpush"
+        go build -C scripts/signedpush -o "$tool" .
+        body="$RUNNER_TEMP/pull-request-body.md"
+        printf '%s\n' "$BODY" > "$body"
+        "$tool" -branch "$BRANCH" -open-pr -title "$TITLE" -body-file "$body" -draft="$DRAFT"
+        url="$(GH_TOKEN="$SIGNEDPUSH_TOKEN" gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json url --jq '.[0].url // empty')"
+        if [ -z "$url" ]; then
+          echo "::error::signedpush published ${BRANCH}, and no pull request is open from it"
+          exit 1
+        fi
+        echo "url=${url}" >> "$GITHUB_OUTPUT"
