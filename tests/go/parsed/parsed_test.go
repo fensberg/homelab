@@ -86,3 +86,29 @@ type recorder struct {
 func (r *recorder) Fatalf(string, ...any) { r.failed = true; runtime.Goexit() }
 func (r *recorder) Fatal(...any)          { r.failed = true; runtime.Goexit() }
 func (r *recorder) Errorf(string, ...any) { r.failed = true }
+
+// A file is read as it was at a commit; one that was not there then is said
+// to be absent, and a commit that is not one is an error, not an absence.
+func TestAFileIsReadAsItWasAtACommit(t *testing.T) {
+	tree := Empty(t)
+	tree.Write(t, "a.yaml", "jobs:\n  one: {}\n")
+	tree.Commit(t, "a")
+	tree.Write(t, "a.yaml", "jobs:\n  two: {}\n")
+
+	doc, there, err := tree.YAMLAt("HEAD", "a.yaml")
+	jobs, _ := doc.(map[string]any)["jobs"].(map[string]any)
+	if err != nil || !there || jobs["one"] == nil || jobs["two"] != nil {
+		t.Errorf("read %v, there %v, %v; want the committed version, not the working tree's", doc, there, err)
+	}
+	if _, there, err := tree.YAMLAt("HEAD", "b.yaml"); err != nil || there {
+		t.Errorf("a file the commit does not hold: there %v, %v", there, err)
+	}
+	if _, _, err := tree.YAMLAt("a-commit-nobody-made", "a.yaml"); err == nil {
+		t.Error("a commit that is not one was read as a file being absent")
+	}
+	tree.Write(t, "c.yaml", "jobs: [\n")
+	tree.Commit(t, "c")
+	if _, _, err := tree.YAMLAt("HEAD", "c.yaml"); err == nil {
+		t.Error("a file that is not YAML was read")
+	}
+}

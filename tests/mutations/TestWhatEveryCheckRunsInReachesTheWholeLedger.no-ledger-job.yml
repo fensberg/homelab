@@ -1,0 +1,9 @@
+guard: TestWhatEveryCheckRunsInReachesTheWholeLedger
+file: .github/workflows/pr-validation.yml
+find: 'run: go test ./repo/ -run "$META_TESTS"'
+replace: 'run: go test ./repo/ -run "$NO_SUCH_TESTS"'
+mentions: "found 0 jobs that run TestTheLedgerProvesEachGuardFailsWhenItShould"
+why: >
+  What every proof runs in is read from the job that runs the ledger, found
+  by what it runs. A workflow where no job can be found running it would
+  leave nothing to read, so it fails rather than reaching nothing (#885).
