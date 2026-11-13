@@ -40,6 +40,10 @@ const takeDelivery = "scripts/take-delivery.sh"
 
 // takes is every delivery a script asks take-delivery.sh for: the words
 // after it, in every command that runs it, as the shell parser reads them.
+// offlineAction runs a job's check with no network, in the pull-request
+// runner image.
+const offlineAction = "$/.github/workflows/offline"
+
 // runsInTheImage is whether a job runs in the pull-request runner image: a
 // job of a pool, on a runner made from it, or an offline one, whose check
 // offlineAction runs in it.

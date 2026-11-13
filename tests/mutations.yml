@@ -159,6 +159,10 @@ unprovable:
     reason: table
   - test: TestSemgrepPathsAreReadAsGitignoreLines
     reason: table
+  - test: TestAnActionIsFollowedIntoTheActionsItRuns
+    reason: table
+  - test: TestTheLedgersJobIsComparedByWhatItIsGiven
+    reason: table
   - test: TestAcceptedInReadsSemgrepsOkMark
     reason: table
   - test: TestReadsInputCountsTheInputAndNothingThatSaysIt

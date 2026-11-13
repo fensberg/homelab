@@ -186,6 +186,27 @@ func (r *Tree) YAMLDocuments(t testing.TB, rel string) []any {
 	}
 }
 
+// YAMLAt is the one document of a YAML file as it was at a commit, decoded,
+// and whether the file was there. A commit that cannot be read is an error,
+// never a file that was not there: the two would read the same otherwise.
+func (r *Tree) YAMLAt(commit, rel string) (doc any, there bool, err error) {
+	if _, errs, err := r.Invoke(Run{}, "git", "rev-parse", "--verify", "--quiet", commit+"^{commit}"); err != nil {
+		return nil, false, fmt.Errorf("%s is not a commit here: %w\n%s", commit, err, errs)
+	}
+	object := commit + ":" + rel
+	if _, _, err := r.Invoke(Run{}, "git", "cat-file", "-e", object); err != nil {
+		return nil, false, nil
+	}
+	raw, errs, err := r.Invoke(Run{}, "git", "cat-file", "blob", object)
+	if err != nil {
+		return nil, false, fmt.Errorf("reading %s: %w\n%s", object, err, errs)
+	}
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		return nil, false, fmt.Errorf("%s is not YAML that can be read: %w", object, err)
+	}
+	return doc, true, nil
+}
+
 // MaybeYAML is every document of a file, decoded, and false when it is not
 // YAML at all: for a guard asking every file whether it is one of a kind
 // whose own validator owns its being well formed.
@@ -525,6 +546,22 @@ func (r *Tree) Index(t testing.TB) {
 	r.mustBeScratch(t, "index")
 	if _, errs, err := r.Invoke(Run{}, "git", "add", "-A", "-f"); err != nil {
 		t.Fatalf("indexing the scratch tree: %v\n%s", err, errs)
+	}
+}
+
+// Commit indexes a scratch tree and records it as a commit, made the same
+// way on every machine: no configuration of the machine's is read, so no
+// identity it lacks and no signing it asks for can stop it.
+func (r *Tree) Commit(t testing.TB, message string) {
+	t.Helper()
+	r.Index(t)
+	run := Run{Env: []string{
+		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null",
+		"GIT_AUTHOR_NAME=fixture", "GIT_AUTHOR_EMAIL=fixture@example.test",
+		"GIT_COMMITTER_NAME=fixture", "GIT_COMMITTER_EMAIL=fixture@example.test",
+	}}
+	if _, errs, err := r.Invoke(run, "git", "commit", "-q", "--allow-empty", "-m", message); err != nil {
+		t.Fatalf("committing the scratch tree: %v\n%s", err, errs)
 	}
 }
 

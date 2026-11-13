@@ -4,8 +4,14 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"reflect"
+	"regexp"
+	"runtime"
+	"sort"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 
 	"homelab/tests/parsed"
 )
@@ -104,25 +110,146 @@ func changeSince(t *testing.T, tree *parsed.Tree, since string) (reach, error) {
 	if err != nil {
 		return reach{}, fmt.Errorf("%s is %s, and what changed since it could not be read: %w\n%s", changedSinceEnv, since, err, errs)
 	}
-	return reachOf(strings.Fields(string(out)), func(rel string) []string { return guardsDeclaredIn(t, tree, rel) }, checkEnvironment(t)), nil
+	r := reachOf(strings.Fields(string(out)), func(rel string) []string { return guardsDeclaredIn(t, tree, rel) }, checkEnvironment(t))
+	job := findLedgerJob(t)
+	before, there, err := tree.YAMLAt(since, job.workflow)
+	if err != nil {
+		return reach{}, fmt.Errorf("reading how %s ran the ledger at %s: %w", job.workflow, since, err)
+	}
+	after, _, err := tree.YAMLAt("HEAD", job.workflow)
+	if err != nil {
+		return reach{}, fmt.Errorf("reading how %s runs the ledger: %w", job.workflow, err)
+	}
+	// Not there before: the ledger's job is new, and so is everything about
+	// how it runs.
+	if !there || !sameLedgerJob(before, after, job.name) {
+		r.whole = true
+	}
+	return r, nil
 }
 
-// offlineAction runs a job's check with no network, in the pull-request
-// runner image.
-const offlineAction = "$/.github/workflows/offline"
+// ledgerJob is the job that runs the ledger, in the workflow it is in.
+type ledgerJob struct {
+	workflow, name string
+	// actions are this repository's actions it runs, each followed through
+	// the actions it runs in turn.
+	actions []string
+}
 
-// checkEnvironment is what every check that runs offline runs in, so what
-// every proof's guard runs in: the action that runs it, the image it runs
-// in - the build's context, what the build reads from outside it, and its
-// pins - and the pools' manifests, which pin that image by digest. A change
-// to any of it can alter any proof's answer, and the proofs it reaches are
-// not the ones whose files it touched: #879 moved the ledger into an image
-// three weeks behind its Dockerfile, its pull request proved a handful, and
-// main found the rest failing.
+// ledgerTest is the guard the ledger is, by its own name, so a rename
+// cannot leave this looking for a test nobody runs.
+func ledgerTest() string {
+	name := runtime.FuncForPC(reflect.ValueOf(TestTheLedgerProvesEachGuardFailsWhenItShould).Pointer()).Name()
+	return name[strings.LastIndex(name, ".")+1:]
+}
+
+// laneRunsVariable is a lane that runs the tests a workflow variable names.
+var laneRunsVariable = regexp.MustCompile(`^go test \./repo/ -run "\$([A-Z_]+)"`)
+
+// findLedgerJob is the one job, in any workflow, that runs the ledger: found
+// by what it runs, not by its name or its file. Its actions are followed
+// from its steps through every action of this repository they run, so an
+// action added to its steps, or to an action it runs, is part of what the
+// ledger runs in without anybody writing it down.
+func findLedgerJob(t *testing.T) ledgerJob {
+	t.Helper()
+	tree := repository(t)
+	test := ledgerTest()
+	var found []ledgerJob
+	for _, rel := range trackedFiles(t) {
+		if !runnable(rel) || strings.HasSuffix(rel, "/action.yml") || strings.HasSuffix(rel, "/action.yaml") {
+			continue
+		}
+		var wf struct {
+			Env  map[string]string `yaml:"env"`
+			Jobs map[string]struct {
+				Steps []map[string]any `yaml:"steps"`
+			} `yaml:"jobs"`
+		}
+		tree.YAMLInto(t, rel, &wf)
+		for name, job := range wf.Jobs {
+			runs := false
+			for _, step := range job.Steps {
+				run, _ := step["run"].(string)
+				if with, ok := step["with"].(map[string]any); ok && run == "" {
+					run, _ = with["run"].(string)
+				}
+				m := laneRunsVariable.FindStringSubmatch(strings.TrimSpace(run))
+				if m == nil {
+					continue
+				}
+				selects, err := regexp.Compile(wf.Env[m[1]])
+				if err == nil && wf.Env[m[1]] != "" && selects.MatchString(test) {
+					runs = true
+				}
+			}
+			if runs {
+				steps := make([]any, 0, len(job.Steps))
+				for _, step := range job.Steps {
+					steps = append(steps, step)
+				}
+				found = append(found, ledgerJob{workflow: rel, name: name, actions: actionsRunBy(t, tree, scalarsAt(steps, "uses"))})
+			}
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("found %d jobs that run %s, and what the ledger runs in is read from the one that does: %v", len(found), test, found)
+	}
+	return found[0]
+}
+
+// actionsRunBy is the directories of this repository's actions that these
+// references run, and the actions those run in turn.
+func actionsRunBy(t *testing.T, tree *parsed.Tree, uses []string) []string {
+	t.Helper()
+	seen := map[string]bool{}
+	for len(uses) > 0 {
+		ref := uses[0]
+		uses = uses[1:]
+		dir, ours := strings.CutPrefix(ref, "$/")
+		if !ours || seen[dir] {
+			continue
+		}
+		seen[dir] = true
+		meta := dir + "/action.yml"
+		if !tree.Exists(meta) {
+			meta = dir + "/action.yaml"
+		}
+		uses = append(uses, scalarsAt(tree.YAMLDocuments(t, meta), "uses")...)
+	}
+	dirs := make([]string, 0, len(seen))
+	for dir := range seen {
+		dirs = append(dirs, dir)
+	}
+	sort.Strings(dirs)
+	return dirs
+}
+
+// sameLedgerJob reports whether two versions of a workflow run the ledger
+// the same way: the job itself, and what the workflow gives every job - its
+// variables and its defaults. Another job changing is not the ledger's.
+func sameLedgerJob(before, after any, job string) bool {
+	given := func(doc any) map[string]any {
+		wf, _ := doc.(map[string]any)
+		jobs, _ := wf["jobs"].(map[string]any)
+		return map[string]any{"job": jobs[job], "env": wf["env"], "defaults": wf["defaults"]}
+	}
+	return reflect.DeepEqual(given(before), given(after))
+}
+
+// checkEnvironment is what every proof's guard runs in: the actions the
+// ledger's job runs, found from its steps, and the image the offline action
+// runs it in - the build's context, what the build reads from outside it,
+// and its pins - with the pools' manifests, which pin that image by digest.
+// A change to any of it can alter any proof's answer, and the proofs it
+// reaches are not the ones whose files it touched: #879 moved the ledger into
+// an image three weeks behind its Dockerfile, its pull request proved a
+// handful, and main found the rest failing. The job's own definition is
+// compared in changeSince.
 func checkEnvironment(t *testing.T) func(rel string) bool {
 	t.Helper()
 	order := pullRequestRunnerOrder(t)
-	within := []string{strings.TrimPrefix(offlineAction, "$/"), order.Context}
+	within := append([]string{order.Context}, findLedgerJob(t).actions...)
 	within = append(within, order.Reads...)
 	exact := map[string]bool{}
 	if order.Pins != "" {
@@ -206,20 +333,68 @@ func TestARunProvesTheWholeLedgerOrTheChangeItCanRead(t *testing.T) {
 func TestWhatEveryCheckRunsInReachesTheWholeLedger(t *testing.T) {
 	light(t)
 	in := checkEnvironment(t)
+	job := findLedgerJob(t)
+	if len(job.actions) == 0 {
+		t.Fatalf("%s runs no action of this repository's, which is not how the ledger runs: the reading of its steps has stopped matching", job.name)
+	}
 	order := pullRequestRunnerOrder(t)
 	path, _ := fluxObject(t, kindHelmRelease, runnerSets(t)[0])
-	for _, rel := range []string{
-		strings.TrimPrefix(offlineAction, "$/") + "/action.yml",
-		order.Context + "/Dockerfile",
-		path,
-	} {
+	reached := []string{order.Context + "/Dockerfile", path}
+	for _, dir := range job.actions {
+		reached = append(reached, dir+"/action.yml")
+	}
+	for _, rel := range reached {
 		if !in(rel) {
 			t.Errorf("%s is part of what every check runs in, and a change to it would prove only the proofs that name it", rel)
 		}
 	}
-	for _, rel := range []string{"docs/epochs/README.md", strings.TrimPrefix(offlineAction, "$/") + "-elsewhere/action.yml"} {
+	for _, rel := range []string{"docs/epochs/README.md", job.actions[0] + "-elsewhere/action.yml"} {
 		if in(rel) {
 			t.Errorf("%s is not what any check runs in, and a change to it would run the whole ledger", rel)
+		}
+	}
+}
+
+// An action the ledger's job runs is followed into the actions it runs, and
+// a reference to anything that is not this repository's is not followed: a
+// pinned action is held by the file that pins it, which is one of these.
+func TestAnActionIsFollowedIntoTheActionsItRuns(t *testing.T) {
+	light(t)
+	tree := parsed.Empty(t)
+	tree.Write(t, "a/action.yml", "runs:\n  using: composite\n  steps:\n    - uses: $/b\n    - uses: owner/repo@0123456789012345678901234567890123456789ab\n")
+	tree.Write(t, "b/action.yaml", "runs:\n  using: composite\n  steps:\n    - uses: $/a\n")
+	tree.Write(t, "c/action.yml", "runs:\n  using: composite\n  steps: []\n")
+	got := actionsRunBy(t, tree, []string{"$/a", "actions/checkout@0123456789012345678901234567890123456789ab"})
+	if want := []string{"a", "b"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("followed %v, want %v", got, want)
+	}
+}
+
+// The ledger's job is the same when nothing it is given changed: its own
+// block, and the workflow's variables and defaults. Another job is not it.
+func TestTheLedgersJobIsComparedByWhatItIsGiven(t *testing.T) {
+	light(t)
+	base := "env:\n  A: x\ndefaults:\n  run:\n    shell: bash\njobs:\n  ledger:\n    runs-on: r\n  other:\n    runs-on: r\n"
+	for _, c := range []struct {
+		name  string
+		after string
+		same  bool
+	}{
+		{"nothing", base, true},
+		{"another job", strings.Replace(base, "  other:\n    runs-on: r", "  other:\n    runs-on: s", 1), true},
+		{"the job itself", strings.Replace(base, "  ledger:\n    runs-on: r", "  ledger:\n    runs-on: s", 1), false},
+		{"a variable every job is given", strings.Replace(base, "A: x", "A: y", 1), false},
+		{"the defaults", strings.Replace(base, "shell: bash", "shell: sh", 1), false},
+	} {
+		var before, after any
+		if err := yaml.Unmarshal([]byte(base), &before); err != nil {
+			t.Fatal(err)
+		}
+		if err := yaml.Unmarshal([]byte(c.after), &after); err != nil {
+			t.Fatal(err)
+		}
+		if same := sameLedgerJob(before, after, "ledger"); same != c.same {
+			t.Errorf("%s: same %v, want %v", c.name, same, c.same)
 		}
 	}
 }
