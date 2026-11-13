@@ -198,3 +198,55 @@ jobs:
       - name: pnpm/action-setup
         if: github.run_attempt == '0'
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+
+  # When the converge fails - the apply, or the read-back finding the estate
+  # did not settle - or the probe is refused, the merge that caused it is
+  # offered back as a revert, for the operator to merge or leave. Nothing is
+  # put back by itself: a restore nobody chose is drift nobody sees. A run
+  # that fails by chance is run again, and passing withdraws the offer.
+  #
+  # Its own branch, revert/estate-failed-<commit>, so main's checks passing
+  # again never withdraws it. On GitHub's runner: it holds the pull-request
+  # App's key, which opens a pull request, and nothing of the estate's.
+  offer-revert:
+    name: Offer the revert
+    needs: [converge, probe-allowed-actions]
+    if: always() && (needs.converge.result == 'failure' || needs.probe-allowed-actions.result == 'failure')
+    continue-on-error: true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      # The whole history, so origin/main is main as it is now and the
+      # revert is made on top of it rather than of this run's commit.
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          fetch-depth: 0
+
+      - name: Offer the revert
+        uses: $/.github/workflows/offer-revert
+        with:
+          failed: estate
+          what: the estate's converge
+          client-id: ${{ secrets.PROCUREMENT_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.PROCUREMENT_BOT_PRIVATE_KEY }}
+
+  withdraw-revert:
+    name: Withdraw the revert
+    needs: [converge, probe-allowed-actions]
+    if: always() && github.run_attempt > 1 && needs.converge.result == 'success' && needs.probe-allowed-actions.result == 'success'
+    continue-on-error: true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Withdraw the revert
+        uses: $/.github/workflows/withdraw-revert
+        with:
+          failed: estate
+          what: the estate's converge
+          client-id: ${{ secrets.PROCUREMENT_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.PROCUREMENT_BOT_PRIVATE_KEY }}

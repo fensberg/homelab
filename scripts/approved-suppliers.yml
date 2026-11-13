@@ -924,6 +924,24 @@ egress:
       - api.github.com:443
       - github.com:443
 
+  # As main's revert offer below: the revert is made with git and published
+  # by signedpush, built with Go.
+  - job: converge-estate.yml/offer-revert
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+      - go.dev:443
+      - objects.githubusercontent.com:443
+      - release-assets.githubusercontent.com:443
+      - storage.googleapis.com:443
+
+  - job: converge-estate.yml/withdraw-revert
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+
   - job: converge-estate.yml/probe-allowed-actions
     policy: block
     hosts:

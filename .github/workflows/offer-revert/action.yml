@@ -1,0 +1,142 @@
+# Offers the revert of the commit a run on main failed after, as a pull
+# request for the operator to merge or leave.
+#
+#   - uses: $/.github/workflows/mobilize
+#     with:
+#       fetch-depth: 0
+#   - uses: $/.github/workflows/offer-revert
+#     with:
+#       failed: estate
+#       what: the estate's converge
+#       client-id: ${{ secrets.PROCUREMENT_BOT_CLIENT_ID }}
+#       private-key: ${{ secrets.PROCUREMENT_BOT_PRIVATE_KEY }}
+#
+# Needs the whole history checked out, so origin/main is main as it is now and
+# the revert is made on top of it rather than of the run's commit.
+#
+# Nothing is reverted by itself: a merge that broke main is taken back by the
+# operator merging the offer, and one that failed by chance is left, and
+# withdrawn when the run passes again ($/.github/workflows/withdraw-revert).
+# Each kind of failure has its own branch, revert/<failed>-failed-<commit>, so
+# one passing again never withdraws the offer another still needs.
+name: "Offer the revert"
+description: Offer the revert of the commit a run on main failed after, as a signed pull request.
+
+inputs:
+  failed:
+    description: >-
+      What failed, as one word for the branch: main for main's checks, estate
+      for the estate's converge.
+    required: true
+  what:
+    description: What failed, as the offer says it, such as "the estate's converge".
+    required: true
+  client-id:
+    description: The pull-request App's client ID.
+    required: true
+  private-key:
+    description: The pull-request App's private key.
+    required: true
+
+outputs:
+  url:
+    description: The offered pull request, or empty when none was offered.
+    value: ${{ steps.offer.outputs.url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Make the revert
+      id: revert
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        SHA: ${{ github.sha }}
+        FAILED: ${{ inputs.failed }}
+        WHAT: ${{ inputs.what }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        case "$FAILED" in
+          *[!a-z]* | "")
+            echo "::error::failed is '${FAILED}', and is one lower-case word naming what failed"
+            exit 1
+            ;;
+        esac
+        short="${SHA::8}"
+        branch="revert/${FAILED}-failed-${short}"
+        subject="$(git log -1 --format=%s "$SHA")"
+        # A revert that leaves main failing says the cause is not the
+        # merge before it, and reverting the revert would put back what
+        # was taken out. Nothing is offered; the run needs reading.
+        case "$subject" in
+          revert:*)
+            echo "::error::${short} is itself a revert and ${WHAT} still fails, so the cause is not the merge it took back. Nothing is offered: read this run."
+            exit 1
+            ;;
+        esac
+        if gh api "repos/${REPO}/git/ref/heads/${branch}" --silent 2>/dev/null; then
+          echo "::notice::the revert of ${short} is already offered on ${branch}"
+          echo "offered=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        origin="$(gh api "repos/${REPO}/commits/${SHA}/pulls" --jq '.[0].number // empty')"
+        git switch -q -c "$branch" origin/main
+        if ! git revert --no-commit "$SHA"; then
+          git revert --abort
+          echo "::error::${short} no longer reverts cleanly onto main, which has moved on since. Nothing is offered: revert it by hand, or fix forward."
+          exit 1
+        fi
+        git -c user.name=revert -c user.email=revert@invalid commit -q \
+          -m "revert: ${subject:0:90}" \
+          -m "This reverts commit ${SHA}: ${WHAT} failed after it (${RUN_URL})."
+        {
+          echo "offered=true"
+          echo "branch=${branch}"
+          echo "title=revert: ${origin:+#${origin} }broke ${FAILED} (${short})"
+          echo "body<<END_OF_BODY"
+          echo "## Actions for you"
+          echo ""
+          echo "Read the failed run first: ${RUN_URL}"
+          echo ""
+          echo "- **If the change broke it, merge this.** It takes ${origin:+#${origin}, }${short} out, and main is what it was before."
+          echo "- **If it failed by chance, do not merge it.** Run the failed jobs again; when they pass, this is closed for you."
+          echo ""
+          echo "## What this is"
+          echo ""
+          echo "${WHAT} failed after ${short} merged: ${subject}"
+          echo ""
+          echo "A merged pull request cannot be reopened. To land the change again once it is fixed, revert this."
+          echo "END_OF_BODY"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Mint the pull-request token
+      id: token
+      if: steps.revert.outputs.offered == 'true'
+      uses: $/.github/workflows/app-token
+      with:
+        client-id: ${{ inputs.client-id }}
+        private-key: ${{ inputs.private-key }}
+        # Contents to publish the branch; pull requests to open it.
+        permission-contents: write
+        permission-pull-requests: write
+        owner: ${{ github.repository_owner }}
+        repositories: ${{ github.event.repository.name }}
+
+    - name: Offer it
+      id: offer
+      if: steps.revert.outputs.offered == 'true'
+      uses: $/.github/workflows/signed-pull-request
+      with:
+        token: ${{ steps.token.outputs.token }}
+        branch: ${{ steps.revert.outputs.branch }}
+        title: ${{ steps.revert.outputs.title }}
+        body: ${{ steps.revert.outputs.body }}
+
+    - name: Say where
+      if: steps.revert.outputs.offered == 'true'
+      shell: bash
+      env:
+        URL: ${{ steps.offer.outputs.url }}
+        WHAT: ${{ inputs.what }}
+      run: echo "${WHAT} failed after this merge; its revert is offered as ${URL}" >> "$GITHUB_STEP_SUMMARY"
