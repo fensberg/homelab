@@ -1,0 +1,10 @@
+guard: TestTheConfigurationRulesHold
+rule: job_checkouts
+file: scripts/approved-suppliers.yml
+find: "actions_probe: converge-estate.yml/probe-allowed-actions\n"
+replace: "actions_probe: converge-estate.yml/runner\n"
+mentions: 'job "probe-allowed-actions" checks out without persist-credentials: false'
+why: >
+  The probe's checkout is passed only because its step never runs. Once the
+  job is not the one the suppliers list declares, its checkout is judged as
+  any other job's is.

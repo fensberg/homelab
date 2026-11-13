@@ -164,6 +164,13 @@ tools:
 # Builds, fetches, formats or runs what it is given, and has no finding of
 # its own to silence.
 judges_nothing:
+  # The four below arrive only as witnesses in the allowed-actions probe
+  # (converge-estate.yml), whose steps never run; each is run for real by
+  # Trivy's actions, which judge.
+  actions/cache: keeps files between runs
+  actions/cache/restore: brings back files kept between runs
+  actions/cache/save: keeps files between runs
+  aquasecurity/setup-trivy: installs Trivy, which judges as trivy-action
   CILIUM_VERSION: the CNI's own manifests are rendered from it
   GATEWAY_API_VERSION: the version the rendered Gateway API definitions say they are
   TRAEFIK_CRDS_VERSION: the Gateway API's definitions are rendered from it

@@ -26,6 +26,13 @@ test_a_checkout_that_persists_credentials_is_refused if {
 	denies(job_checkouts.deny, "checks out without persist-credentials: false") with input as [workflow({"j": job([harden, checkout({})])})]
 }
 
+test_the_allowed_actions_probes_checkout_never_runs_so_is_not_refused if {
+	probe := {"uses": "actions/checkout@0123456789abcdef0123456789abcdef01234567", "if": "github.run_attempt == '0'"}
+	suppliers := {"path": "scripts/approved-suppliers.yml", "contents": {"actions_probe": "w.yml/probe"}}
+	not denies(job_checkouts.deny, "persist-credentials") with input as [workflow({"probe": job([probe])}), suppliers]
+	denies(job_checkouts.deny, "checks out without persist-credentials: false") with input as [workflow({"other": job([probe])}), suppliers]
+}
+
 test_a_checkout_two_actions_deep_is_found if {
 	files := [
 		workflow({"j": job([{"uses": "$/.github/workflows/mobilize"}])}),

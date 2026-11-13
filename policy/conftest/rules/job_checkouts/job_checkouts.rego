@@ -10,8 +10,12 @@ package rules.job_checkouts
 import data.lib
 import rego.v1
 
+# The allowed-actions probe's steps never run - it only references each
+# allowed action, so the platform checks the setting - so its checkout leaves
+# nothing on disk, and is not one of the job's.
 level0 contains [file, name, "", step] if {
 	some [file, name, job] in lib.jobs
+	not [file, name] == lib.actions_probe
 	some step in object.get(job, "steps", [])
 }
 
