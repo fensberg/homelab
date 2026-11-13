@@ -39,6 +39,11 @@ opentofu:
     reason: >-
       The default device profile is the account's single one. The estate owns
       it, and a site has no profile of its own to build from a shared block.
+  - resource: terraform_data.split_tunnel
+    reason: >-
+      What the account's single default device profile routes, kept so a
+      change to it replaces that profile. It belongs to the profile, which has
+      one caller, so it has one too.
   - resource: github_organization_settings.estate
     reason: >-
       An organisation has one set of settings and the estate is one

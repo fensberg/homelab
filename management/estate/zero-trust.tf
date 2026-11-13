@@ -55,14 +55,21 @@ resource "cloudflare_zero_trust_access_application" "enrollment" {
 # writing it from their own builds would overwrite each other's routes. Every
 # site's addresses are its own, so the list carries each route once per site.
 #
-# THE ORDER IS CLOUDFLARE'S, NOT OURS. The API does not keep the order it is
-# sent: given the sites' routes and then the workstation, it holds the
-# workstation first. The provider compares the list in order, so declaring it
-# any other way is a change on every converge that every apply undoes. So the
-# workstation comes first here, as Cloudflare holds it.
-resource "cloudflare_zero_trust_device_default_profile" "estate" {
-  account_id = local.access.account_id
-  include = concat(
+# THE ORDER IS NOT OURS TO KEEP. The API does not hold the list in the order
+# it is sent, and the provider compares it in order, so any order written here
+# can be a change on every converge that every apply undoes. So the profile
+# ignores how Cloudflare happens to hold the list, and is held to WHAT is in
+# it instead:
+#
+#   - The entries live in terraform_data below. A change to what they are is a
+#     change there, and that replaces the profile - which for this resource is
+#     sending the whole profile again, as the provider's create is the same
+#     PATCH as its update and its destroy changes nothing in the account.
+#   - The postcondition holds the account to the same entries, in any order. An
+#     entry added or removed anywhere else - the dashboard, another tool -
+#     fails the converge rather than being undone quietly or left in place.
+resource "terraform_data" "split_tunnel" {
+  input = concat(
     # The workstation, through its own tunnel (workstation.tf).
     [for m in module.workstation : {
       address     = m.route
@@ -77,4 +84,22 @@ resource "cloudflare_zero_trust_device_default_profile" "estate" {
       ]
     ]),
   )
+}
+
+resource "cloudflare_zero_trust_device_default_profile" "estate" {
+  account_id = local.access.account_id
+  include    = terraform_data.split_tunnel.output
+
+  lifecycle {
+    ignore_changes       = [include]
+    replace_triggered_by = [terraform_data.split_tunnel]
+
+    postcondition {
+      condition = (
+        toset([for e in self.include : "${e.address} ${e.description}"]) ==
+        toset([for e in terraform_data.split_tunnel.output : "${e.address} ${e.description}"])
+      )
+      error_message = "The account's split tunnel does not hold exactly the routes the estate declares. Something other than this converge changed it; undo that change, or declare the route here."
+    }
+  }
 }

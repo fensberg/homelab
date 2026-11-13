@@ -36,6 +36,11 @@ test_a_data_source_in_the_estate_is_not_an_object_it_makes if {
 	count(plan_estate_scope.deny) == 0 with input as [reads, site, site_lock]
 }
 
+test_what_makes_nothing_outside_state_belongs_to_either_scope if {
+	kept := [resource("terraform_data.entries", "terraform_data")]
+	count(plan_estate_scope.deny) == 0 with input as [plan("estate", kept), plan("site", kept), site_lock]
+}
+
 test_an_estate_object_in_a_sites_plan_is_refused if {
 	held := plan("site", [resource("random_password.ring", "random_password")])
 	denies(plan_estate_scope.deny, "which is the estate's") with input as [estate, held, site_lock]
