@@ -74,3 +74,33 @@ func plannedChanges(showJSON []byte) ([]string, error) {
 	sort.Strings(out)
 	return out, nil
 }
+
+// readBack plans the estate again straight after a converge, and fails when
+// that plan would change anything.
+//
+// A converge that leaves something to change has not brought the estate to
+// what management/estate/ declares, whatever its apply reported: the next
+// converge changes it again, and the one after. The default device profile
+// did that for six converges before anyone read the log (#885). Each change
+// is said as a plan says it - by address, and for an update by the names of
+// the attributes it alters - so the failure names what does not settle.
+// There is no second apply: what does not settle is fixed in its
+// declaration, not by applying until it seems to.
+func (e *estate) readBack() error {
+	shown, err := e.shownPlan("readback.tfplan")
+	if err != nil {
+		return err
+	}
+	changes, err := plannedChanges([]byte(shown))
+	if err != nil {
+		return err
+	}
+	if len(changes) == 0 {
+		console.Ok("the estate is as management/estate/ declares it: a plan straight after the converge changes nothing")
+		return nil
+	}
+	for _, line := range changes {
+		console.Info(line)
+	}
+	return fmt.Errorf("the estate did not settle: straight after the converge, a plan would still change %d thing(s), listed above. Each is changed again by every converge, so its declaration is not what the vendor keeps; fix the declaration", len(changes))
+}

@@ -227,7 +227,12 @@ func execute(verb string) error {
 	}
 
 	console.Phase("Grant", "Write what each site is granted into its -shared vault.")
-	return e.grant()
+	if err := e.grant(); err != nil {
+		return err
+	}
+
+	console.Phase("Read back", "Plan again, and fail if the converge left anything to change.")
+	return e.readBack()
 }
 
 func (e *estate) vault() error {

@@ -97,3 +97,40 @@ func TestPlanningTheEstateChangesNothingAndLeavesNoPlanBehind(t *testing.T) {
 		}
 	}
 }
+
+// Straight after a converge the estate is planned again, and a plan that
+// would still change something fails the converge, naming each thing by
+// what the plan says of it and never by a value; a plan that changes
+// nothing passes. Nothing is applied either way, and no plan is left behind.
+func TestAConvergeThatLeavesSomethingToChangeFails(t *testing.T) {
+	for name, c := range map[string]struct {
+		shown string
+		fails bool
+	}{
+		"a plan that changes things":  {aPlan, true},
+		"a plan that changes nothing": {aPlanThatChangesNothing, false},
+	} {
+		asked := tofuStandIn(t, c.shown)
+		e, _ := fakeEstate(t)
+		e.dir = t.TempDir()
+
+		err := e.readBack()
+		if (err != nil) != c.fails {
+			t.Fatalf("%s: the read-back returned %v", name, err)
+		}
+		if err != nil && (!strings.Contains(err.Error(), "4 thing(s)") || strings.Contains(err.Error(), "do-not-print")) {
+			t.Errorf("%s: the failure does not count what is left to change, or carries a value: %v", name, err)
+		}
+		said := asked()
+		if !strings.Contains(said, "plan -input=false -out=") || strings.Contains(said, "apply") {
+			t.Errorf("%s: tofu was asked\n%s", name, said)
+		}
+		if left, _ := filepath.Glob(filepath.Join(e.dir, "*.tfplan")); len(left) != 0 {
+			t.Errorf("%s: a saved plan was left behind: %v", name, left)
+		}
+	}
+	tofuStandIn(t, "not a plan")
+	if err := (&estate{dir: t.TempDir()}).readBack(); err == nil {
+		t.Error("something that is not a plan was read back as a converge that settled")
+	}
+}
