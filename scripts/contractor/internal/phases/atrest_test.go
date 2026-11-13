@@ -74,9 +74,21 @@ func TestFluxHasAppliedACommitWhenEveryFollowerOfTheRepositorySaysSo(t *testing.
 func TestOnlyAConvergeWaitsForItsStateDatabaseToBeAtRest(t *testing.T) {
 	f := newVerbFixture(t)
 	asked := filepath.Join(f.dir, "asked-of-the-cluster")
+	// A checkout of the test's own, with one commit for Flux to have
+	// applied. Asking the repository's instead skipped wherever it was not a
+	// checkout - the ledger's copy - and measured awaitRest untested there.
+	t.Chdir(t.TempDir())
+	for _, args := range [][]string{
+		{"init", "-q"},
+		{"-c", "user.name=test", "-c", "user.email=test@example.test", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "a commit"},
+	} {
+		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
 	head, err := exec.Command("git", "rev-parse", "HEAD").Output()
 	if err != nil {
-		t.Skipf("these tests are not being run in a checkout, so there is no commit to ask Flux about: %v", err)
+		t.Fatal(err)
 	}
 	// A cluster that has applied this commit and whose database is at rest.
 	kubectl := "#!/bin/sh\necho \"$*\" >> " + asked + "\ncase \"$*\" in\n" +

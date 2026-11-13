@@ -2,6 +2,7 @@ package repo
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"slices"
@@ -30,6 +31,10 @@ import (
 
 // conftestProgram is the policy engine, delivered by scripts/take-delivery.sh.
 const conftestProgram = "conftest"
+
+// pinnedActionsEnv names the file .github/workflows/offline/pinnedactions
+// wrote: what each action this repository pins runs, at its commit (#881).
+const pinnedActionsEnv = "PINNED_ACTIONS"
 
 // conftestRules is where the configuration rules live.
 const conftestRules = "policy/conftest"
@@ -89,6 +94,12 @@ func TestTheConfigurationRulesHold(t *testing.T) {
 	// it works that out, and not on its source. So do the layers Flux
 	// applies, as kustomize builds them.
 	args := append(append(append([]string{"test"}, conftestInputs(t)...), repository(t).UnbuiltPlans(t)...), repository(t).RenderedLayers(t, derivedStandIns(t))...)
+	// What the pinned actions run, fetched before the check by
+	// .github/workflows/offline, so a rule can judge it with no network.
+	// Not set, nothing is handed in and the rule that needs it refuses.
+	if fetched := os.Getenv(pinnedActionsEnv); fetched != "" {
+		args = append(args, fetched)
+	}
 	out, ok := runConftest(t, args...)
 	if !ok {
 		var refused []string

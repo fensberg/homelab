@@ -71,7 +71,7 @@ jobs:
       # the Vet lane pays for. setup-go saves the result when the job ends.
       - name: Compile what the test lanes compile
         run: |
-          for dir in scripts/*/; do
+          for dir in scripts/*/ .github/workflows/*/*/; do
             [ -f "$dir/go.mod" ] || continue
             go test -C "$dir" -run '^$' ./...
           done

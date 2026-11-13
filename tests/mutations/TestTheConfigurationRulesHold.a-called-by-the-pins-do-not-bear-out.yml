@@ -1,0 +1,9 @@
+guard: TestTheConfigurationRulesHold
+rule: supplier_actions
+file: scripts/approved-suppliers.yml
+find: "called_by: [aquasecurity/trivy-action, aquasecurity/setup-trivy]"
+replace: "called_by: [aquasecurity/trivy-action]"
+mentions: "says aquasecurity/trivy-action runs actions/cache/restore, and none does at the commit pinned"
+why: >
+  called_by is what keeps an entry no workflow uses on the list. Written
+  wrongly, it names a reason the commits pinned do not bear out.

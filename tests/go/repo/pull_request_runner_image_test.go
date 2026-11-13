@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"encoding/json"
+	supplierslist "homelab/details/suppliers"
 	"homelab/details/workorders"
 )
 
@@ -39,6 +40,22 @@ const takeDelivery = "scripts/take-delivery.sh"
 
 // takes is every delivery a script asks take-delivery.sh for: the words
 // after it, in every command that runs it, as the shell parser reads them.
+// runsInTheImage is whether a job runs in the pull-request runner image: a
+// job of a pool, on a runner made from it, or an offline one, whose check
+// offlineAction runs in it.
+func runsInTheImage(e supplierslist.Egress) bool {
+	return e.Pool != "" || e.Policy == "offline"
+}
+
+// taken is what a step takes delivery of: by take-delivery.sh in a script of
+// its own, or by name as the tools it hands offlineAction.
+func taken(uses, script string, with map[string]string) []string {
+	if uses == offlineAction {
+		return strings.Fields(with["tools"])
+	}
+	return takes(script)
+}
+
 func takes(script string) []string {
 	commands, err := parsed.WorkflowCommands("a script", script)
 	if err != nil {
@@ -167,13 +184,13 @@ func TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake(t *testing.T) {
 	jobs, asked := 0, 0
 	missing := map[string][]string{}
 	for _, e := range egress {
-		if e.Pool == "" {
+		if !runsInTheImage(e) {
 			continue
 		}
 		jobs++
 		workflow, id, _ := strings.Cut(e.Job, "/")
 		for _, step := range jobsOf(t, workflow)[id].Steps {
-			for _, name := range takes(step.Run) {
+			for _, name := range taken(step.Uses, step.Run, step.With) {
 				asked++
 				if !carried[name] {
 					missing[name] = append(missing[name], e.Job)
@@ -183,12 +200,12 @@ func TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake(t *testing.T) {
 	}
 	took := map[string]bool{}
 	for _, e := range egress {
-		if e.Pool == "" {
+		if !runsInTheImage(e) {
 			continue
 		}
 		workflow, id, _ := strings.Cut(e.Job, "/")
 		for _, step := range jobsOf(t, workflow)[id].Steps {
-			for _, name := range takes(step.Run) {
+			for _, name := range taken(step.Uses, step.Run, step.With) {
 				took[name] = true
 			}
 		}

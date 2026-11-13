@@ -89,7 +89,8 @@
     "go/lawyer": 60.8,
     "go/safety-officer": 92.9,
     "go/engineer": 91.8,
-    "go/drafter": 90.5
+    "go/drafter": 90.5,
+    "go/pinnedactions": 80.4
   },
   "tiers": {
     "unit": 915,

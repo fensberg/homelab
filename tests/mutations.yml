@@ -179,6 +179,10 @@ unprovable:
   # and what is not: each entry fails if the environment stops holding it.
   - test: TestWhatEveryCheckRunsInReachesTheWholeLedger
     reason: table
+  # Its table holds both places a program's module is found, and the
+  # directories that are not one.
+  - test: TestAProgramModuleIsFoundInEitherPlace
+    reason: table
   # The reader behind TestNoCodePicksASiteByName, whose own ledger entry
   # proves the guard. Its table holds the values it must find and the prose it
   # must leave.

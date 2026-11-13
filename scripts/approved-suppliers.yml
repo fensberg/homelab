@@ -1078,22 +1078,18 @@ egress:
       - sum.golang.org:443
 
   - job: pr-validation.yml/invariants
-    pool: builds
-    policy: block
+    policy: offline
     hosts:
       - api.github.com:443
-      - dl.k8s.io:443
-      - files.pythonhosted.org:443
-      - get.opentofu.org:443
       - github.com:443
-      - go.dev:443
+      - ghcr.io:443
       - objects.githubusercontent.com:443
+      - pkg-containers.githubusercontent.com:443
       - proxy.golang.org:443
-      - pypi.org:443
+      - raw.githubusercontent.com:443
       - registry.opentofu.org:443
       - release-assets.githubusercontent.com:443
       - storage.googleapis.com:443
-      - sum.golang.org:443
 
   - job: pr-validation.yml/removal
     policy: offline
@@ -1104,6 +1100,7 @@ egress:
       - objects.githubusercontent.com:443
       - pkg-containers.githubusercontent.com:443
       - proxy.golang.org:443
+      - raw.githubusercontent.com:443
       - registry.opentofu.org:443
       - release-assets.githubusercontent.com:443
       - storage.googleapis.com:443
@@ -1117,6 +1114,7 @@ egress:
       - objects.githubusercontent.com:443
       - pkg-containers.githubusercontent.com:443
       - proxy.golang.org:443
+      - raw.githubusercontent.com:443
       - registry.opentofu.org:443
       - release-assets.githubusercontent.com:443
       - storage.googleapis.com:443
@@ -1846,11 +1844,6 @@ work:
   - job: pr-validation.yml/vet
     kind: cannot-wait
     takes: 1m
-
-  - job: pr-validation.yml/invariants
-    kind: cannot-wait
-    # What it took on #848's run (2026-10-31), rounded up.
-    takes: 8m
 
   - job: pr-validation.yml/test-js
     kind: cannot-wait

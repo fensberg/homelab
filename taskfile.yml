@@ -639,7 +639,7 @@ tasks:
       # the lists are gone: this finds the modules, and a new one is covered
       # the moment it exists.
       - |
-        for dir in scripts/*/; do
+        for dir in scripts/*/ .github/workflows/*/*/; do
           [ -f "$dir/go.mod" ] || continue
           echo "  -> vet and build ${dir%/}"
           go vet -C "$dir" ./...
@@ -679,7 +679,7 @@ tasks:
     cmds:
       # Discovered, not listed - see the note in `validate`.
       - |
-        for dir in scripts/*/; do
+        for dir in scripts/*/ .github/workflows/*/*/; do
           [ -f "$dir/go.mod" ] || continue
           go test -C "$dir" ./...
         done
@@ -746,7 +746,7 @@ tasks:
       # record a decision rather than whatever the last green run happened to
       # hit, and a number nobody chose is not a decision.
       - |
-        for dir in scripts/*/; do
+        for dir in scripts/*/ .github/workflows/*/*/; do
           [ -f "$dir/go.mod" ] || continue
           module="$(basename "$dir")"
           go test -C "$dir" -covermode=atomic -coverprofile=coverage-go.out ./...
@@ -810,7 +810,7 @@ tasks:
       FUZZTIME: '{{.FUZZTIME | default "30s"}}'
     cmds:
       - |
-        for dir in scripts/*/ tests/go; do
+        for dir in scripts/*/ .github/workflows/*/*/ tests/go; do
           dir="${dir%/}"
           [ -f "$dir/go.mod" ] || continue
           grep -rlE "^func Fuzz[A-Za-z0-9_]+\\(" "$dir" --include='*_test.go' | while read -r file; do

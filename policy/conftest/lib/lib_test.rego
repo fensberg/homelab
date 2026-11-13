@@ -113,3 +113,12 @@ test_an_action_written_in_another_form_is_named_as_written if {
 	workflow := {"path": ".github/workflows/w.yml", "contents": {"jobs": {"a": {"steps": [{"uses": "./.github/workflows/local"}, {"uses": "docker://example.test/image:1"}]}}}}
 	lib.outside_actions == {"./.github/workflows/local", "docker://example.test/image:1"} with input as [workflow]
 }
+
+test_what_the_pinned_actions_run_is_read_from_what_was_fetched if {
+	fetched := {"path": "/tmp/offline/pinned-actions.json", "contents": {"pinned_actions": {"owner/action@abc": ["owner/other@def"]}}}
+	lib.what_pinned_actions_run == {"owner/action@abc": ["owner/other@def"]} with input as [fetched, {"path": "plan.json", "contents": {"planned_values": {}}}]
+}
+
+test_nothing_fetched_is_nothing_pinned if {
+	lib.what_pinned_actions_run == {} with input as [{"path": "plan.json", "contents": {"planned_values": {}}}]
+}

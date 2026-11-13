@@ -1,7 +1,7 @@
 guard: TestEveryJobOnTheEstatesRunnersIsOnTheRunnersItsKindAllows
 file: scripts/approved-suppliers.yml
-find: "    takes: 8m\n"
-replace: "    takes: 31m\n"
+find: "  - job: pr-validation.yml/vet\n    kind: cannot-wait\n    takes: 1m\n"
+replace: "  - job: pr-validation.yml/vet\n    kind: cannot-wait\n    takes: 27m\n"
 mentions: "within a fifth of its limit"
 why: >
   A job that ordinarily lands near its limit passes or fails by seconds. The

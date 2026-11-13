@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"homelab/details/applications"
 	"path"
 	"sort"
 	"strings"
@@ -33,23 +34,93 @@ import (
 // gate refuses a key it has no baseline for, so a new module fails until
 // somebody picks one.
 
-// goModules is the name of every module under scripts/, derived from
-// goModuleDirs rather than read from the filesystem a second way. It read
-// scripts/ directly until the building-block guards needed every module in the
-// repository, and two enumerations of one set would have been the first thing
-// those guards refused.
-func goModules(t *testing.T) []string {
+// goProgram is a program's Go module: the name its coverage floor and
+// profile go by, and the directory it is in.
+type goProgram struct{ name, dir string }
+
+// goModules is every program's module, derived from goModuleDirs rather than
+// read from the filesystem a second way: two enumerations of one set would
+// have been the first thing the building-block guards refused. Each carries
+// its directory, because a caller that rebuilt it from the name assumed
+// scripts/ and read nothing for a program beside an action (#881). Two
+// programs of one name are refused: the floors and profiles go by name, so
+// one would be judged as the other.
+func goModules(t *testing.T) []goProgram {
 	t.Helper()
-	var modules []string
+	var modules []goProgram
+	at := map[string]string{}
 	for _, dir := range goModuleDirs(t) {
-		if name, ok := strings.CutPrefix(dir, "scripts/"); ok && !strings.Contains(name, "/") {
-			modules = append(modules, name)
+		name, ok := programModule(dir)
+		if !ok {
+			continue
 		}
+		if other, dup := at[name]; dup {
+			t.Errorf("%s and %s are both the program %s, and its floor and coverage would be one of them's", other, dir, name)
+		}
+		at[name] = dir
+		modules = append(modules, goProgram{name, dir})
 	}
 	if len(modules) == 0 {
-		t.Fatal("no Go module found under scripts/, so this asserts nothing")
+		t.Fatal("no program's Go module was found, so this asserts nothing")
 	}
 	return modules
+}
+
+// programModule is the name a module of a program goes by, when the
+// directory is one: scripts/<name>, or <name> beside a shared action in
+// .github/workflows/<action>/ - a program that runs with a network, which a
+// pull request may not change unseen (#881). The lanes and the taskfile
+// sweep both places, and nothing else.
+func programModule(dir string) (string, bool) {
+	if name, ok := strings.CutPrefix(dir, "scripts/"); ok && !strings.Contains(name, "/") {
+		return name, true
+	}
+	if rest, ok := strings.CutPrefix(dir, ".github/workflows/"); ok && strings.Count(rest, "/") == 1 {
+		return rest[strings.Index(rest, "/")+1:], true
+	}
+	return "", false
+}
+
+// A Go module is a program's, the guards' helpers', or an application's
+// tests, and none is anywhere else. The lanes find programs where
+// programModule says they are; one placed anywhere else would be compiled,
+// tested and held to a floor by nothing, with nothing turning red - which is
+// how the clerk's module went untested for its whole life.
+func TestEveryGoModuleIsWhereTheLanesLook(t *testing.T) {
+	light(t)
+	for _, dir := range goModuleDirs(t) {
+		if _, ok := programModule(dir); ok || dir == "tests/go" || isApplicationTests(dir) {
+			continue
+		}
+		t.Errorf("%s holds a go.mod, and no lane looks there: a program goes in scripts/<name>, or beside a shared action in .github/workflows/<action>/<name>, so it is built, tested and held to a coverage floor", dir)
+	}
+}
+
+// isApplicationTests is an application's own tests module.
+func isApplicationTests(dir string) bool {
+	rest, ok := strings.CutPrefix(dir, applications.Dir+"/")
+	name, tests, found := strings.Cut(rest, "/")
+	return ok && found && name != "" && tests == "tests"
+}
+
+// Where a module is looked for, on paths made up here.
+func TestAProgramModuleIsFoundInEitherPlace(t *testing.T) {
+	light(t)
+	for dir, want := range map[string]string{
+		"scripts/contractor":                      "contractor",
+		".github/workflows/offline/pinnedactions": "pinnedactions",
+		"scripts/contractor/internal":             "",
+		".github/workflows/offline":               "",
+		"tools/elsewhere":                         "",
+	} {
+		got, ok := programModule(dir)
+		if got != want || ok != (want != "") {
+			t.Errorf("%s was read as %q, %v; want %q", dir, got, ok, want)
+		}
+	}
+	if !isApplicationTests("modules/applications/some-app/tests") || isApplicationTests("modules/applications/some-app") {
+		t.Error("an application's tests module was not told apart from the application")
+	}
 }
 
 // Every module has a floor somebody chose.
@@ -68,17 +139,17 @@ func TestEveryGoModuleHasACoverageFloor(t *testing.T) {
 	}
 
 	for _, m := range goModules(t) {
-		key := "go/" + m
+		key := "go/" + m.name
 		if _, ok := baseline.Baselines[key]; !ok {
 			t.Errorf(`tests/coverage-baseline.json has no floor for %q.
 
-scripts/%s is a Go module, so its coverage is measured and compared - and with
+%s is a Go module, so its coverage is measured and compared - and with
 no floor there is nothing to compare against. Six of seven modules were in
 exactly that state, including two that no task ran at all.
 
 Add %q with the figure you intend the project to keep standing on. It is
 written by hand on purpose: a floor that ratchets automatically records
-whatever the last green run happened to hit.`, key, m, key)
+whatever the last green run happened to hit.`, key, m.dir, key)
 		}
 	}
 }
@@ -99,7 +170,11 @@ func TestEveryCoverageFloorIsOneALaneMeasures(t *testing.T) {
 	if len(baseline.Baselines) == 0 {
 		t.Fatal("the baseline file declares no floors at all, so this asserts nothing")
 	}
-	measured := gatedFloors(workflowCommands(t), goModules(t))
+	var names []string
+	for _, m := range goModules(t) {
+		names = append(names, m.name)
+	}
+	measured := gatedFloors(workflowCommands(t), names)
 	if len(measured) == 0 {
 		t.Fatal("no workflow step runs scripts/coverage-gate.sh, so no floor is measured anywhere")
 	}

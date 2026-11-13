@@ -188,11 +188,11 @@ func discover(t *testing.T) []unit {
 	tree := repository(t)
 	var units []unit
 
-	// Go: one unit per module under scripts/. tests/go is test code, and
+	// Go: one unit per program's module, where it is. tests/go is test code, and
 	// measuring how thoroughly the tests test themselves is a number with no
 	// meaning - the coverage baseline has said so since it was written.
 	for _, m := range goModules(t) {
-		units = append(units, unit{"go", "scripts/" + m})
+		units = append(units, unit{"go", m.dir})
 	}
 
 	// Shell: every script the repository ships, wherever it lives. A code

@@ -255,6 +255,37 @@ Explicitly out of scope (and which epoch owns it instead):
    runs every `run:` with bash - a one-line call with bash only launching
    it, or a `shell:` of the estate's own. **The test is a change:** a shell
    file, or a step or task that is a shell script, fails a pull request.
+7. **Nothing new is written where the guards do not reach, and a language
+   earns its place by meeting Go's bar.** Agreed 2026-11-12, after five
+   hand-written copies of one signed-commit procedure were found in workflow
+   `run:` steps: the duplicate guards read Go alone, and the rest went
+   unwatched. The rule is no-new, not no-shell; shell is only today's case.
+   - **The bar is Go's, derived, not written.** Every guard the ledger
+     proves on `.go` files is a property Go is held to. `tests/languages.yml`
+     holds a table: those properties against every language, each cell the
+     guard that holds that language to it. A cell counts only if the guard
+     exists, has a ledger proof that breaks a file **in that language**, and
+     reads every file of it, unknown meaning fail; "not applicable" needs a
+     reason, as an unprovable guard does. A new Go guard raises the bar for
+     every language, and the pull request adding it covers them or says why.
+   - **A language is watched when its row is full.** One that is not may
+     not grow: a guard measures it, embedded code included (`run:` steps,
+     task commands, Dockerfile `RUN`s), at a pull request's base and head,
+     and fails a head with more. Nothing is stored. Fixing or removing
+     existing code passes; adding goes to Go.
+   - **TypeScript is held until it reaches the bar.** Today it has a type
+     check and a coverage floor against Go's dozen or so properties, so its
+     missing guards come first, before the TypeScript the estate means to
+     write. Duplicates are found by jscpd (agreed), which reads TypeScript
+     and most of what else is here.
+   - **Order:** jscpd on the suppliers list; the table and its meta-guard;
+     the growth guard; today's unwatched code that grew moved to Go (the
+     five signed-commit copies, onto signedpush with a token and a verb
+     that opens the pull request); TypeScript's missing guards.
+
+   **The test is a change:** a pull request that adds code to a language
+   whose row is not full fails, and so does one that adds a Go guard
+   without covering the other watched languages.
 
 ### The contractor gives way to standard tools
 

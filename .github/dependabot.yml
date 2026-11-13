@@ -145,6 +145,7 @@ updates:
   - package-ecosystem: gomod
     directories:
       - /modules/applications/*/tests
+      - /.github/workflows/offline/pinnedactions
       - /scripts/attestation
       - /scripts/details
       - /scripts/drafter
