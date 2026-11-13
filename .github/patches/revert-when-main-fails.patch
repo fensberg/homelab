@@ -1,0 +1,291 @@
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index 5655c4b1..e451dd57 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -1129,6 +1129,168 @@ jobs:
+           if-no-files-found: error
+           retention-days: 30
+ 
++  # WHEN MAIN FAILS AFTER A MERGE, THE MERGE IS OFFERED BACK (#885).
++  #
++  # A change can pass its own pull request and the queue and still break
++  # main: what CI itself runs on can take effect only after it lands (#878,
++  # #879). This opens the revert of the merge that broke it, and the operator
++  # decides: merging it is one approval like any other, and nothing here
++  # merges it. A lane that failed by chance costs one click either way - run
++  # the failed lanes again, and the offer is withdrawn when they pass.
++  #
++  # Only on a push to main, so only main's code runs here and nothing a pull
++  # request brings. No merge waits on it, which is what continue-on-error
++  # says to plan_required_checks: it comes after the gate, never before.
++  offer-revert:
++    name: "offer the revert"
++    needs: [tests-passed]
++    if: always() && github.event_name == 'push' && needs.tests-passed.result == 'failure'
++    continue-on-error: true
++    runs-on: ubuntu-24.04
++    timeout-minutes: 10
++    permissions:
++      contents: read
++    steps:
++      # The whole history, so origin/main is main as it is now and the
++      # revert is made on top of it rather than of this run's commit.
++      - name: Mobilize
++        uses: $/.github/workflows/mobilize
++        with:
++          fetch-depth: 0
++
++      - name: Make the revert
++        id: revert
++        env:
++          GH_TOKEN: ${{ github.token }}
++          REPO: ${{ github.repository }}
++          SHA: ${{ github.sha }}
++          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
++        run: |
++          short="${SHA::8}"
++          branch="revert/main-failed-${short}"
++          subject="$(git log -1 --format=%s "$SHA")"
++          # A revert that leaves main failing says the cause is not the
++          # merge before it, and reverting the revert would put back what
++          # was taken out. Nothing is offered; the run needs reading.
++          case "$subject" in
++            revert:*)
++              echo "::error::${short} is itself a revert and main still fails, so the cause is not the merge it took back. Nothing is offered: read this run."
++              exit 1
++              ;;
++          esac
++          if gh api "repos/${REPO}/git/ref/heads/${branch}" --silent 2>/dev/null; then
++            echo "::notice::the revert of ${short} is already offered on ${branch}"
++            echo "offered=false" >> "$GITHUB_OUTPUT"
++            exit 0
++          fi
++          origin="$(gh api "repos/${REPO}/commits/${SHA}/pulls" --jq '.[0].number // empty')"
++          git switch -q -c "$branch" origin/main
++          if ! git revert --no-commit "$SHA"; then
++            git revert --abort
++            echo "::error::${short} no longer reverts cleanly onto main, which has moved on since. Nothing is offered: revert it by hand, or fix forward."
++            exit 1
++          fi
++          git -c user.name=revert -c user.email=revert@invalid commit -q \
++            -m "revert: ${subject:0:90}" \
++            -m "This reverts commit ${SHA}: main failed after it (${RUN_URL})."
++          {
++            echo "offered=true"
++            echo "branch=${branch}"
++            echo "title=revert: ${origin:+#${origin} }broke main (${short})"
++            echo "body<<END_OF_BODY"
++            echo "## Actions for you"
++            echo ""
++            echo "Read the failed run first: ${RUN_URL}"
++            echo ""
++            echo "- **If the change broke main, merge this.** It takes ${origin:+#${origin}, }${short} out, and main is what it was before."
++            echo "- **If a lane failed by chance, do not merge it.** Run the failed lanes again; when they pass, this is closed for you."
++            echo ""
++            echo "## What this is"
++            echo ""
++            echo "main's checks failed after ${short} merged: ${subject}"
++            echo ""
++            echo "A merged pull request cannot be reopened. To land the change again once it is fixed, revert this."
++            echo "END_OF_BODY"
++          } >> "$GITHUB_OUTPUT"
++
++      - name: Mint the pull-request token
++        id: token
++        if: steps.revert.outputs.offered == 'true'
++        uses: $/.github/workflows/app-token
++        with:
++          client-id: ${{ secrets.PROCUREMENT_BOT_CLIENT_ID }}
++          private-key: ${{ secrets.PROCUREMENT_BOT_PRIVATE_KEY }}
++          # Contents to publish the branch; pull requests to open it.
++          permission-contents: write
++          permission-pull-requests: write
++          owner: ${{ github.repository_owner }}
++          repositories: ${{ github.event.repository.name }}
++
++      - name: Offer it
++        id: offer
++        if: steps.revert.outputs.offered == 'true'
++        uses: $/.github/workflows/signed-pull-request
++        with:
++          token: ${{ steps.token.outputs.token }}
++          branch: ${{ steps.revert.outputs.branch }}
++          title: ${{ steps.revert.outputs.title }}
++          body: ${{ steps.revert.outputs.body }}
++
++      - name: Say where
++        if: steps.revert.outputs.offered == 'true'
++        env:
++          URL: ${{ steps.offer.outputs.url }}
++        run: echo "main failed after this merge; its revert is offered as ${URL}" >> "$GITHUB_STEP_SUMMARY"
++
++  # The other half: the failed lanes run again and pass, so main was not
++  # broken, and the revert offered for it is closed rather than left for
++  # somebody to merge by mistake.
++  withdraw-revert:
++    name: "withdraw the revert"
++    needs: [tests-passed]
++    if: always() && github.event_name == 'push' && github.run_attempt > 1 && needs.tests-passed.result == 'success'
++    continue-on-error: true
++    runs-on: ubuntu-24.04
++    timeout-minutes: 5
++    permissions:
++      contents: read
++    steps:
++      - name: Find the offer
++        id: find
++        env:
++          GH_TOKEN: ${{ github.token }}
++          REPO: ${{ github.repository }}
++          SHA: ${{ github.sha }}
++        run: |
++          branch="revert/main-failed-${SHA::8}"
++          number="$(gh pr list --repo "$REPO" --head "$branch" --state open --json number --jq '.[0].number // empty')"
++          echo "number=${number}" >> "$GITHUB_OUTPUT"
++
++      - name: Mint the pull-request token
++        id: token
++        if: steps.find.outputs.number != ''
++        uses: $/.github/workflows/app-token
++        with:
++          client-id: ${{ secrets.PROCUREMENT_BOT_CLIENT_ID }}
++          private-key: ${{ secrets.PROCUREMENT_BOT_PRIVATE_KEY }}
++          # Contents to delete the branch; pull requests to close it.
++          permission-contents: write
++          permission-pull-requests: write
++          owner: ${{ github.repository_owner }}
++          repositories: ${{ github.event.repository.name }}
++
++      - name: Withdraw it
++        if: steps.find.outputs.number != ''
++        env:
++          GH_TOKEN: ${{ steps.token.outputs.token }}
++          REPO: ${{ github.repository }}
++          NUMBER: ${{ steps.find.outputs.number }}
++          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
++        run: |
++          gh pr close "$NUMBER" --repo "$REPO" --delete-branch \
++            --comment "main's checks passed when run again (${RUN_URL}), so main was not broken and nothing needs taking back."
++          echo "main passed when run again; the revert offered as #${NUMBER} is withdrawn" >> "$GITHUB_STEP_SUMMARY"
++
+   # -----------------------------------------------------------------
+   # LANES 5-8: Static analysis, one tool each
+   # -----------------------------------------------------------------
+diff --git a/.github/workflows/signed-pull-request/action.yml b/.github/workflows/signed-pull-request/action.yml
+new file mode 100644
+index 00000000..e3834e47
+--- /dev/null
++++ b/.github/workflows/signed-pull-request/action.yml
+@@ -0,0 +1,82 @@
++# The one way a job here opens a pull request of its own making.
++#
++#   - uses: $/.github/workflows/signed-pull-request
++#     with:
++#       token: ${{ steps.token.outputs.token }}
++#       branch: revert/main-failed-1a2b3c4d
++#       title: "revert: ..."
++#       body: ${{ steps.say.outputs.body }}
++#
++# The job makes its change with plain git - a branch, an edit, a commit - in
++# its own checkout. This publishes that branch through scripts/signedpush, the
++# program the operator publishes with: every commit on every branch here must
++# be signed, an App cannot hold a signing key, and GitHub signs a commit it
++# creates through the API with an installation token. Then it opens the
++# branch as a pull request into main, or names the one already open, so a job
++# run again finishes rather than failing.
++#
++# The token is handed to signedpush in its environment, and to git through
++# signedpush's own: never on a command line, never in .git/config (zizmor's
++# artipacked), so it lasts as long as this step.
++name: "Signed pull request"
++description: Publish the checked-out branch as GitHub-signed commits and open it as a pull request into main.
++
++inputs:
++  token:
++    description: >-
++      An App installation token with contents and pull-requests write, from
++      $/.github/workflows/app-token. Only an installation token gets a commit
++      signed; signedpush refuses one that comes back unverified.
++    required: true
++  branch:
++    description: The local branch the job committed to, published under the same name.
++    required: true
++  title:
++    description: The pull request's title.
++    required: true
++  body:
++    description: >-
++      The pull request's description: what it is, and what its reader has to
++      do.
++    required: true
++  draft:
++    description: Open it as a draft.
++    required: false
++    default: "false"
++
++outputs:
++  url:
++    description: The pull request, opened or already open.
++    value: ${{ steps.open.outputs.url }}
++
++runs:
++  using: composite
++  steps:
++    - name: Read pinned versions
++      uses: $/.github/actions/versions
++
++    - name: Setup Go
++      uses: $/.github/workflows/setup-go
++
++    - name: Publish and open
++      id: open
++      shell: bash
++      env:
++        SIGNEDPUSH_TOKEN: ${{ inputs.token }}
++        BRANCH: ${{ inputs.branch }}
++        TITLE: ${{ inputs.title }}
++        BODY: ${{ inputs.body }}
++        DRAFT: ${{ inputs.draft }}
++      run: |
++        case "$DRAFT" in true | false) ;; *) echo "::error::draft is true or false, not ${DRAFT}"; exit 1 ;; esac
++        tool="$RUNNER_TEMP/signedpush"
++        go build -C scripts/signedpush -o "$tool" .
++        body="$RUNNER_TEMP/pull-request-body.md"
++        printf '%s\n' "$BODY" > "$body"
++        "$tool" -branch "$BRANCH" -open-pr -title "$TITLE" -body-file "$body" -draft="$DRAFT"
++        url="$(GH_TOKEN="$SIGNEDPUSH_TOKEN" gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json url --jq '.[0].url // empty')"
++        if [ -z "$url" ]; then
++          echo "::error::signedpush published ${BRANCH}, and no pull request is open from it"
++          exit 1
++        fi
++        echo "url=${url}" >> "$GITHUB_OUTPUT"
+diff --git a/scripts/approved-suppliers.yml b/scripts/approved-suppliers.yml
+index 1e16fb75..9bbc3add 100644
+--- a/scripts/approved-suppliers.yml
++++ b/scripts/approved-suppliers.yml
+@@ -1137,6 +1137,25 @@ egress:
+       - api.github.com:443
+       - github.com:443
+ 
++  # After a failed merge, on main only: the revert is made with git, built
++  # into a signed pull request by signedpush, which has no dependency to
++  # fetch beyond Go itself (#885).
++  - job: pr-validation.yml/offer-revert
++    policy: block
++    hosts:
++      - api.github.com:443
++      - github.com:443
++      - go.dev:443
++      - objects.githubusercontent.com:443
++      - release-assets.githubusercontent.com:443
++      - storage.googleapis.com:443
++
++  - job: pr-validation.yml/withdraw-revert
++    policy: block
++    hosts:
++      - api.github.com:443
++      - github.com:443
++
+   - job: pr-validation.yml/dockerfiles
+     pool: source
+     policy: block
