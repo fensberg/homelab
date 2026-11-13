@@ -248,7 +248,7 @@ func summarisePlan(raw []byte) (string, error) {
 		var d string
 		switch verb {
 		case "change":
-			d = detail("", changedAttributes(c.Change.Before, c.Change.After, c.Change.AfterUnknown))
+			d = detail("", c.ChangedAttributes())
 		case "replace":
 			d = detail("forced by ", replacedBecause(c.Change.ReplacePaths))
 		}
@@ -352,70 +352,6 @@ func summarisePlan(raw []byte) (string, error) {
 	return b.String(), nil
 }
 
-// changedAttributes names the top-level attributes whose value differs, so a
-// row says what is changing rather than only that something is.
-//
-// WHY NAMES ARE SAFE AND VALUES ARE NOT. A top-level key in a plan's before or
-// after object is a provider schema attribute - `memory`, `cpu`, `disk`. Those
-// are public API surface, identical in every estate that uses the provider,
-// and they carry nothing about THIS estate. The values under them are the
-// hostnames, addresses and credentials this repository keeps out of git, and
-// the comment this feeds is world-readable.
-//
-// SO THE DEPTH LIMIT IS THE SAFETY PROPERTY, not a simplification. One level
-// down, map-typed attributes have operator-supplied keys - a label, an
-// annotation, a tag - and those can be a real hostname. `metadata.annotations`
-// is safe to print; the key inside it is exactly the leak redactKeys exists to
-// stop in addresses. So this never descends, and must not be "improved" to.
-//
-// after_unknown marks an attribute whose value is not computable until apply.
-// It counts as changing: unknown-at-plan is how a change that depends on
-// something being created shows up, and dropping it would hide precisely the
-// attributes a converge is about to decide.
-func changedAttributes(before, after, afterUnknown map[string]json.RawMessage) []string {
-	seen := map[string]bool{}
-	for name, unknown := range afterUnknown {
-		// after_unknown carries `false` for known attributes as well as `true`
-		// for unknown ones, so its mere presence proves nothing.
-		if string(unknown) != "false" && string(unknown) != "null" {
-			seen[name] = true
-		}
-	}
-	for name, a := range after {
-		b, had := before[name]
-		if !had || !bytes.Equal(canonical(b), canonical(a)) {
-			seen[name] = true
-		}
-	}
-	for name := range before {
-		if _, still := after[name]; !still {
-			seen[name] = true
-		}
-	}
-	out := make([]string, 0, len(seen))
-	for name := range seen {
-		out = append(out, name)
-	}
-	sort.Strings(out)
-	return out
-}
-
-// canonical re-encodes a value so two equal values compare equal regardless of
-// key order or whitespace in the plan document. Comparing raw bytes without
-// this reports an attribute as changed because its JSON was formatted
-// differently, which is noise dressed as information.
-func canonical(raw json.RawMessage) []byte {
-	var v any
-	if err := json.Unmarshal(raw, &v); err != nil {
-		return raw
-	}
-	out, err := json.Marshal(v)
-	if err != nil {
-		return raw
-	}
-	return out
-}
-
 // replacedBecause names the attributes that force a replacement.
 //
 // A replacement destroys and rebuilds a machine, and the question a reviewer
@@ -423,7 +359,7 @@ func canonical(raw json.RawMessage) []byte {
 // "what made that necessary". tofu answers it in replace_paths and nothing
 // here was reading it.
 //
-// Same depth rule as changedAttributes, and for the same reason: a path is a
+// Same depth rule as tofustate's ChangedAttributes, and for the same reason: a path is a
 // list of steps and only its first is guaranteed to be a schema attribute.
 func replacedBecause(paths [][]json.RawMessage) []string {
 	seen := map[string]bool{}

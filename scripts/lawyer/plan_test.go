@@ -27,7 +27,7 @@ func TestAPlanIsSaidByAddressAndWhatWouldBeDoneAndNeverAValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"thing.changed: update", "thing.gone: delete", "thing.new: create", "thing.rebuilt: delete then create"}
+	want := []string{"thing.changed: update (secret)", "thing.gone: delete", "thing.new: create", "thing.rebuilt: delete then create"}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("the changes were read as\n%s\nand are\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
