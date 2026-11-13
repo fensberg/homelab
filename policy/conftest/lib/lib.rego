@@ -291,12 +291,32 @@ runnable[f.path] := f.contents if {
 }
 
 # uses is every action a runnable file names, wherever in it: [file, where, ref].
+# The allowed-actions probe's steps are not among them: what the probe names
+# is a witness that the setting lets an action through, not a use of it, so a
+# rule asking what the workflows run is not answered by the probe.
 uses contains [file, where, ref] if {
 	some file, doc in runnable
 	walk(doc, [where, ref])
 	count(where) > 0
 	where[count(where) - 1] == "uses"
 	is_string(ref)
+	not in_actions_probe(file, where)
+}
+
+# actions_probe is the job that proves the repository's allowed-actions
+# setting straight after the estate converge applies it (#882), as [file,
+# name]: the one the suppliers list declares under actions_probe, written as
+# its egress entries name a job, <workflow file>/<job>.
+actions_probe := [$".github/workflows/{parts[0]}", parts[1]] if {
+	some f in at("scripts/approved-suppliers.yml")
+	is_string(f.contents.actions_probe)
+	parts := split(f.contents.actions_probe, "/")
+	count(parts) == 2
+}
+
+in_actions_probe(file, where) if {
+	actions_probe == [file, where[1]]
+	where[0] == "jobs"
 }
 
 # outside_actions is every action from another repository a runnable file

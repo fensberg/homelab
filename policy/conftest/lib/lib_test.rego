@@ -109,6 +109,23 @@ test_an_outside_action_is_named_by_its_repository if {
 	lib.outside_actions == {"actions/fetch", "github/scan/start", "someone/builds", "else/where"} with input as [workflow, composite]
 }
 
+test_what_the_allowed_actions_probe_names_is_not_a_use if {
+	sha := "0123456789012345678901234567890123456789"
+	workflow := {"path": ".github/workflows/w.yml", "contents": {"jobs": {
+		"real": {"steps": [{"uses": $"actions/fetch@{sha}"}]},
+		"probe": {"steps": [{"uses": $"else/where@{sha}"}]},
+	}}}
+	suppliers := {"path": "scripts/approved-suppliers.yml", "contents": {"actions_probe": "w.yml/probe"}}
+	lib.actions_probe == [".github/workflows/w.yml", "probe"] with input as [workflow, suppliers]
+	lib.outside_actions == {"actions/fetch"} with input as [workflow, suppliers]
+	lib.outside_actions == {"actions/fetch", "else/where"} with input as [workflow]
+}
+
+test_a_probe_written_in_another_form_is_no_probe if {
+	not lib.actions_probe with input as [{"path": "scripts/approved-suppliers.yml", "contents": {"actions_probe": "w.yml"}}]
+	not lib.actions_probe with input as [{"path": "scripts/approved-suppliers.yml", "contents": {"actions_probe": ["w.yml/probe"]}}]
+}
+
 test_an_action_written_in_another_form_is_named_as_written if {
 	workflow := {"path": ".github/workflows/w.yml", "contents": {"jobs": {"a": {"steps": [{"uses": "./.github/workflows/local"}, {"uses": "docker://example.test/image:1"}]}}}}
 	lib.outside_actions == {"./.github/workflows/local", "docker://example.test/image:1"} with input as [workflow]
