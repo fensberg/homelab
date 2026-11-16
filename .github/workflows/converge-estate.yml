@@ -25,6 +25,9 @@ on:
       - "management/estate/**"
       - "config/estate.tpl.json"
       - "scripts/lawyer/**"
+      # What the lawyer is built from (its go.mod's replace): a change there
+      # is a change to the lawyer.
+      - "scripts/details/**"
 
 permissions:
   contents: read

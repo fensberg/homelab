@@ -27,54 +27,73 @@ package rules.plan_estate_scope
 import data.lib
 import rego.v1
 
+# Each estate type, and how a change to it is proved once it has merged.
+#
+# A change to the estate takes effect when the estate converges after the
+# merge, never on the pull request, so what proves it has to run then
+# (#885). Every type is one of two:
+#
+#   - "read back": the converge plans again straight after it applies and
+#     fails when anything is left to change, so the estate is what its
+#     declarations say (scripts/lawyer, readBack);
+#   - "probe": declared as applied is not enough, because what the setting
+#     refuses only shows when something asks it - the allowed-actions
+#     setting, proved by a job referencing every allowed action
+#     (policy/conftest/rules/allowed_actions_probe).
+#
+# A new type is a decision about scope and about its proof, and both are
+# written here.
 estate_types := {
 	# Who may enroll a device, and what an enrolled device reaches.
-	"cloudflare_zero_trust_access_policy",
-	"cloudflare_zero_trust_access_application",
-	"cloudflare_zero_trust_device_default_profile",
+	"cloudflare_zero_trust_access_policy": "read back",
+	"cloudflare_zero_trust_access_application": "read back",
+	"cloudflare_zero_trust_device_default_profile": "read back",
 	# Each site's plot, created by the estate because only an account-wide
 	# token can create it, and granted to the site as narrowed credentials.
-	"cloudflare_r2_bucket",
-	"cloudflare_account_token",
+	"cloudflare_r2_bucket": "read back",
+	"cloudflare_account_token": "read back",
 	# Each site's tunnel, what it serves and the routes to it, made by the
 	# estate for the same reason.
-	"cloudflare_zero_trust_tunnel_cloudflared",
-	"cloudflare_zero_trust_tunnel_cloudflared_config",
-	"cloudflare_zero_trust_tunnel_cloudflared_route",
+	"cloudflare_zero_trust_tunnel_cloudflared": "read back",
+	"cloudflare_zero_trust_tunnel_cloudflared_config": "read back",
+	"cloudflare_zero_trust_tunnel_cloudflared_route": "read back",
 	# The rule that answers an enrolled device, and nobody else, with where a
 	# name a site serves is reached.
-	"cloudflare_zero_trust_gateway_policy",
+	"cloudflare_zero_trust_gateway_policy": "read back",
 	# Whether the vendor carries what a device sends to a private name at all:
 	# one setting for the account.
-	"cloudflare_zero_trust_device_settings",
+	"cloudflare_zero_trust_device_settings": "read back",
 	# The watchman, which says when a site has gone quiet. The estate's because
 	# it has to outlive whatever it watches: one in a site's state is destroyed
 	# with the site.
-	"cloudflare_workers_script",
-	"cloudflare_workers_script_subdomain",
-	"cloudflare_workers_cron_trigger",
-	"cloudflare_workers_kv_namespace",
+	"cloudflare_workers_script": "read back",
+	"cloudflare_workers_script_subdomain": "read back",
+	"cloudflare_workers_cron_trigger": "read back",
+	"cloudflare_workers_kv_namespace": "read back",
 	# What each site rings the watchman with.
-	"random_password",
+	"random_password": "read back",
 	# What a workflow in a repository of the estate's may run, and what the
 	# token it is handed may do: the estate is every repository under its
 	# organisation, and a site has none.
-	"github_actions_repository_permissions",
-	"github_workflow_repository_permissions",
+	"github_actions_repository_permissions": "probe",
+	"github_workflow_repository_permissions": "read back",
 	# What may be pushed to a repository's branches and tags.
-	"github_repository_ruleset",
+	"github_repository_ruleset": "read back",
 	# What a member of the organisation may do for being one.
-	"github_organization_settings",
+	"github_organization_settings": "read back",
 	# Which repositories and workflows may use the estate's own runners.
-	"github_actions_runner_group",
+	"github_actions_runner_group": "read back",
 	# What a workflow reads that is the estate's to say: which site a pull
 	# request's jobs are sent to.
-	"github_actions_variable",
+	"github_actions_variable": "read back",
 	# Where a job is handed the estate's own credential, and on which branch
 	# it may be.
-	"github_repository_environment",
-	"github_repository_environment_deployment_policy",
+	"github_repository_environment": "read back",
+	"github_repository_environment_deployment_policy": "read back",
 }
+
+# The two proofs a change to the estate has after merge.
+proofs := {"read back", "probe"}
 
 # What makes nothing outside OpenTofu's own state, so belongs to no scope: a
 # value kept between runs so a change to it can be acted on. Either scope may
@@ -108,14 +127,14 @@ sites_locks contains path if {
 
 deny contains msg if {
 	some ["estate", r] in made
-	not r.type in estate_types
+	not estate_types[r.type]
 	not r.type in state_only
-	msg := $"the estate's plan would make {r.address}, a {r.type}, which is not listed as the estate's. Everything in the estate's scope belongs to every site in the account. If this object does, add its type to estate_types in this rule; if it belongs to one site, it goes in that site's roots."
+	msg := $"the estate's plan would make {r.address}, a {r.type}, which is not listed as the estate's. Everything in the estate's scope belongs to every site in the account. If this object does, add its type to estate_types in this rule, with how a change to it is proved after merge; if it belongs to one site, it goes in that site's roots."
 }
 
 deny contains msg if {
 	some ["site", r] in made
-	r.type in estate_types
+	estate_types[r.type]
 	msg := $"a site's plan would make {r.address}, a {r.type}, which is the estate's. An estate object in a site's state is destroyed by that site's demolish, for every site in the account - which is how the enrollment application was lost (#531). Declare it in the estate's root; a site that needs it reads it with a data source."
 }
 
@@ -139,4 +158,10 @@ deny contains msg if {
 deny contains msg if {
 	count(sites_locks) == 0
 	msg := "no provider lock locks what builds the machines or talks to the cluster, so no site's lock was checked"
+}
+
+deny contains msg if {
+	some type, proof in estate_types
+	not proof in proofs
+	msg := $"estate_types says a change to {type} is proved by {proof}, which is no proof the estate has. After merge the estate is read back, or probed: say which."
 }

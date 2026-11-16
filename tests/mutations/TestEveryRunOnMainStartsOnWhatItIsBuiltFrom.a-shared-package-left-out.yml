@@ -1,0 +1,9 @@
+guard: TestEveryRunOnMainStartsOnWhatItIsBuiltFrom
+file: .github/workflows/converge-estate.yml
+find: "      - \"scripts/details/**\"\n"
+replace: "      - \"scripts/detail/**\"\n"
+mentions: "no path its push filter names covers scripts/details"
+why: >
+  The lawyer is built from scripts/details. A converge filter that misses it
+  lets a change there merge and start nothing, and first run on the next
+  unrelated merge, whose revert is then the one offered.

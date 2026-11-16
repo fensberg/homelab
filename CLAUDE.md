@@ -601,8 +601,12 @@ depends on it and uses them.
   run by hand; see `tests/README.md`.
 - `deploy-infrastructure.yml` — applies OpenTofu on a self-hosted runner, and
   converges the platform. Its filters are `environments/**/infrastructure/**`,
-  `modules/infrastructure/**`, `management/**`, `config/management.tpl.json`
-  and `clusters/**`.
+  `modules/infrastructure/**`, `management/**`, `config/management.tpl.json`,
+  `clusters/**`, and the contractor it builds and runs with what that is built
+  from (`scripts/contractor/**`, `scripts/details/**`).
+  `TestEveryRunOnMainStartsOnWhatItIsBuiltFrom` holds every merge-triggered
+  workflow to the programs it runs, so a change to one starts the run that
+  uses it rather than waiting for the next unrelated merge.
 
   `clusters/**` is there for the record a converge ends with, more than for
   anything it applies. Flux deploys what is merged under it with no help
@@ -621,9 +625,13 @@ depends on it and uses them.
   as long as the workflow did not have it; it has it now.
 
 - `converge-estate.yml` — applies the estate when what declares it is
-  merged: `management/estate/**`, `config/estate.tpl.json` and the lawyer
-  itself. It is the one job handed the estate's own credential, from the
-  `estate` environment, which the estate holds to the default branch. The
+  merged: `management/estate/**`, `config/estate.tpl.json`, the lawyer
+  itself and `scripts/details/**`, which it is built from. After it applies,
+  it plans again and fails if anything is left to change, and a job
+  referencing every allowed action proves the allowed-actions setting; either
+  failing offers the merge's revert. It is the one job handed the estate's
+  own credential, from the `estate` environment, which the estate holds to
+  the default branch. The
   lawyer shows nothing tofu prints there, because the log is public: each
   thing by its address and what is done to it. Not on a timer yet (#535).
 

@@ -61,3 +61,9 @@ test_nothing_to_read_is_refused if {
 	denies(plan_estate_scope.deny, "no plan of a site's scope makes anything") with input as []
 	denies(plan_estate_scope.deny, "no provider lock locks what builds the machines") with input as []
 }
+
+test_a_type_proved_by_nothing_the_estate_has_is_refused if {
+	unproved := {"github_repository_ruleset": "read back", "cloudflare_r2_bucket": "hope"}
+	denies(plan_estate_scope.deny, "proved by hope, which is no proof the estate has") with input as good with plan_estate_scope.estate_types as unproved
+	not denies(plan_estate_scope.deny, "no proof the estate has") with input as good
+}
