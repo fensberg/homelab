@@ -159,6 +159,8 @@ unprovable:
     reason: table
   - test: TestSemgrepPathsAreReadAsGitignoreLines
     reason: table
+  - test: TestAFilterCoversWhatItNamesAndWhatIsBelowIt
+    reason: table
   - test: TestAnActionIsFollowedIntoTheActionsItRuns
     reason: table
   - test: TestTheLedgersJobIsComparedByWhatItIsGiven

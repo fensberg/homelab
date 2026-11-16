@@ -40,6 +40,12 @@ on:
       # converge here applies nothing of its own. It waits for Flux to
       # settle and takes the record, which is the point.
       - "clusters/**"
+      # The contractor, which the converge builds from this checkout and
+      # runs, and what it is built from (its go.mod's replace). A change
+      # to either is a change to the converge, and starts it rather than
+      # first running on the next unrelated merge.
+      - "scripts/contractor/**"
+      - "scripts/details/**"
   # The machine roll (management/roll), every hour. Each site keeps its own
   # clock (its timezone in config/management.tpl.json) and the play decides
   # whether that site's window is open; outside it the run is over in a
@@ -170,7 +176,9 @@ jobs:
           site_files="$(grep -vE '^management/estate/' <<<"${files}" || true)"
           # clusters/ is here for the record a converge ends with, not for
           # anything it applies: see the trigger's paths above.
-          grep -qE '^(management/|clusters/|config/management\.tpl\.json$)' <<<"${site_files}" && mgmt=true
+          # scripts/contractor and scripts/details are the program the
+          # converge runs, as the trigger's paths above say.
+          grep -qE '^(management/|clusters/|config/management\.tpl\.json$|scripts/(contractor|details)/)' <<<"${site_files}" && mgmt=true
           # The same paths the trigger filters on, not a broader guess at them.
           # This used to match any file under environments/ or modules/, so a
           # change to an application module - the game server's Deployment -
