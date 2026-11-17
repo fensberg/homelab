@@ -19,6 +19,10 @@ func URL(base, format string, args ...any) string {
 	return base + fmt.Sprintf(format, args...)
 }
 
+// WorkflowRuns is where a repository's workflow runs are listed, under
+// /repos/<owner>/<name>.
+const WorkflowRuns = "/actions/runs"
+
 // RulesetType is the OpenTofu resource every rule on a repository's branches
 // and tags is. The lawyer adopts the ones that stand by it, and the guard on
 // what belongs to the estate names it.

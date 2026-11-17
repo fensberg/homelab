@@ -195,6 +195,12 @@ files:
   - path: pinnedactions/main.go
     uncovered: 1
     covered_by: not-worth-testing
+  # The assessor's door: its arguments and environment in, an exit status
+  # out. run is the program, and it is covered whole against a stand-in
+  # GitHub and a made-up history.
+  - path: assessor/main.go
+    uncovered: 1
+    covered_by: not-worth-testing
 
   # --- the other six programs ------------------------------------------
   #
