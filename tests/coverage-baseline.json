@@ -75,6 +75,7 @@
     "zero: deleting one looks like tidying away a test that never fails."
   ],
   "baselines": {
+    "go/assessor": 94.1,
     "go/attestation": 38.9,
     "go/sweeper": 58.6,
     "go/contractor": 65.8,

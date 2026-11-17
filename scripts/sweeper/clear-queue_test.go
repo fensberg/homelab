@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"homelab/details/ghapi"
 )
 
 // Only a run that can never produce a wanted result is cancelled.
@@ -122,12 +124,12 @@ func TestClearWith_CancelsOnlyDeadRunsAndOnlyWhenConfirmed(t *testing.T) {
 	var cancelled []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case strings.HasSuffix(r.URL.Path, "/actions/runs") && r.URL.Query().Get("status") == "queued":
+		case strings.HasSuffix(r.URL.Path, ghapi.WorkflowRuns) && r.URL.Query().Get("status") == "queued":
 			_, _ = w.Write([]byte(`{"workflow_runs":[
 				{"id":1,"status":"queued","head_branch":"gone"},
 				{"id":2,"status":"queued","head_branch":"alive"},
 				{"id":3,"status":"queued","head_branch":"held"}]}`))
-		case strings.HasSuffix(r.URL.Path, "/actions/runs"):
+		case strings.HasSuffix(r.URL.Path, ghapi.WorkflowRuns):
 			_, _ = w.Write([]byte(`{"workflow_runs":[]}`))
 		case strings.HasSuffix(r.URL.Path, "/pending_deployments"):
 			if strings.Contains(r.URL.Path, "/runs/3/") {

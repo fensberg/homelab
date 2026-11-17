@@ -259,6 +259,22 @@ tasks:
       - go build -C scripts/sweeper -o ../../toolshed/sweeper .
       - ./toolshed/sweeper clear-branches {{.CLI_ARGS}}
 
+  quality-report:
+    desc: "Measure the agent's pull requests against the checks: task quality-report AGENT=<login>"
+    # Reads the GitHub API with whatever token gh holds, and changes nothing.
+    # What it read is kept outside the repository, in the user's cache, so a
+    # second run asks only for what is new. AGENT is the login that opened the pull requests, as the
+    # API writes it.
+    requires:
+      vars: [AGENT]
+    cmds:
+      - go build -C scripts/assessor -o ../../toolshed/assessor .
+      - >-
+        GH_TOKEN="$(gh auth token)" ./toolshed/assessor
+        -repo "$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
+        -agent "{{.AGENT}}" -cache "${XDG_CACHE_HOME:-$HOME/.cache}/assessor" -out docs/ai-quality-report.md
+        -gate "Sensitive Paths" -guards tests/go/repo -rules policy/conftest/rules -guidance CLAUDE.md
+
   gh-token:
     desc: "Mint a 1-hour GitHub App installation token (for gh auth login --with-token)"
     cmds:

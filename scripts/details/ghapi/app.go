@@ -117,13 +117,44 @@ func Get[T any](base, token, path string) (T, error) {
 	return out, err
 }
 
-func call(method, url, bearer string, into any) error {
+// request is a question to GitHub asked with a token, built in one place so
+// every way of asking sends the same headers.
+func request(method, url, bearer string) (*http.Request, error) {
 	req, err := http.NewRequest(method, url, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+bearer)
 	req.Header.Set("Accept", "application/vnd.github+json")
+	return req, nil
+}
+
+// Fetch asks base+path with a token and returns the answer's status and its
+// body whole, whatever it is: a job's log is text, and larger than Get
+// reads. Deciding what a status means is the caller's, so a 404 and a 410
+// are not errors here; failing to ask or to read is.
+func Fetch(base, token, path string) (int, []byte, error) {
+	req, err := request(http.MethodGet, URL(base, "%s", path), token)
+	if err != nil {
+		return 0, nil, err
+	}
+	resp, err := (&http.Client{Timeout: 2 * time.Minute}).Do(req)
+	if err != nil {
+		return 0, nil, fmt.Errorf("asking GitHub: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, nil, fmt.Errorf("reading GitHub's answer: %w", err)
+	}
+	return resp.StatusCode, body, nil
+}
+
+func call(method, url, bearer string, into any) error {
+	req, err := request(method, url, bearer)
+	if err != nil {
+		return err
+	}
 	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
 	if err != nil {
 		return fmt.Errorf("asking GitHub: %w", err)

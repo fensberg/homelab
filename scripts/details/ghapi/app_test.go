@@ -151,3 +151,36 @@ func TestACredentialBecomesItsInstallationAndAnUnencodedKeyIsRefused(t *testing.
 		t.Errorf("an unencoded key: %v", err)
 	}
 }
+
+// Fetch hands back what GitHub said, status and all, asked with the token.
+func TestFetchReturnsTheStatusAndTheWholeBody(t *testing.T) {
+	log := strings.Repeat("a line of a job's log\n", 1<<18) // past Get's 4 MiB
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer tok" || r.Header.Get("Accept") != "application/vnd.github+json" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		switch r.URL.Path {
+		case "/log":
+			_, _ = w.Write([]byte(log))
+		default:
+			w.WriteHeader(http.StatusGone)
+		}
+	}))
+	defer srv.Close()
+
+	status, body, err := Fetch(srv.URL, "tok", "/log")
+	if err != nil || status != http.StatusOK || string(body) != log {
+		t.Errorf("got %d, %d bytes, %v; want 200 and all %d bytes", status, len(body), err, len(log))
+	}
+	status, _, err = Fetch(srv.URL, "tok", "/expired")
+	if err != nil || status != http.StatusGone {
+		t.Errorf("a 410 should come back as a status, not an error: got %d, %v", status, err)
+	}
+	if _, _, err := Fetch("http://127.0.0.1:1", "tok", "/log"); err == nil {
+		t.Error("a server that cannot be reached should be an error")
+	}
+	if _, _, err := Fetch("http://bad host", "tok", "/log"); err == nil {
+		t.Error("an address that is not one should be an error")
+	}
+}

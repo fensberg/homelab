@@ -147,6 +147,7 @@ updates:
       - /modules/applications/*/tests
       - /.github/workflows/offline/pinnedactions
       - /scripts/attestation
+      - /scripts/assessor
       - /scripts/details
       - /scripts/drafter
       - /scripts/engineer
